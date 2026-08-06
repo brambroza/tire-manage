@@ -1,36 +1,137 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Dream Tire — ระบบจัดการยางรถบรรทุก
 
-## Getting Started
+ระบบบันทึกการถอด-ใส่ยางรายเส้น ติดตามระยะใช้งาน และแจ้งเตือนเมื่อถึงเกณฑ์
+UI แบบ modern minimal โทนฟ้าอ่อน เน้นการใช้งานบน **iPad** สำหรับช่างหน้างาน
+ส่วน **Super Admin (Dreammaker)** ออกแบบสำหรับเดสก์ท็อป
 
-First, run the development server:
+## Tech stack
+
+| ส่วน | เทคโนโลยี |
+| --- | --- |
+| Frontend / Backend | Next.js 16 (App Router) + TypeScript |
+| UI | Tailwind CSS v4, lucide-react, recharts |
+| Database / Auth | Supabase (PostgreSQL + Row Level Security) |
+| Validation | zod |
+
+## โครงสร้าง role
+
+| Role | ใช้ที่ | สิทธิ์ |
+| --- | --- | --- |
+| `super_admin` (Dreammaker) | Desktop | CRUD ลูกค้า, ข้อมูลยางกลาง, สาเหตุการถอด, กำหนดว่าลูกค้าแต่ละรายเห็นยางรุ่นใด, ดูการใช้งานยางของลูกค้าทุกราย |
+| `admin` (แอดมินบริษัทลูกค้า) | iPad / Desktop | CRUD รถ, คลังยาง, จัดการช่างในบริษัท, แก้ข้อมูลบริษัทและเกณฑ์แจ้งเตือน, dashboard |
+| `technician` (ช่าง) | iPad | บันทึกถอด / ใส่ / สลับตำแหน่งยาง, ค้นหารถและยาง |
+
+## ติดตั้ง
 
 ```bash
+npm install
+cp .env.example .env.local   # ใส่ค่าจริงจาก Supabase Dashboard > Project Settings > API
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+ตัวแปรที่ต้องตั้ง:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=     # ใช้เฉพาะฝั่ง server ตอนสร้างบัญชีผู้ใช้ให้ลูกค้า/ช่าง
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+> ⚠️ `SUPABASE_SERVICE_ROLE_KEY` ห้าม commit และห้ามใช้ฝั่ง client เด็ดขาด
 
-## Learn More
+## ตั้งค่าฐานข้อมูล
 
-To learn more about Next.js, take a look at the following resources:
+1. เปิด Supabase Dashboard → SQL Editor
+2. รัน [`supabase/schema.sql`](supabase/schema.sql) — สร้างตาราง, view, RPC, RLS policy และ storage bucket ทั้งหมด
+3. รัน [`supabase/seed.sql`](supabase/seed.sql) — ใส่สาเหตุการถอดยางและข้อมูลยางตัวอย่าง
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+> **โปรเจกต์ที่ติดตั้งไปก่อนหน้านี้** ให้รันไฟล์ใน [`supabase/migrations/`](supabase/migrations) ตามลำดับแทน:
+> `001_apply_tire_ops.sql` (บันทึกงานยางหลายรายการพร้อมกัน) และ `002_tire_images.sql` (รูปยางในแคตตาล็อก)
+> — ถ้ายังไม่รัน ปุ่ม “บันทึกทั้งหมด” ในหน้าช่างและการอัปโหลดรูปจะยังใช้ไม่ได้
+4. สร้าง user แรกที่ Authentication → Add user แล้วผูก profile:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```sql
+insert into public.profiles (id, company_id, role, full_name)
+values ('<UUID จาก auth.users>', null, 'super_admin', 'Dreammaker Admin');
+```
 
-## Deploy on Vercel
+จากนั้น login แล้วสร้างบริษัทลูกค้าและบัญชีแอดมิน/ช่างจากหน้า Super Admin ได้เลย
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## โมเดลข้อมูลหลัก
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+companies ──┬── profiles            (ผู้ใช้ + role)
+            ├── vehicles            (รถ: ทะเบียน จังหวัด ยี่ห้อ/รุ่น ประเภทเพลา เลขไมล์)
+            ├── tires               (ยางรายเส้น: เลขยาง สถานะ ตำแหน่ง ระยะสะสม ดอกยาง)
+            ├── tire_events         (ledger การถอด-ใส่ พร้อมระยะวิ่งต่อรอบ)
+            └── company_tire_models (รุ่นยางที่ super admin อนุญาตให้เห็น)
+
+tire_brands ── tire_models          (แคตตาล็อกกลาง: ยี่ห้อ รุ่น ขนาด รหัสดอกยาง)
+removal_reasons                     (สาเหตุการถอด — super admin config ได้)
+```
+
+### การคำนวณระยะใช้งานยาง
+
+- ตอน **ใส่ยาง** ระบบเก็บ `mounted_odometer` = เลขไมล์รถ ณ ตอนนั้น
+- ระหว่างใช้งาน: `ระยะรอบนี้ = เลขไมล์รถปัจจุบัน − mounted_odometer`
+- ตอน **ถอดยาง** ระบบบวกระยะรอบนี้เข้า `total_distance_km` ของยางเส้นนั้น
+- view `tire_overview` รวมสองส่วนเป็น `lifetime_km` ให้พร้อมใช้
+
+ทั้งหมดทำผ่าน RPC `mount_tire()` / `unmount_tire()` ซึ่ง lock แถวยางระหว่างทำรายการ
+กันกรณีช่างสองคนบันทึกพร้อมกัน และมี unique index กันไม่ให้ตำแหน่งล้อเดียวมียางซ้อนกัน
+
+### เกณฑ์แจ้งเตือน
+
+ตั้งค่าได้รายบริษัทที่หน้า "ข้อมูลบริษัท" (`companies.alert_km` ค่าเริ่มต้น 10,000 กม.
+และ `companies.alert_tread_mm` ค่าเริ่มต้น 3.0 มม.) ยางที่ถึงเกณฑ์จะขึ้นสีเหลืองทั้งในตาราง
+และบนแผนผังล้อ
+
+## รูปยางในแคตตาล็อก
+
+Super admin อัปโหลดรูปให้รุ่นยางได้ที่เมนู **ข้อมูลยาง** (JPG/PNG/WebP/AVIF ไม่เกิน 3 MB)
+รูปเก็บใน Supabase Storage bucket `tire-images` (public read) และอัปโหลดผ่าน server action
+ที่ใช้ service role จึงไม่ต้องเปิดสิทธิ์เขียน storage ให้ผู้ใช้ทั่วไป
+
+รูปที่ใส่ไว้จะไปแสดงอัตโนมัติในทุกจุดที่อ้างถึงยางรุ่นนั้น: หน้าช่างตอนเลือกยางจากคลังและในตะกร้ารายการ,
+ตารางคลังยาง, แดชบอร์ด (ตารางแจ้งเตือนและระยะสะสมสูงสุด) และหน้ารายละเอียดยาง
+
+## ผังตำแหน่งล้อ
+
+รหัสตำแหน่งอยู่ในรูป `A{เพลา}{ด้าน}{นอก/ใน}` เช่น `A1L` = เพลา 1 ซ้าย, `A3RO` = เพลา 3 ขวานอก
+ประเภทเพลาที่รองรับกำหนดไว้ที่ [`src/lib/axle-layouts.ts`](src/lib/axle-layouts.ts):
+4 ล้อ, 6 ล้อ, 10 ล้อ, 12 ล้อ, หางพ่วง 2 เพลา และ 3 เพลา — เพิ่มรูปแบบใหม่ได้โดยเติมใน `AXLE_LAYOUTS`
+
+## โครงสร้างโค้ด
+
+```
+src/
+├── app/
+│   ├── login/                 หน้าเข้าสู่ระบบ
+│   ├── (app)/                 ฝั่งลูกค้า (admin + ช่าง)
+│   │   ├── dashboard/         ภาพรวม + แจ้งเตือน + ยางที่ถอดออก
+│   │   ├── vehicles/          CRUD รถ + หน้ารายละเอียดพร้อมผังล้อ
+│   │   ├── tires/             คลังยาง + ประวัติรายเส้น
+│   │   ├── service/           ขั้นตอนบันทึกถอด-ใส่ยาง (หน้าหลักของช่าง)
+│   │   ├── technicians/       จัดการบัญชีช่างในบริษัท
+│   │   └── company/           แก้ข้อมูลบริษัท + เกณฑ์แจ้งเตือน
+│   └── (super)/superadmin/    ฝั่ง Dreammaker
+├── components/                UI primitives, AppShell, ผังล้อ, กราฟ
+└── lib/                       supabase clients, auth, types, utils
+```
+
+## คำสั่งที่ใช้บ่อย
+
+> สคริปต์ใน `scripts/` ต้องใช้ Node 22 ขึ้นไป (supabase-js ต้องการ native WebSocket)
+
+```bash
+npm run dev      # dev server
+npm run build    # production build
+npm run lint     # eslint
+npx tsc --noEmit # typecheck
+```
+
+## หมายเหตุด้านความปลอดภัย
+
+- ทุกตารางเปิด RLS และแยกข้อมูลตาม `company_id` — ลูกค้าเห็นเฉพาะข้อมูลตัวเอง
+- ทุก server action ตรวจ role ซ้ำด้วย `requireSession([...])` ไม่พึ่ง UI อย่างเดียว
+- input ทุกช่องผ่าน zod ก่อนลง DB และใช้ query builder ของ Supabase (parameterized) ตลอด

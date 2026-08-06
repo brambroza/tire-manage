@@ -1,26 +1,92 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ============================================================
+   DREAM TIRE — Design tokens
+   โทนฟ้าอ่อน modern minimal, ออกแบบ touch-first สำหรับ iPad
+   ============================================================ */
+@theme {
+  --color-brand-50:  #f0f8ff;
+  --color-brand-100: #dcefff;
+  --color-brand-200: #b9dfff;
+  --color-brand-300: #85c9ff;
+  --color-brand-400: #4aabff;
+  --color-brand-500: #1f8cf5;
+  --color-brand-600: #0d6ee0;
+  --color-brand-700: #0d57b4;
+  --color-brand-800: #114a90;
+  --color-brand-900: #143f76;
+
+  --color-ink-900: #0f1c2e;
+  --color-ink-700: #2c405b;
+  --color-ink-500: #5b7089;
+  --color-ink-400: #8397ad;
+
+  --color-surface:     #ffffff;
+  --color-surface-alt: #f5f9ff;
+  --color-line:        #e3edf9;
+
+  --font-sans: var(--font-thai), ui-sans-serif, system-ui, sans-serif;
+
+  --radius-card: 1rem;
+
+  --shadow-soft: 0 1px 2px rgba(15, 28, 46, 0.04), 0 8px 24px -12px rgba(15, 28, 46, 0.12);
+  --shadow-lift: 0 2px 4px rgba(15, 28, 46, 0.05), 0 18px 40px -18px rgba(15, 28, 46, 0.22);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
   }
+
+  body {
+    background:
+      radial-gradient(1200px 600px at 100% -10%, var(--color-brand-50), transparent 60%),
+      var(--color-surface-alt);
+    color: var(--color-ink-900);
+    font-family: var(--font-sans);
+    min-height: 100dvh;
+    /* กันการ zoom เวลาจิ้ม input บน iPad */
+    font-size: 16px;
+    overscroll-behavior-x: none;
+  }
+
+  ::selection { background: var(--color-brand-200); }
+
+  /* scrollbar บาง ๆ ให้เข้ากับธีม */
+  * { scrollbar-width: thin; scrollbar-color: var(--color-brand-200) transparent; }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-thumb {
+    background: var(--color-brand-200);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-brand-500);
+    outline-offset: 2px;
+  }
+
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type="number"] { -moz-appearance: textfield; }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer utilities {
+  /* พื้นที่กดขั้นต่ำ 44px ตาม HIG ของ iPad */
+  .tap-target { min-height: 2.75rem; }
+
+  .glass {
+    background: color-mix(in srgb, white 78%, transparent);
+    backdrop-filter: blur(12px);
+  }
+
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .animate-fade-up { animation: fade-up 0.28s ease-out both; }
 }

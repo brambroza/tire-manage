@@ -1,0 +1,153 @@
+'use client'
+
+import * as React from 'react'
+import Link from 'next/link'
+import { AlertTriangle, Bell, CheckCircle2, Gauge, Ruler } from 'lucide-react'
+import { TireThumb } from '@/components/tire-thumb'
+import { positionLabel } from '@/lib/axle-layouts'
+import { cn, formatKm, formatNumber } from '@/lib/utils'
+import type { NotificationFeed } from '@/lib/notifications'
+
+/**
+ * กระดิ่งแจ้งเตือนบน top bar
+ * แสดงยางที่ถึงเกณฑ์ (วิ่งเกินระยะ หรือดอกยางต่ำ) พร้อมลิงก์ไปยังรายการเต็ม
+ */
+export function NotificationBell({ feed }: { feed: NotificationFeed }) {
+  const [open, setOpen] = React.useState(false)
+  const panelRef = React.useRef<HTMLDivElement>(null)
+
+  React.useEffect(() => {
+    if (!open) return
+
+    const onPointerDown = (e: MouseEvent | TouchEvent) => {
+      if (!panelRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('touchstart', onPointerDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('touchstart', onPointerDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const { alerts, total, alertKm, alertTreadMm } = feed
+  const hasAlerts = total > 0
+
+  return (
+    <div className="relative" ref={panelRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-label={hasAlerts ? `การแจ้งเตือน ${total} รายการ` : 'การแจ้งเตือน'}
+        aria-expanded={open}
+        className={cn(
+          'relative flex size-11 items-center justify-center rounded-xl transition-colors',
+          open ? 'bg-brand-100 text-brand-700' : 'text-ink-500 hover:bg-brand-50 hover:text-brand-600',
+        )}
+      >
+        <Bell className="size-5.5" />
+        {hasAlerts && (
+          <span
+            className={cn(
+              'absolute -right-0.5 -top-0.5 flex min-w-5 items-center justify-center rounded-full',
+              'bg-amber-500 px-1.5 text-[11px] font-semibold text-white ring-2 ring-white',
+            )}
+          >
+            {total > 99 ? '99+' : total}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div
+          className={cn(
+            'animate-fade-up absolute right-0 top-full z-40 mt-2 w-[min(24rem,calc(100vw-2rem))]',
+            'overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-lift)]',
+          )}
+          role="dialog"
+          aria-label="การแจ้งเตือน"
+        >
+          <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
+            <div>
+              <p className="text-[15px] font-semibold text-ink-900">การแจ้งเตือน</p>
+              <p className="text-xs text-ink-400">
+                เกินระยะ {formatNumber(alertKm)} กม. หรือดอกยาง ≤ {alertTreadMm} มม.
+              </p>
+            </div>
+            {hasAlerts && (
+              <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-200">
+                {formatNumber(total)} เส้น
+              </span>
+            )}
+          </div>
+
+          {alerts.length === 0 ? (
+            <div className="flex flex-col items-center px-6 py-10 text-center">
+              <CheckCircle2 className="size-10 text-emerald-500" />
+              <p className="mt-3 text-[15px] font-medium text-ink-700">ไม่มีการแจ้งเตือน</p>
+              <p className="mt-1 text-sm text-ink-500">ยางทุกเส้นยังอยู่ในเกณฑ์ที่กำหนด</p>
+            </div>
+          ) : (
+            <>
+              <ul className="max-h-[60dvh] divide-y divide-line overflow-y-auto">
+                {alerts.map((a) => (
+                  <li key={a.tireId}>
+                    <Link
+                      href={`/tires/${a.tireId}`}
+                      onClick={() => setOpen(false)}
+                      className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-brand-50/60"
+                    >
+                      <TireThumb src={a.imageUrl} alt={a.brandModel} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[15px] font-medium text-ink-900">{a.serialNo}</p>
+                        <p className="truncate text-sm text-ink-500">
+                          {a.plateNo ?? '-'} · {positionLabel(a.positionCode, a.vehicleAxleType)}
+                        </p>
+                        <p
+                          className={cn(
+                            'mt-1 inline-flex items-center gap-1.5 text-xs font-medium',
+                            a.kind === 'tread' ? 'text-rose-600' : 'text-amber-600',
+                          )}
+                        >
+                          {a.kind === 'tread' ? (
+                            <>
+                              <Ruler className="size-3.5" />
+                              ดอกยางเหลือ {a.treadMm} มม.
+                            </>
+                          ) : (
+                            <>
+                              <Gauge className="size-3.5" />
+                              วิ่งแล้ว {formatKm(a.currentRunKm)} ในรอบนี้
+                            </>
+                          )}
+                        </p>
+                      </div>
+                      <AlertTriangle
+                        className={cn(
+                          'mt-0.5 size-4 shrink-0',
+                          a.kind === 'tread' ? 'text-rose-500' : 'text-amber-500',
+                        )}
+                      />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+
+              <Link
+                href="/tires?status=alert"
+                onClick={() => setOpen(false)}
+                className="block border-t border-line bg-surface-alt px-4 py-3 text-center text-sm font-medium text-brand-700 hover:bg-brand-50"
+              >
+                ดูทั้งหมด {formatNumber(total)} เส้น
+              </Link>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
