@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   AlertCircle, ArrowLeft, Check, ChevronRight, Gauge, MapPin, Plus, Truck,
 } from 'lucide-react'
-import { Badge, Button, Card, CardBody, Field, Input, Select } from '@/components/ui'
+import { Badge, Button, Field, Input, Select } from '@/components/ui'
 import { WheelDiagram, type WheelSlot } from '@/components/wheel-diagram'
 import { getLayout, positionLabel, positionNo, type WheelPosition } from '@/lib/axle-layouts'
 import { PROVINCES } from '@/lib/provinces'
@@ -71,7 +71,6 @@ type Step =
   | 'unmount'
   | 'mount-kind'
   | 'mount'
-  | 'done'
 
 /** ยางที่ช่างเลือกในแต่ละขั้น — เลือกได้เฉพาะจากรายการที่ระบบกำหนดให้ */
 interface TirePick {
@@ -138,7 +137,6 @@ const STEP_TITLE: Record<Step, string> = {
   unmount: 'ถอดยาง',
   'mount-kind': 'ใส่ยาง — เลือกชนิดยาง',
   mount: 'ใส่ยาง',
-  done: 'บันทึกเรียบร้อย',
 }
 
 /* ------------------------------------------------------------- component */
@@ -200,9 +198,6 @@ export function ServiceWizard({
   /* ขั้นใส่ */
   const [mountKind, setMountKind] = React.useState<'new' | 'used' | null>(null)
   const [mnPick, setMnPick] = React.useState<TirePick>(EMPTY_PICK)
-
-  /** จำนวนล้อที่บันทึกไปแล้วกับรถคันนี้ในรอบนี้ */
-  const [doneCount, setDoneCount] = React.useState(0)
 
   /** รุ่นยางรอตรวจสอบที่ช่างเพิ่งเพิ่มจากคำค้นหน้างาน (ยังไม่ผ่าน refresh) */
   const [addedModels, setAddedModels] = React.useState<TireModelLite[]>([])
@@ -594,20 +589,9 @@ export function ServiceWizard({
       return
     }
 
-    setDoneCount((n) => n + 1)
-    setStep('done')
+    // บันทึกแล้วกลับไปเริ่มรถคันใหม่ทันที — ไม่มีทางเลือกทำต่อรถคันเดิม
+    startOver()
     router.refresh()
-  }
-
-  /** เคลียร์เฉพาะข้อมูลของล้อ เพื่อทำล้อถัดไปกับรถคันเดิม */
-  function nextWheel() {
-    setPosition(null)
-    setUnPick(EMPTY_PICK)
-    setReasonId('')
-    setMountKind(null)
-    setMnPick(EMPTY_PICK)
-    setError(null)
-    setStep('wheel')
   }
 
   /** เคลียร์ทั้งหน้าจอ เริ่มรถคันใหม่ */
@@ -619,8 +603,12 @@ export function ServiceWizard({
     setCategory(null)
     setAxleTypeCode(null)
     setOdometer('')
-    setDoneCount(0)
-    nextWheel()
+    setPosition(null)
+    setUnPick(EMPTY_PICK)
+    setReasonId('')
+    setMountKind(null)
+    setMnPick(EMPTY_PICK)
+    setError(null)
     setStep('plate')
   }
 
@@ -647,7 +635,7 @@ export function ServiceWizard({
       {/* แถบสรุปงานปัจจุบัน — เห็นตลอดว่ากำลังทำรถคันไหน */}
       <div className="glass sticky top-[4.5rem] z-20 mb-4 rounded-2xl border border-line px-4 py-3">
         <div className="flex items-center gap-3">
-          {step !== 'plate' && step !== 'done' && (
+          {step !== 'plate' && (
             <button
               type="button"
               onClick={goBack}
@@ -675,9 +663,6 @@ export function ServiceWizard({
                 .join(' · ')}
             </p>
           </div>
-          {doneCount > 0 && (
-            <Badge tone="emerald">บันทึกแล้ว {doneCount} ล้อ</Badge>
-          )}
         </div>
       </div>
 
@@ -975,27 +960,6 @@ export function ServiceWizard({
             บันทึก
           </PrimaryButton>
         </StepCard>
-      )}
-
-      {/* ------------------------------------------------ บันทึกเรียบร้อย */}
-      {step === 'done' && (
-        <Card>
-          <CardBody className="flex flex-col items-center py-10 text-center">
-            <span className="flex size-16 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
-              <Check className="size-8" />
-            </span>
-            <p className="mt-5 text-xl font-semibold text-ink-900">บันทึกเรียบร้อย</p>
-            <p className="mt-1.5 text-sm text-ink-500">
-              {vehicle?.plate_no} · {wheelName(position)}
-            </p>
-            <div className="mt-7 grid w-full gap-3">
-              <Button size="lg" onClick={nextWheel}>ทำล้อถัดไปของรถคันนี้</Button>
-              <Button size="lg" variant="secondary" onClick={startOver}>
-                เริ่มรถคันใหม่
-              </Button>
-            </div>
-          </CardBody>
-        </Card>
       )}
 
       {isNewVehicle && step === 'category' && (
