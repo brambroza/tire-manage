@@ -7,6 +7,7 @@
 export type UserRole = 'super_admin' | 'admin' | 'technician'
 export type TireStatus = 'in_stock' | 'mounted' | 'scrapped' | 'retreading'
 export type TireEventType = 'mount' | 'unmount'
+export type AxleKind = 'single' | 'dual'
 
 export type Company = {
   id: string
@@ -61,6 +62,8 @@ export type TireModel = {
   name: string
   size: string | null
   pattern_code: string | null
+  /** ความลึกดอกยางเมื่อใหม่ ใช้เป็นค่าเริ่มต้นตอนเพิ่มยางรุ่นนี้ */
+  new_tread_mm: number | null
   /** รูปยาง (public URL จาก Supabase Storage) */
   image_url: string | null
   created_by_company: string | null
@@ -72,6 +75,18 @@ export type CompanyTireModel = {
   company_id: string
   tire_model_id: string
   created_at: string
+}
+
+export type AxleType = {
+  id: string
+  code: string
+  name: string
+  /** รูปแบบแต่ละเพลา เรียงจากหน้าไปหลัง */
+  axle_kinds: AxleKind[]
+  sort_order: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
 }
 
 export type Vehicle = {
@@ -161,12 +176,12 @@ type Insert<T, Optional extends keyof T> = Omit<T, Optional> & Partial<Pick<T, O
 type Timestamps = 'id' | 'created_at' | 'updated_at'
 
 /** ประกาศ foreign key ให้ postgrest-js เข้าใจการ join (embed) */
-type FK<Column extends string, Ref extends string> = {
+type FK<Column extends string, Ref extends string, RefColumn extends string = 'id'> = {
   foreignKeyName: string
   columns: [Column]
   isOneToOne: false
   referencedRelation: Ref
-  referencedColumns: ['id']
+  referencedColumns: [RefColumn]
 }
 
 export interface Database {
@@ -174,7 +189,7 @@ export interface Database {
     Tables: {
       companies: {
         Row: Company
-        Insert: Insert<Company, Timestamps | 'tax_id' | 'phone' | 'email' | 'address'
+        Insert: Insert<Company, Timestamps | 'code' | 'tax_id' | 'phone' | 'email' | 'address'
           | 'contact_name' | 'logo_url' | 'alert_km' | 'alert_tread_mm' | 'is_active'>
         Update: Partial<Company>
         Relationships: []
@@ -199,7 +214,7 @@ export interface Database {
       }
       tire_models: {
         Row: TireModel
-        Insert: Insert<TireModel, 'id' | 'created_at' | 'size' | 'pattern_code' | 'image_url'
+        Insert: Insert<TireModel, 'id' | 'created_at' | 'size' | 'pattern_code' | 'new_tread_mm' | 'image_url'
           | 'created_by_company' | 'is_active'>
         Update: Partial<TireModel>
         Relationships: [FK<'brand_id', 'tire_brands'>, FK<'created_by_company', 'companies'>]
@@ -210,12 +225,18 @@ export interface Database {
         Update: Partial<CompanyTireModel>
         Relationships: [FK<'company_id', 'companies'>, FK<'tire_model_id', 'tire_models'>]
       }
+      axle_types: {
+        Row: AxleType
+        Insert: Insert<AxleType, Timestamps | 'sort_order' | 'is_active'>
+        Update: Partial<AxleType>
+        Relationships: []
+      }
       vehicles: {
         Row: Vehicle
-        Insert: Insert<Vehicle, Timestamps | 'brand' | 'model' | 'axle_type'
+        Insert: Insert<Vehicle, Timestamps | 'brand' | 'model'
           | 'current_mileage' | 'note' | 'is_active'>
         Update: Partial<Vehicle>
-        Relationships: [FK<'company_id', 'companies'>]
+        Relationships: [FK<'company_id', 'companies'>, FK<'axle_type', 'axle_types', 'code'>]
       }
       tires: {
         Row: Tire

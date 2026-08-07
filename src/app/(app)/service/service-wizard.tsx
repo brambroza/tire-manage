@@ -3,18 +3,19 @@
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  AlertCircle, ArrowLeft, ArrowRight, Check, CircleDot, ListChecks, PencilLine, Package, Plus,
-  Search, Trash2, Truck,
+  AlertCircle, ArrowDown, Check, ChevronDown, Lock, PencilLine, RotateCcw, Search, SkipForward,
+  Trash2, Truck,
 } from 'lucide-react'
 import {
-  Badge, Button, Card, CardBody, CardHeader, EmptyState, Field, Input, Select, Textarea,
+  Badge, Button, Card, CardBody, EmptyState, Field, Input, Select, Textarea,
 } from '@/components/ui'
 import { WheelDiagram, type WheelSlot } from '@/components/wheel-diagram'
 import { TireThumb } from '@/components/tire-thumb'
-import { TireFormModal, type ModelOption } from '../tires/tire-form'
-import { getLayout, positionLabel, type WheelPosition } from '@/lib/axle-layouts'
+import { TireSpec } from '@/components/tire-spec'
+import { getLayout, positionLabel, positionNo, type WheelPosition } from '@/lib/axle-layouts'
 import { cn, formatKm, formatNumber, todayISO } from '@/lib/utils'
 import { applyServiceBatchAction } from './actions'
+import type { AxleType } from '@/lib/database.types'
 
 /* ------------------------------------------------------------------ types */
 
@@ -51,115 +52,121 @@ export interface ReasonOption {
   is_scrap: boolean
 }
 
-type Mode = 'unmount' | 'mount' | 'rotate'
-
-const MODE_LABEL: Record<Mode, string> = {
-  unmount: 'ถอดยาง',
-  mount: 'ใส่ยาง',
-  rotate: 'สลับตำแหน่ง',
-}
-
-const STEPS = ['เลือกยานพาหนะ', 'เลือกยาง / ตำแหน่ง', 'บันทึกรายละเอียด', 'ตรวจสอบและบันทึก']
-
-/**
- * รายการงาน 1 บรรทัดในตะกร้า — ช่างเพิ่มได้หลายรายการต่อรถ 1 คัน
- * แล้วกดบันทึกทีเดียว (ระบบบันทึกแบบ all-or-nothing)
- */
-interface DraftItem {
-  key: string
-  kind: Mode | 'manual_unmount'
-  tireId: string | null
-  serialNo: string
-  brandModel: string
-  positionCode: string | null
-  targetPosition: string | null
-  treadMm: number | null
-  reasonId: string | null
-  reasonLabel: string
-  note: string | null
-  manual: ManualTire | null
-}
-
-/** ข้อมูลยางที่ช่างคีย์เอง กรณีถอดยางที่ยังไม่มีข้อมูลในระบบ */
-interface ManualTire {
+/** ข้อมูลยางที่ช่างคีย์เองหน้างาน (ใช้ทั้งตอนถอดและตอนใส่) */
+interface TireEntry {
   serial_no: string
-  tire_model_id: string
   brand_name: string
   model_name: string
   size: string
   dot: string
-  new_tread_mm: string
-  /** เลขไมล์รถตอนที่ยางเส้นนี้ถูกใส่ (ถ้าทราบ) */
+  tread_mm: string
+  /** เลขไมล์รถตอนที่ยางเส้นนี้ถูกใส่ (เฉพาะตอนถอดยางที่ไม่มีข้อมูลในระบบ) */
   mounted_odometer: string
+  note: string
 }
 
-const EMPTY_MANUAL: ManualTire = {
+const EMPTY_ENTRY: TireEntry = {
   serial_no: '',
-  tire_model_id: '',
   brand_name: '',
   model_name: '',
   size: '',
   dot: '',
-  new_tread_mm: '',
+  tread_mm: '',
   mounted_odometer: '',
+  note: '',
+}
+
+/**
+ * รายการงาน 1 บรรทัดในตะกร้า — ช่างทำทีละล้อจนครบ แล้วกดเสร็จสิ้นทีเดียว
+ * (ระบบบันทึกแบบ all-or-nothing)
+ */
+interface DraftItem {
+  key: string
+  kind: 'unmount' | 'manual_unmount' | 'mount' | 'manual_mount'
+  tireId: string | null
+  serialNo: string
+  brandName: string
+  modelName: string
+  size: string
+  positionCode: string
+  treadMm: number | null
+  reasonId: string | null
+  reasonLabel: string
+  note: string | null
+  /** ข้อมูลยางที่คีย์เอง — ส่งให้ server สร้างประวัติยางให้ */
+  manual: {
+    serial_no: string
+    brand_name: string
+    model_name: string
+    size: string
+    dot: string
+    mounted_odometer: string
+  } | null
 }
 
 const ITEM_LABEL: Record<DraftItem['kind'], string> = {
-  unmount: 'ถอดยาง',
-  mount: 'ใส่ยาง',
-  rotate: 'สลับตำแหน่ง',
-  manual_unmount: 'ถอดยาง (คีย์เอง)',
+  unmount: 'ถอด',
+  manual_unmount: 'ถอด (คีย์เอง)',
+  mount: 'ใส่',
+  manual_mount: 'ใส่ (ยางใหม่)',
 }
 
-const ITEM_TONE: Record<DraftItem['kind'], 'amber' | 'brand' | 'sky'> = {
+const ITEM_TONE: Record<DraftItem['kind'], 'amber' | 'brand'> = {
   unmount: 'amber',
-  mount: 'brand',
-  rotate: 'sky',
   manual_unmount: 'amber',
+  mount: 'brand',
+  manual_mount: 'brand',
 }
+
+const isUnmountKind = (kind: DraftItem['kind']) =>
+  kind === 'unmount' || kind === 'manual_unmount'
 
 /* ------------------------------------------------------------- component */
 
 /**
- * ขั้นตอนบันทึกการถอด-ใส่ยางสำหรับช่างหน้างาน (ออกแบบให้ใช้นิ้วบน iPad)
+ * หน้าบันทึกการถอด-ใส่ยางสำหรับช่างหน้างาน (ออกแบบให้ใช้นิ้วบน iPad)
+ *
+ * ทำงาน "ทีละล้อ" เป็นวงรอบเดียว ไม่มีปุ่มเปลี่ยนขั้นตอน:
+ *   เลือกรถ + เลขไมล์ → แตะล้อ → คีย์ยางที่ถอด → คีย์ยางที่ใส่ (ล้อเดิม)
+ *   → กลับมาที่ผังล้อ เลือกล้อถัดไป หรือกด "เสร็จสิ้น" เพื่อบันทึกทั้งชุด
  */
 export function ServiceWizard({
   vehicles,
   tires,
   reasons,
-  models,
+  axleTypes,
   alertKm,
   initialVehicleId,
 }: {
   vehicles: VehicleLite[]
   tires: TireLite[]
   reasons: ReasonOption[]
-  models: ModelOption[]
+  axleTypes: AxleType[]
   alertKm: number
   initialVehicleId?: string
 }) {
   const router = useRouter()
 
-  const [step, setStep] = React.useState(1)
   const [vehicleId, setVehicleId] = React.useState<string | null>(initialVehicleId ?? null)
-  const [mode, setMode] = React.useState<Mode>('unmount')
-  const [position, setPosition] = React.useState<string | null>(null)
-  const [targetPosition, setTargetPosition] = React.useState<string | null>(null)
-  const [tireId, setTireId] = React.useState<string | null>(null)
+  const [vehicleQuery, setVehicleQuery] = React.useState('')
 
+  /* ข้อมูลรวมของทั้งชุด */
   const [odometer, setOdometer] = React.useState<string>(() => {
     const initial = vehicles.find((v) => v.id === initialVehicleId)
     return initial ? String(initial.current_mileage) : ''
   })
-  const [tread, setTread] = React.useState<string>('')
-  const [reasonId, setReasonId] = React.useState<string>('')
-  const [note, setNote] = React.useState('')
   const [eventDate, setEventDate] = React.useState(todayISO())
 
-  const [vehicleQuery, setVehicleQuery] = React.useState('')
-  const [tireQuery, setTireQuery] = React.useState('')
-  const [tireFormOpen, setTireFormOpen] = React.useState(false)
-  const [manual, setManual] = React.useState<ManualTire>(EMPTY_MANUAL)
+  /* ล้อที่กำลังทำอยู่ + ขั้นย่อยภายในล้อนั้น */
+  const [position, setPosition] = React.useState<string | null>(null)
+  const [stage, setStage] = React.useState<'unmount' | 'mount'>('unmount')
+
+  const [unEntry, setUnEntry] = React.useState<TireEntry>(EMPTY_ENTRY)
+  const [unReasonId, setUnReasonId] = React.useState('')
+  const [mnEntry, setMnEntry] = React.useState<TireEntry>(EMPTY_ENTRY)
+
+  /** ล้อที่เพิ่งทำเสร็จ — โชว์เป็นคำยืนยันสั้น ๆ เหนือแผนผังจนกว่าจะเริ่มล้อถัดไป */
+  const [lastDone, setLastDone] = React.useState<string | null>(null)
 
   const [items, setItems] = React.useState<DraftItem[]>([])
   /** ตัวนับสำหรับสร้าง key ของรายการในตะกร้า (ไม่ใช้ค่าสุ่มเพื่อให้ผลลัพธ์คงที่) */
@@ -169,8 +176,21 @@ export function ServiceWizard({
   const [done, setDone] = React.useState(false)
   const [savedCount, setSavedCount] = React.useState(0)
 
+  /** จุดยึดสำหรับเลื่อนหน้าจอไปยังขั้นถัดไป */
+  const wheelRef = React.useRef<HTMLElement>(null)
+  const workRef = React.useRef<HTMLElement>(null)
+
   const vehicle = vehicles.find((v) => v.id === vehicleId) ?? null
-  const layout = getLayout(vehicle?.axle_type)
+  const axleType = vehicle?.axle_type ?? null
+  const layout = getLayout(axleType, axleTypes)
+
+  /** ชื่อล้อแบบสั้นที่ช่างเทียบกับแผนผังได้ทันที เช่น "ล้อ 3 · เพลา 2 ซ้ายนอก" */
+  function wheelName(code: string | null | undefined) {
+    if (!code) return '-'
+    const no = positionNo(code, vehicle?.axle_type, axleTypes)
+    const label = positionLabel(code, vehicle?.axle_type, axleTypes)
+    return no ? `ล้อ ${no} · ${label}` : label
+  }
 
   /* ------------------------------------------------ derived collections */
 
@@ -194,43 +214,43 @@ export function ServiceWizard({
     return map
   }, [mountedOnVehicle, alertKm])
 
-  /** ยางที่ถูกจองไว้ในตะกร้าแล้ว ไม่ให้เลือกซ้ำ */
-  const usedTireIds = React.useMemo(
-    () => new Set(items.map((i) => i.tireId).filter(Boolean) as string[]),
-    [items],
-  )
-
   /**
-   * สภาพล้อ "หลังทำรายการในตะกร้าทั้งหมดแล้ว"
-   * ใช้วาดแผนผังและตรวจว่าตำแหน่งไหนว่าง/ไม่ว่างสำหรับรายการถัดไป
+   * สภาพล้อ "หลังทำรายการในตะกร้าทั้งหมดแล้ว" — ใช้วาดแผนผังให้ช่างเห็นผลทันที
    */
   const previewSlots = React.useMemo(() => {
     const map: Record<string, WheelSlot> = { ...slots }
     for (const item of items) {
-      if (item.kind === 'unmount' || item.kind === 'manual_unmount') {
-        if (item.positionCode) delete map[item.positionCode]
-      } else if (item.kind === 'mount') {
-        if (item.positionCode && item.tireId) {
-          map[item.positionCode] = {
-            tireId: item.tireId,
-            serialNo: item.serialNo,
-            treadMm: item.treadMm,
-            lifetimeKm: 0,
-            alert: false,
-          }
+      if (isUnmountKind(item.kind)) {
+        delete map[item.positionCode]
+      } else {
+        map[item.positionCode] = {
+          tireId: item.tireId ?? item.key,
+          serialNo: item.serialNo,
+          treadMm: item.treadMm,
+          lifetimeKm: 0,
+          alert: false,
         }
-      } else if (item.kind === 'rotate') {
-        const moving = item.positionCode ? map[item.positionCode] : undefined
-        if (item.positionCode) delete map[item.positionCode]
-        if (item.targetPosition && moving) map[item.targetPosition] = moving
       }
     }
     return map
   }, [slots, items])
 
-  const stockTires = React.useMemo(
-    () => tires.filter((t) => t.status === 'in_stock' && !usedTireIds.has(t.id)),
-    [tires, usedTireIds],
+  /** ล้อที่ทำรายการไปแล้วในชุดนี้ (กันแตะซ้ำจนข้อมูลชนกัน) */
+  const touchedPositions = React.useMemo(
+    () => new Set(items.map((i) => i.positionCode)),
+    [items],
+  )
+
+  /** ยางที่ถูกจองไว้ในตะกร้าแล้ว ไม่ให้ใส่ซ้ำสองล้อ */
+  const usedTireIds = React.useMemo(
+    () => new Set(items.filter((i) => !isUnmountKind(i.kind)).map((i) => i.tireId).filter(Boolean) as string[]),
+    [items],
+  )
+
+  /** ยางที่ถอดออกในชุดนี้ — ใส่กลับเข้าล้ออื่นได้ เพราะระบบถอดก่อนใส่เสมอ */
+  const freedTireIds = React.useMemo(
+    () => new Set(items.filter((i) => i.kind === 'unmount').map((i) => i.tireId).filter(Boolean) as string[]),
+    [items],
   )
 
   const filteredVehicles = React.useMemo(() => {
@@ -251,210 +271,241 @@ export function ServiceWizard({
     )
   }, [vehicles, tires, vehicleQuery])
 
-  const filteredStock = React.useMemo(() => {
-    const q = tireQuery.trim().toLowerCase()
-    if (!q) return stockTires
-    return stockTires.filter((t) =>
-      [t.serial_no, t.brand_name, t.model_name, t.size]
-        .filter(Boolean)
-        .some((f) => String(f).toLowerCase().includes(q)),
-    )
-  }, [stockTires, tireQuery])
-
-  const selectedTire = tires.find((t) => t.id === tireId) ?? null
+  const unmountItems = items.filter((i) => isUnmountKind(i.kind))
+  const mountItems = items.filter((i) => !isUnmountKind(i.kind))
 
   /** หา URL รูปของยางในรายการตะกร้า (ยางที่คีย์เองอาจยังไม่มีรูป) */
   function itemImage(item: DraftItem): string | null {
     if (item.tireId) return tires.find((t) => t.id === item.tireId)?.image_url ?? null
-    if (item.manual?.tire_model_id) {
-      return models.find((m) => m.id === item.manual?.tire_model_id)?.image_url ?? null
-    }
     return null
   }
 
-  /** จำนวนรายการแยกตามประเภท ใช้แสดงในหน้าสรุป */
-  const counts = React.useMemo(
-    () => ({
-      unmount: items.filter((i) => i.kind === 'unmount' || i.kind === 'manual_unmount').length,
-      mount: items.filter((i) => i.kind === 'mount').length,
-      rotate: items.filter((i) => i.kind === 'rotate').length,
-    }),
-    [items],
-  )
-
-  /** สรุปสถานะล้อของรถคันนี้ (นับจากผังหลังรวมรายการในตะกร้าแล้ว) */
   const filledCount = Object.keys(previewSlots).length
   const emptyCount = Math.max(layout.wheelCount - filledCount, 0)
   const alertCount = Object.values(previewSlots).filter((s) => s.alert).length
 
-  /** true = กำลังถอดยางในตำแหน่งที่ระบบยังไม่มีข้อมูล → ช่างคีย์ข้อมูลยางเอง */
-  const isManualUnmount =
-    mode === 'unmount' && Boolean(position) && !previewSlots[position as string]
+  /* -------------------------------------------------- ตรวจข้อมูลยางที่คีย์ */
 
-  const setManualField = <K extends keyof ManualTire>(key: K, value: ManualTire[K]) =>
-    setManual((m) => ({ ...m, [key]: value }))
+  const odometerValid = odometer.trim() !== '' && Number(odometer) >= 0
 
-  /** เลือกรุ่นยางจากแคตตาล็อกในฟอร์มคีย์เอง */
-  function pickManualModel(id: string) {
-    const m = models.find((x) => x.id === id)
-    setManual((prev) => ({
-      ...prev,
-      tire_model_id: id,
-      brand_name: m?.brand ?? '',
-      model_name: m?.model ?? '',
-      size: m?.size ?? '',
-    }))
+  /** ยางที่ระบบบันทึกไว้ในล้อที่กำลังทำ */
+  const currentSlot = position ? slots[position] ?? null : null
+  const slotTire = currentSlot ? tires.find((t) => t.id === currentSlot.tireId) ?? null : null
+
+  const unSerial = unEntry.serial_no.trim()
+  /** เลขยางที่คีย์ตรงกับที่ระบบบันทึกไว้ในล้อนี้ → ถอดตามประวัติเดิม */
+  const unMatched =
+    Boolean(slotTire) && unSerial.toLowerCase() === slotTire!.serial_no.toLowerCase()
+  /** คีย์ไม่ตรงกับที่ระบบบันทึกไว้ → ให้ช่างตรวจสอบก่อน กันประวัติยางเพี้ยน */
+  const unMismatch = Boolean(slotTire) && unSerial !== '' && !unMatched
+
+  const canSaveUnmount =
+    Boolean(vehicle) && odometerValid && Boolean(position) &&
+    unSerial !== '' && Boolean(unReasonId) && !unMismatch &&
+    !(unEntry.mounted_odometer.trim() !== '' &&
+      Number(unEntry.mounted_odometer) > Number(odometer))
+
+  const mnSerial = mnEntry.serial_no.trim()
+
+  /** ยางในระบบที่ตรงกับเลขยางที่คีย์ตอนใส่ (ถ้ามี) */
+  const mountCandidate = React.useMemo(() => {
+    if (mnSerial === '') return null
+    return tires.find((t) => t.serial_no.toLowerCase() === mnSerial.toLowerCase()) ?? null
+  }, [tires, mnSerial])
+
+  /** เหตุผลที่ยางเส้นที่คีย์ใส่ไม่ได้ (null = ใส่ได้) */
+  function blockedReason(candidate: TireLite | null): string | null {
+    if (!candidate) return null
+    if (usedTireIds.has(candidate.id)) return 'ยางเส้นนี้ถูกใส่ไปแล้วในชุดนี้'
+    if (candidate.status === 'scrapped') return 'ยางเส้นนี้ถูกตัดจำหน่ายไปแล้ว'
+    if (candidate.status === 'mounted' && !freedTireIds.has(candidate.id)) {
+      return `ยางเส้นนี้ติดตั้งอยู่ที่ ${candidate.plate_no ?? 'รถคันอื่น'} ${
+        positionLabel(candidate.position_code, axleType, axleTypes)
+      } — ต้องถอดออกก่อน`
+    }
+    return null
   }
+
+  const mountBlocked = blockedReason(mountCandidate)
+
+  const canSaveMount =
+    Boolean(vehicle) && odometerValid && Boolean(position) && mnSerial !== '' && !mountBlocked
+
+  /* ขั้นตอนไหนเปิดแล้วบ้าง — เปิดต่อกันลงล่าง */
+  const wheelOpen = Boolean(vehicle) && odometerValid
+  const workOpen = wheelOpen && Boolean(position)
+  const reviewOpen = items.length > 0
 
   /* -------------------------------------------------------------- actions */
 
-  /** เลือกรถ แล้วตั้งเลขไมล์เริ่มต้นจากค่าล่าสุดของรถคันนั้น */
+  /** เลื่อนหน้าจอไปยังส่วนที่เพิ่งเปิด (รอให้ React วาดเสร็จก่อน) */
+  function scrollTo(ref: React.RefObject<HTMLElement | null>) {
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })),
+    )
+  }
+
   function selectVehicle(v: VehicleLite) {
     setVehicleId(v.id)
     setOdometer(String(v.current_mileage))
-    setPosition(null)
-    setTargetPosition(null)
-    setTireId(null)
-    setManual(EMPTY_MANUAL)
+    closeWheel()
+    scrollTo(wheelRef)
   }
 
-  /** เปลี่ยนประเภทรายการ พร้อมตั้งสาเหตุเริ่มต้นให้โหมดสลับตำแหน่ง */
-  function selectMode(m: Mode) {
-    setMode(m)
-    setPosition(null)
-    setTargetPosition(null)
-    setTireId(null)
-    setManual(EMPTY_MANUAL)
-    if (m === 'rotate') {
-      const rotate = reasons.find((r) => r.name.includes('สลับ'))
-      setReasonId(rotate?.id ?? '')
-    } else {
-      setReasonId('')
-    }
+  /** เปลี่ยนรถ = เริ่มงานใหม่ทั้งชุด (รายการที่คีย์ไว้ผูกกับรถคันเดิม) */
+  function changeVehicle() {
+    setVehicleId(null)
+    setItems([])
+    setOdometer('')
+    closeWheel()
+    setError(null)
   }
 
-  /* ---------------------------------------------------------- validation */
-
-  const canNext = React.useMemo(() => {
-    if (step === 1) return Boolean(vehicleId)
-    if (step === 2) {
-      if (mode === 'mount') return Boolean(position && tireId)
-      if (mode === 'unmount') {
-        if (!position) return false
-        // ตำแหน่งที่ยังไม่มีข้อมูลยาง ต้องคีย์เลขยางเองก่อน
-        return isManualUnmount ? manual.serial_no.trim() !== '' : Boolean(tireId)
-      }
-      return Boolean(position && tireId)
-    }
-    if (step === 3) {
-      if (!odometer.trim()) return false
-      if (isManualUnmount && manual.mounted_odometer.trim() !== '') {
-        if (Number(manual.mounted_odometer) > Number(odometer)) return false
-      }
-      if (mode === 'rotate') return Boolean(targetPosition)
-      return true
-    }
-    return true
-  }, [step, vehicleId, mode, position, tireId, odometer, targetPosition, isManualUnmount, manual])
-
-  /** ล้างเฉพาะค่าของรายการปัจจุบัน (คงรถ เลขไมล์ วันที่ และตะกร้าไว้) */
-  function resetCurrentItem() {
-    setMode('unmount')
+  /** ปิดงานของล้อปัจจุบัน แล้วกลับไปที่ผังล้อ */
+  function closeWheel() {
     setPosition(null)
-    setTargetPosition(null)
-    setTireId(null)
-    setTread('')
-    setNote('')
-    setReasonId('')
-    setManual(EMPTY_MANUAL)
-    setTireQuery('')
+    setStage('unmount')
+    setUnEntry(EMPTY_ENTRY)
+    setUnReasonId('')
+    setMnEntry(EMPTY_ENTRY)
   }
 
-  /**
-   * เพิ่มรายการที่กรอกไว้ลงตะกร้า แล้วเคลียร์ฟอร์มเพื่อทำรายการถัดไป
-   * @returns true เมื่อเพิ่มสำเร็จ
-   */
-  function addCurrentItem(): boolean {
-    if (!vehicle) return false
-    const treadValue = tread.trim() === '' ? null : Number(tread)
-    const reasonLabel = reasons.find((r) => r.id === reasonId)?.name ?? ''
+  /** แตะล้อบนผัง → เริ่มงานของล้อนั้นด้วยขั้น "ถอด" เสมอ */
+  function startWheel(pos: WheelPosition) {
+    // ล้อที่ทำไปแล้วถูกล็อกไว้ที่แผนผัง (ติ๊กถูก) — กันไว้อีกชั้นเผื่อกดมาทางอื่น
+    if (touchedPositions.has(pos.code)) return
+    setError(null)
+    setLastDone(null)
+    setPosition(pos.code)
+    setStage('unmount')
+    setUnEntry(EMPTY_ENTRY)
+    setUnReasonId('')
+    setMnEntry(EMPTY_ENTRY)
+    scrollTo(workRef)
+  }
+
+  function nextKey() {
+    return `item-${(itemSeq.current += 1)}`
+  }
+
+  const toManual = (entry: TireEntry) => ({
+    serial_no: entry.serial_no.trim(),
+    brand_name: entry.brand_name.trim(),
+    model_name: entry.model_name.trim(),
+    size: entry.size.trim(),
+    dot: entry.dot.trim(),
+    mounted_odometer: entry.mounted_odometer.trim(),
+  })
+
+  /** บันทึกการถอดของล้อนี้ แล้วไปต่อขั้นใส่ยางที่ล้อเดิมทันที */
+  function saveUnmount() {
+    if (!canSaveUnmount || !position) return
+    const reasonLabel = reasons.find((r) => r.id === unReasonId)?.name ?? ''
+    const treadMm = unEntry.tread_mm.trim() === '' ? null : Number(unEntry.tread_mm)
 
     const base = {
-      key: `item-${(itemSeq.current += 1)}`,
-      treadMm: treadValue,
-      reasonId: reasonId || null,
+      key: nextKey(),
+      positionCode: position,
+      treadMm,
+      reasonId: unReasonId || null,
       reasonLabel,
-      note: note.trim() || null,
+      note: unEntry.note.trim() || null,
     }
 
-    let item: DraftItem
-    if (isManualUnmount) {
-      if (!manual.serial_no.trim() || !position) return false
-      item = {
-        ...base,
-        kind: 'manual_unmount',
-        tireId: null,
-        serialNo: manual.serial_no.trim(),
-        brandModel: [manual.brand_name, manual.model_name, manual.size].filter(Boolean).join(' '),
-        positionCode: position,
-        targetPosition: null,
-        manual: { ...manual },
-      }
-    } else {
-      if (!selectedTire) return false
-      if (mode === 'mount' && !position) return false
-      if (mode === 'rotate' && !targetPosition) return false
-      item = {
-        ...base,
-        kind: mode,
-        tireId: selectedTire.id,
-        serialNo: selectedTire.serial_no,
-        brandModel: [selectedTire.brand_name, selectedTire.model_name].filter(Boolean).join(' '),
-        positionCode: position,
-        targetPosition: mode === 'rotate' ? targetPosition : null,
-        manual: null,
-      }
-    }
+    const item: DraftItem =
+      unMatched && slotTire
+        ? {
+            ...base,
+            kind: 'unmount',
+            tireId: slotTire.id,
+            serialNo: slotTire.serial_no,
+            brandName: slotTire.brand_name ?? '',
+            modelName: slotTire.model_name ?? '',
+            size: slotTire.size ?? '',
+            manual: null,
+          }
+        : {
+            ...base,
+            kind: 'manual_unmount',
+            tireId: null,
+            serialNo: unSerial,
+            brandName: unEntry.brand_name.trim(),
+            modelName: unEntry.model_name.trim(),
+            size: unEntry.size.trim(),
+            manual: toManual(unEntry),
+          }
 
     setItems((prev) => [...prev, item])
-    resetCurrentItem()
+    setStage('mount')
     setError(null)
-    return true
+    scrollTo(workRef)
   }
 
-  /** ลบรายการออกจากตะกร้า */
+  /** บันทึกการใส่ยางของล้อเดิม แล้วกลับไปที่ผังล้อเพื่อทำล้อถัดไป */
+  function saveMount() {
+    if (!canSaveMount || !position) return
+    const treadMm = mnEntry.tread_mm.trim() === '' ? null : Number(mnEntry.tread_mm)
+
+    const base = {
+      key: nextKey(),
+      positionCode: position,
+      treadMm,
+      reasonId: null,
+      reasonLabel: '',
+      note: mnEntry.note.trim() || null,
+    }
+
+    const item: DraftItem = mountCandidate
+      ? {
+          ...base,
+          kind: 'mount',
+          tireId: mountCandidate.id,
+          serialNo: mountCandidate.serial_no,
+          brandName: mountCandidate.brand_name ?? '',
+          modelName: mountCandidate.model_name ?? '',
+          size: mountCandidate.size ?? '',
+          manual: null,
+        }
+      : {
+          ...base,
+          kind: 'manual_mount',
+          tireId: null,
+          serialNo: mnSerial,
+          brandName: mnEntry.brand_name.trim(),
+          modelName: mnEntry.model_name.trim(),
+          size: mnEntry.size.trim(),
+          manual: toManual(mnEntry),
+        }
+
+    setItems((prev) => [...prev, item])
+    setLastDone(`${wheelName(position)} — ถอด ${unmountItems.at(-1)?.serialNo ?? ''} ใส่ ${item.serialNo}`)
+    closeWheel()
+    setError(null)
+    scrollTo(wheelRef)
+  }
+
+  /** ปิดล้อนี้โดยไม่ใส่ยางกลับ (ถอดอย่างเดียว หรือยกเลิกกลางคัน) */
+  function skipMount() {
+    setLastDone(
+      stage === 'mount' && position ? `${wheelName(position)} — ถอดอย่างเดียว ไม่ใส่ยางกลับ` : null,
+    )
+    closeWheel()
+    setError(null)
+    scrollTo(wheelRef)
+  }
+
   function removeItem(key: string) {
     setItems((prev) => prev.filter((i) => i.key !== key))
   }
 
+  /** ล้างงานทั้งชุดแต่คงรถคันเดิมไว้ */
   function resetAll() {
     setItems([])
     setSavedCount(0)
-    setStep(1)
-    setMode('unmount')
-    setPosition(null)
-    setTargetPosition(null)
-    setTireId(null)
-    setTread('')
-    setNote('')
-    setReasonId('')
+    closeWheel()
     setError(null)
     setDone(false)
-    setManual(EMPTY_MANUAL)
     setEventDate(todayISO())
-  }
-
-  function handleSelectPosition(pos: WheelPosition, slot?: WheelSlot) {
-    setPosition(pos.code)
-    if (mode === 'mount') return
-    if (slot) {
-      setTireId(slot.tireId)
-      setTread(slot.treadMm !== null ? String(slot.treadMm) : '')
-    } else {
-      // ตำแหน่งว่าง (โหมดถอด) → เข้าสู่การคีย์ข้อมูลยางเอง
-      setTireId(null)
-      setTread('')
-    }
   }
 
   /* ------------------------------------------------------------- submit */
@@ -472,19 +523,18 @@ export function ServiceWizard({
         kind: i.kind,
         tire_id: i.tireId,
         position_code: i.positionCode,
-        target_position: i.targetPosition,
         tread_mm: i.treadMm,
         reason_id: i.reasonId,
         note: i.note,
         manual: i.manual
           ? {
               serial_no: i.manual.serial_no,
-              tire_model_id: i.manual.tire_model_id || null,
+              tire_model_id: null,
               brand_name: i.manual.brand_name || null,
               model_name: i.manual.model_name || null,
               size: i.manual.size || null,
               dot: i.manual.dot || null,
-              new_tread_mm: i.manual.new_tread_mm || null,
+              new_tread_mm: null,
               mounted_odometer: i.manual.mounted_odometer || null,
             }
           : null,
@@ -494,6 +544,8 @@ export function ServiceWizard({
     setSaving(false)
     if (!result.ok) {
       setError(result.error)
+      // ข้อความผิดพลาดอยู่บนสุด — เลื่อนขึ้นไปให้เห็นทันทีเพราะปุ่มบันทึกอยู่ล่างจอ
+      window.scrollTo({ top: 0, behavior: 'smooth' })
       return
     }
 
@@ -516,7 +568,7 @@ export function ServiceWizard({
             {vehicle?.plate_no} · บันทึกทั้งหมด {formatNumber(savedCount)} รายการ
           </p>
           <div className="mt-7 flex gap-3">
-            <Button variant="secondary" onClick={() => { resetAll(); setVehicleId(null) }}>
+            <Button variant="secondary" onClick={() => { resetAll(); changeVehicle() }}>
               เลือกรถคันอื่น
             </Button>
             <Button onClick={resetAll}>ทำรายการต่อกับรถคันนี้</Button>
@@ -528,10 +580,8 @@ export function ServiceWizard({
 
   return (
     <>
-      <Stepper step={step} />
-
-      {/* แถบบริบทงานปัจจุบัน — ติดไว้ด้านบนเพื่อให้เห็นตลอดตอนเลื่อนดูรายการยาว ๆ */}
-      {vehicle && step > 1 && (
+      {/* แถบบริบทงานปัจจุบัน — ติดไว้ด้านบนเพื่อให้เห็นตลอดตอนเลื่อนหน้ายาว ๆ */}
+      {vehicle && (
         <div className="glass sticky top-[4.5rem] z-20 mb-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-xl border border-line px-4 py-3">
           <span className="flex items-center gap-2 font-semibold text-ink-900">
             <Truck className="size-4.5 text-brand-500" />
@@ -539,16 +589,9 @@ export function ServiceWizard({
           </span>
           <span className="text-sm text-ink-500">{formatKm(Number(odometer) || 0)}</span>
           <span className="text-sm text-ink-400">{eventDate}</span>
-          {items.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setStep(4)}
-              className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-brand-50 px-3 py-1.5 text-sm font-medium text-brand-700 hover:bg-brand-100"
-            >
-              <ListChecks className="size-4" />
-              {formatNumber(items.length)} รายการ
-            </button>
-          )}
+          <span className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-brand-50 px-3 py-1.5 text-sm font-medium text-brand-700">
+            ถอด {unmountItems.length} · ใส่ {mountItems.length}
+          </span>
         </div>
       )}
 
@@ -559,292 +602,53 @@ export function ServiceWizard({
         </div>
       )}
 
-      {/* -------------------------------------------------- STEP 1 */}
-      {step === 1 && (
-        <Card>
-          <CardHeader
-            title="เลือกยานพาหนะ"
-            description="พิมพ์ทะเบียนรถ หรือเลขยาง เพื่อค้นหารถที่ต้องการทำรายการ"
-          />
-          <CardBody>
-            <div className="relative mb-5">
-              <Search className="pointer-events-none absolute left-3.5 top-1/2 size-5 -translate-y-1/2 text-ink-400" />
-              <input
-                value={vehicleQuery}
-                onChange={(e) => setVehicleQuery(e.target.value)}
-                placeholder="ค้นหาทะเบียนรถ หรือเลขยาง เช่น 70-1234 / T-295..."
-                className="h-14 w-full rounded-xl border border-line bg-white pl-12 pr-4 text-base placeholder:text-ink-400 focus:border-brand-400 focus:outline-none focus:ring-4 focus:ring-brand-100"
-                autoFocus
-              />
-            </div>
-
-            {filteredVehicles.length === 0 ? (
-              <EmptyState
-                icon={<Truck className="size-6" />}
-                title="ไม่พบรถตามคำค้นหา"
-                description="ลองพิมพ์เฉพาะตัวเลขทะเบียน หรือติดต่อแอดมินเพื่อเพิ่มรถเข้าระบบ"
-              />
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-                {filteredVehicles.map((v) => {
-                  const count = tires.filter(
-                    (t) => t.vehicle_id === v.id && t.status === 'mounted',
-                  ).length
-                  const total = getLayout(v.axle_type).wheelCount
-                  const active = v.id === vehicleId
-                  return (
-                    <button
-                      key={v.id}
-                      type="button"
-                      onClick={() => selectVehicle(v)}
-                      className={cn(
-                        'flex items-center gap-3 rounded-2xl border p-4 text-left transition-all active:scale-[0.99]',
-                        active
-                          ? 'border-brand-500 bg-brand-50 ring-4 ring-brand-100'
-                          : 'border-line bg-white hover:border-brand-300 hover:bg-brand-50/50',
-                      )}
-                    >
-                      <span className={cn(
-                        'flex size-12 shrink-0 items-center justify-center rounded-xl',
-                        active ? 'bg-brand-600 text-white' : 'bg-brand-50 text-brand-500',
-                      )}>
-                        <Truck className="size-6" />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[17px] font-semibold text-ink-900">
-                          {v.plate_no}
-                        </span>
-                        <span className="block truncate text-sm text-ink-500">
-                          {v.province} · {[v.brand, v.model].filter(Boolean).join(' ') || 'ไม่ระบุรุ่น'}
-                        </span>
-                        <span className="mt-1 flex items-center gap-2 text-xs text-ink-400">
-                          <span>{formatKm(v.current_mileage)}</span>
-                          <span className={count === total ? 'text-emerald-600' : 'text-amber-600'}>
-                            ยาง {count}/{total}
-                          </span>
-                        </span>
-                      </span>
-                    </button>
-                  )
-                })}
+      <div className="space-y-4">
+        {/* ------------------------------------- ขั้นที่ 1 : รถ + เลขไมล์ */}
+        <StepSection
+          index={1}
+          title="เลือกรถ และใส่เลขไมล์ปัจจุบัน"
+          description={
+            vehicle
+              ? `${vehicle.plate_no} ${vehicle.province} · ${[vehicle.brand, vehicle.model].filter(Boolean).join(' ') || 'ไม่ระบุรุ่น'}`
+              : 'พิมพ์ทะเบียนรถ หรือเลขยาง เพื่อค้นหารถที่ต้องการทำรายการ'
+          }
+          done={Boolean(vehicle) && odometerValid}
+          action={
+            vehicle ? (
+              <Button size="sm" variant="secondary" onClick={changeVehicle}>
+                <RotateCcw className="size-4" />
+                เปลี่ยนรถ
+              </Button>
+            ) : undefined
+          }
+        >
+          {vehicle ? (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl bg-brand-50/60 px-4 py-3.5 ring-1 ring-inset ring-brand-100">
+                <span className="flex items-center gap-3">
+                  <span className="flex size-11 items-center justify-center rounded-xl bg-brand-600 text-white">
+                    <Truck className="size-5.5" />
+                  </span>
+                  <span>
+                    <span className="block text-lg font-semibold text-ink-900">{vehicle.plate_no}</span>
+                    <span className="block text-sm text-ink-500">{vehicle.province}</span>
+                  </span>
+                </span>
+                <span className="text-sm text-ink-500">{layout.name}</span>
+                <span className="text-sm text-ink-500">
+                  ยางติดตั้ง {mountedOnVehicle.length}/{layout.wheelCount} เส้น
+                </span>
               </div>
-            )}
-          </CardBody>
-        </Card>
-      )}
 
-      {/* -------------------------------------------------- STEP 2 */}
-      {step === 2 && vehicle && (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-          <div className="space-y-4 xl:col-span-3">
-            <Card>
-              <CardHeader title="ประเภทรายการ" description="เลือกสิ่งที่ต้องการทำกับรถคันนี้" />
-              <CardBody>
-                <div className="grid grid-cols-3 gap-2">
-                  {(Object.keys(MODE_LABEL) as Mode[]).map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => selectMode(m)}
-                      className={cn(
-                        'h-16 rounded-xl border text-base font-medium transition-all active:scale-[0.98]',
-                        mode === m
-                          ? 'border-brand-600 bg-brand-600 text-white shadow-[0_10px_24px_-14px_rgba(13,110,224,1)]'
-                          : 'border-line bg-white text-ink-700 hover:border-brand-300 hover:bg-brand-50',
-                      )}
-                    >
-                      {MODE_LABEL[m]}
-                    </button>
-                  ))}
-                </div>
-              </CardBody>
-            </Card>
-
-            <Card>
-              <CardHeader
-                title="ตำแหน่งยาง"
-                description={
-                  mode === 'mount'
-                    ? 'แตะตำแหน่งว่างที่ต้องการใส่ยาง'
-                    : mode === 'rotate'
-                      ? 'แตะล้อที่ต้องการสลับตำแหน่ง'
-                      : 'แตะล้อที่ต้องการถอด — ถ้าตำแหน่งนั้นยังไม่มีข้อมูลในระบบ ให้แตะแล้วคีย์ข้อมูลยางเอง'
-                }
-                action={<Badge tone="brand">{layout.name}</Badge>}
-              />
-              <CardBody className="space-y-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <StatChip tone="emerald" label="มียาง" value={`${filledCount} เส้น`} />
-                  <StatChip tone="slate" label="ว่าง" value={`${emptyCount} ตำแหน่ง`} />
-                  <StatChip
-                    tone="amber"
-                    label="ถึงเกณฑ์เตือน"
-                    value={`${alertCount} เส้น`}
-                  />
-                </div>
-
-                <WheelDiagram
-                  axleType={vehicle.axle_type}
-                  slots={previewSlots}
-                  selected={position}
-                  onSelect={handleSelectPosition}
-                  mode={mode === 'mount' ? 'mount' : 'unmount'}
-                  allowEmpty={mode === 'unmount'}
-                />
-
-                {position && (
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-brand-50 px-4 py-3 text-sm ring-1 ring-inset ring-brand-100">
-                    <span className="inline-flex items-center gap-1.5 font-semibold text-brand-700">
-                      <CircleDot className="size-4" />
-                      {positionLabel(position, vehicle.axle_type)}
-                    </span>
-                    <span className="text-ink-500">
-                      {isManualUnmount
-                        ? 'ยังไม่มีข้อมูลยางในระบบ — คีย์ข้อมูลเองทางขวา'
-                        : selectedTire
-                          ? `${selectedTire.serial_no}${selectedTire.tread_mm !== null ? ` · ดอกยาง ${selectedTire.tread_mm} มม.` : ''}`
-                          : mode === 'mount'
-                            ? 'ตำแหน่งว่าง — เลือกยางจากคลังทางขวา'
-                            : '—'}
-                    </span>
-                  </div>
-                )}
-              </CardBody>
-            </Card>
-          </div>
-
-          <div className="space-y-4 xl:col-span-2">
-            <VehicleCard vehicle={vehicle} mountedCount={mountedOnVehicle.length} />
-
-            {mode === 'mount' ? (
-              <Card>
-                <CardHeader
-                  title="เลือกยางจากคลัง"
-                  description={`มียางพร้อมใช้ ${formatNumber(stockTires.length)} เส้น`}
-                  action={
-                    <Button size="sm" variant="secondary" onClick={() => setTireFormOpen(true)}>
-                      <Plus className="size-4" />
-                      ยางใหม่
-                    </Button>
-                  }
-                />
-                <CardBody>
-                  <div className="relative mb-3">
-                    <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4.5 -translate-y-1/2 text-ink-400" />
-                    <input
-                      value={tireQuery}
-                      onChange={(e) => setTireQuery(e.target.value)}
-                      placeholder="คีย์เลขยาง หรือค้นหายี่ห้อ/รุ่น"
-                      className="h-12 w-full rounded-xl border border-line bg-white pl-11 pr-3 text-base placeholder:text-ink-400 focus:border-brand-400 focus:outline-none focus:ring-4 focus:ring-brand-100"
-                    />
-                  </div>
-
-                  <div className="max-h-80 space-y-2 overflow-y-auto pr-1 md:max-h-[26rem]">
-                    {filteredStock.length === 0 ? (
-                      <EmptyState
-                        icon={<Package className="size-6" />}
-                        title="ไม่พบยางในคลัง"
-                        description="กดปุ่ม “ยางใหม่” เพื่อเพิ่มยางที่ยังไม่มีในระบบ"
-                      />
-                    ) : (
-                      filteredStock.map((t) => (
-                        <button
-                          key={t.id}
-                          type="button"
-                          onClick={() => {
-                            setTireId(t.id)
-                            setTread(t.tread_mm !== null ? String(t.tread_mm) : '')
-                          }}
-                          className={cn(
-                            'flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-all active:scale-[0.99]',
-                            tireId === t.id
-                              ? 'border-brand-500 bg-brand-50 ring-4 ring-brand-100'
-                              : 'border-line bg-white hover:border-brand-300 hover:bg-brand-50/50',
-                          )}
-                        >
-                          <TireThumb
-                            src={t.image_url}
-                            alt={[t.brand_name, t.model_name].filter(Boolean).join(' ')}
-                            size="md"
-                          />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate font-medium text-ink-900">{t.serial_no}</span>
-                            <span className="block truncate text-xs text-ink-400">
-                              {[t.brand_name, t.model_name, t.size].filter(Boolean).join(' · ') || 'ไม่ระบุรุ่น'}
-                            </span>
-                          </span>
-                          <span className="shrink-0 text-right text-xs text-ink-500">
-                            {t.tread_mm !== null && <span className="block">{t.tread_mm} มม.</span>}
-                            <span className="block text-ink-400">{formatKm(t.lifetime_km)}</span>
-                          </span>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                </CardBody>
-              </Card>
-            ) : isManualUnmount ? (
-              <ManualTireCard
-                manual={manual}
-                models={models}
-                positionText={positionLabel(position, vehicle.axle_type)}
-                onChange={setManualField}
-                onPickModel={pickManualModel}
-              />
-            ) : (
-              <Card>
-                <CardHeader title="ยางที่เลือก" description="ข้อมูลยางในตำแหน่งที่แตะเลือก" />
-                <CardBody>
-                  {selectedTire ? (
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-3 rounded-xl bg-brand-50/40 p-3">
-                        <TireThumb
-                          src={selectedTire.image_url}
-                          alt={[selectedTire.brand_name, selectedTire.model_name].filter(Boolean).join(' ')}
-                          size="lg"
-                        />
-                        <div className="min-w-0">
-                          <p className="truncate font-semibold text-ink-900">{selectedTire.serial_no}</p>
-                          <p className="truncate text-sm text-ink-500">
-                            {[selectedTire.brand_name, selectedTire.model_name].filter(Boolean).join(' ') || '-'}
-                          </p>
-                        </div>
-                      </div>
-                      <Row label="ยี่ห้อ / รุ่น"
-                        value={[selectedTire.brand_name, selectedTire.model_name].filter(Boolean).join(' ') || '-'} />
-                      <Row label="ขนาด" value={selectedTire.size ?? '-'} />
-                      <Row label="ตำแหน่ง" value={positionLabel(position, vehicle.axle_type)} />
-                      <Row label="ดอกยางล่าสุด"
-                        value={selectedTire.tread_mm !== null ? `${selectedTire.tread_mm} มม.` : '-'} />
-                      <Row label="ระยะรอบนี้" value={formatKm(selectedTire.current_run_km)}
-                        highlight={selectedTire.current_run_km >= alertKm} />
-                      <Row label="ระยะสะสม" value={formatKm(selectedTire.lifetime_km)} />
-                    </div>
-                  ) : (
-                    <EmptyState
-                      icon={<CircleDot className="size-6" />}
-                      title="ยังไม่ได้เลือกตำแหน่ง"
-                      description="แตะล้อบนแผนผังด้านซ้ายเพื่อเลือกยาง"
-                    />
-                  )}
-                </CardBody>
-              </Card>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* -------------------------------------------------- STEP 3 */}
-      {step === 3 && vehicle && (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-          <Card className="xl:col-span-3">
-            <CardHeader title="รายละเอียดการบันทึก" description={`${MODE_LABEL[mode]} · ${vehicle.plate_no}`} />
-            <CardBody className="space-y-5">
-              <div className="grid gap-5 sm:grid-cols-2">
+              <div className="grid max-w-2xl gap-5 sm:grid-cols-2">
                 <Field label="วันที่ทำรายการ" required>
                   <Input type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} />
                 </Field>
-                <Field label="เลขไมล์ปัจจุบัน (กม.)" required hint={`ล่าสุดในระบบ ${formatKm(vehicle.current_mileage)}`}>
+                <Field
+                  label="เลขไมล์ปัจจุบัน (กม.)"
+                  required
+                  hint={`ล่าสุดในระบบ ${formatKm(vehicle.current_mileage)}`}
+                >
                   <Input
                     type="number" inputMode="numeric" min={0}
                     value={odometer}
@@ -852,66 +656,214 @@ export function ServiceWizard({
                   />
                 </Field>
               </div>
+            </div>
+          ) : (
+            <>
+              <div className="relative mb-5">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 size-5 -translate-y-1/2 text-ink-400" />
+                <input
+                  value={vehicleQuery}
+                  onChange={(e) => setVehicleQuery(e.target.value)}
+                  placeholder="ค้นหาทะเบียนรถ หรือเลขยาง เช่น 70-1234 / T-295..."
+                  className="h-14 w-full rounded-xl border border-line bg-white pl-12 pr-4 text-base placeholder:text-ink-400 focus:border-brand-400 focus:outline-none focus:ring-4 focus:ring-brand-100"
+                  autoFocus
+                />
+              </div>
 
-              {isManualUnmount && (
-                <div className="rounded-xl bg-amber-50 px-4 py-4 ring-1 ring-inset ring-amber-200">
-                  <p className="mb-3 flex items-center gap-2 text-sm font-medium text-amber-800">
-                    <PencilLine className="size-4 shrink-0" />
-                    ยางเส้นนี้คีย์ข้อมูลเอง — เลขยาง {manual.serial_no || '(ยังไม่ระบุ)'}
+              {filteredVehicles.length === 0 ? (
+                <EmptyState
+                  icon={<Truck className="size-6" />}
+                  title="ไม่พบรถตามคำค้นหา"
+                  description="ลองพิมพ์เฉพาะตัวเลขทะเบียน หรือติดต่อแอดมินเพื่อเพิ่มรถเข้าระบบ"
+                />
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+                  {filteredVehicles.map((v) => {
+                    const count = tires.filter(
+                      (t) => t.vehicle_id === v.id && t.status === 'mounted',
+                    ).length
+                    const total = getLayout(v.axle_type, axleTypes).wheelCount
+                    return (
+                      <button
+                        key={v.id}
+                        type="button"
+                        onClick={() => selectVehicle(v)}
+                        className="flex items-center gap-3 rounded-2xl border border-line bg-white p-4 text-left transition-all hover:border-brand-300 hover:bg-brand-50/50 active:scale-[0.99]"
+                      >
+                        <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-500">
+                          <Truck className="size-6" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[17px] font-semibold text-ink-900">
+                            {v.plate_no}
+                          </span>
+                          <span className="block truncate text-sm text-ink-500">
+                            {v.province} · {[v.brand, v.model].filter(Boolean).join(' ') || 'ไม่ระบุรุ่น'}
+                          </span>
+                          <span className="mt-1 flex items-center gap-2 text-xs text-ink-400">
+                            <span>{formatKm(v.current_mileage)}</span>
+                            <span className={count === total ? 'text-emerald-600' : 'text-amber-600'}>
+                              ยาง {count}/{total}
+                            </span>
+                          </span>
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </StepSection>
+
+        {/* ------------------------------------- ขั้นที่ 2 : เลือกตำแหน่งล้อ */}
+        <StepSection
+          index={2}
+          title="เลือกตำแหน่งยาง"
+          description={
+            position
+              ? `กำลังทำ ${wheelName(position)}`
+              : 'แตะล้อที่จะเปลี่ยนยาง — ทำทีละล้อจนครบ แล้วกดเสร็จสิ้น'
+          }
+          locked={!wheelOpen}
+          lockedText="เลือกรถและใส่เลขไมล์ก่อน ขั้นนี้จึงจะเปิด"
+          done={items.length > 0 && !position}
+          sectionRef={wheelRef}
+          badge={<Badge tone="brand">{layout.name}</Badge>}
+        >
+          {vehicle && (
+            <div className="space-y-3">
+              {lastDone && !position && (
+                <p className="flex items-center gap-2 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800 ring-1 ring-inset ring-emerald-100">
+                  <Check className="size-4 shrink-0" />
+                  {lastDone}
+                </p>
+              )}
+
+              <div className="flex flex-wrap items-center gap-2">
+                <StatChip tone="emerald" label="มียาง" value={`${filledCount} เส้น`} />
+                <StatChip tone="slate" label="ว่าง" value={`${emptyCount} ตำแหน่ง`} />
+                <StatChip tone="amber" label="ถึงเกณฑ์เตือน" value={`${alertCount} เส้น`} />
+                {touchedPositions.size > 0 && (
+                  <StatChip tone="emerald" label="ทำแล้ว" value={`${touchedPositions.size} ล้อ`} />
+                )}
+              </div>
+
+              <WheelDiagram
+                axleType={vehicle.axle_type}
+                axleTypes={axleTypes}
+                slots={previewSlots}
+                selected={position}
+                onSelect={startWheel}
+                mode="unmount"
+                allowEmpty
+                doneCodes={[...touchedPositions]}
+              />
+
+              {!position && (
+                <p className="flex items-center justify-center gap-2 rounded-xl bg-brand-50 px-4 py-3 text-sm font-medium text-brand-700">
+                  <ArrowDown className="size-4" />
+                  แตะเลขล้อที่ต้องการทำรายการ แล้วฟอร์มคีย์ข้อมูลจะเปิดด้านล่าง
+                </p>
+              )}
+            </div>
+          )}
+        </StepSection>
+
+        {/* --------------------------- ขั้นที่ 3 : ถอด → ใส่ ที่ล้อเดียวกัน */}
+        <StepSection
+          index={3}
+          title={
+            position
+              ? `${stage === 'unmount' ? 'ถอดยาง' : 'ใส่ยาง'} — ${wheelName(position)}`
+              : 'ถอดยาง แล้วใส่ยางล้อเดิม'
+          }
+          description={
+            stage === 'unmount'
+              ? 'คีย์ข้อมูลยางที่ถอดออกจากล้อนี้'
+              : 'คีย์ข้อมูลยางที่ใส่เข้าไปแทน — ล้อเดิม ไม่ต้องเลือกตำแหน่งอีก'
+          }
+          locked={!workOpen}
+          lockedText="แตะล้อบนแผนผังก่อน ขั้นนี้จึงจะเปิด"
+          sectionRef={workRef}
+          badge={
+            position ? (
+              <Badge tone={stage === 'unmount' ? 'amber' : 'brand'}>
+                ขั้น {stage === 'unmount' ? '1/2 ถอด' : '2/2 ใส่'}
+              </Badge>
+            ) : undefined
+          }
+          action={
+            position ? (
+              <Button size="sm" variant="secondary" onClick={skipMount}>
+                ยกเลิกล้อนี้
+              </Button>
+            ) : undefined
+          }
+        >
+          {vehicle && position && stage === 'unmount' && (
+            <div className="max-w-3xl space-y-4">
+              {slotTire && (
+                <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-ink-500">
+                  <p>
+                    ระบบบันทึกไว้ว่าล้อนี้คือ{' '}
+                    <span className="font-medium text-ink-800">{slotTire.serial_no}</span>
+                    {' — คีย์เลขยางจากเส้นจริงเพื่อยืนยัน'}
                   </p>
-                  <Field
-                    label="เลขไมล์ตอนใส่ยางเส้นนี้ (ถ้าทราบ)"
-                    className="max-w-64"
-                    hint="ใส่เพื่อให้ระบบคำนวณระยะวิ่งของยางรอบนี้ ถ้าไม่ทราบให้เว้นว่าง (ระยะจะเป็น 0)"
-                    error={
-                      manual.mounted_odometer.trim() !== '' &&
-                      Number(manual.mounted_odometer) > Number(odometer)
-                        ? 'ต้องไม่มากกว่าเลขไมล์ปัจจุบัน'
-                        : undefined
-                    }
-                  >
-                    <Input
-                      type="number" inputMode="numeric" min={0}
-                      value={manual.mounted_odometer}
-                      onChange={(e) => setManualField('mounted_odometer', e.target.value)}
-                      placeholder="เช่น 120000"
-                    />
-                  </Field>
+                  <TireSpec
+                    size={slotTire.size}
+                    brandName={slotTire.brand_name}
+                    modelName={slotTire.model_name}
+                    className="mt-2"
+                  />
                 </div>
               )}
 
-              <div>
-                <p className="mb-1.5 text-sm font-medium text-ink-700">ดอกยางที่วัดได้ (มม.)</p>
-                <div className="grid grid-cols-5 gap-2 md:grid-cols-10">
-                  {Array.from({ length: 10 }, (_, i) => i).map((n) => (
-                    <button
-                      key={n}
-                      type="button"
-                      onClick={() => setTread(String(n))}
-                      className={cn(
-                        'h-14 rounded-xl border text-lg font-semibold transition-all active:scale-95',
-                        Number(tread) === n && tread !== ''
-                          ? 'border-brand-600 bg-brand-600 text-white'
-                          : 'border-line bg-white text-ink-700 hover:border-brand-300 hover:bg-brand-50',
-                      )}
-                    >
-                      {n}
-                    </button>
-                  ))}
-                </div>
-                <div className="mt-3 max-w-48">
-                  <Input
-                    type="number" inputMode="decimal" step="0.1" min={0}
-                    value={tread}
-                    onChange={(e) => setTread(e.target.value)}
-                    placeholder="หรือระบุทศนิยม เช่น 6.5"
-                  />
-                </div>
-              </div>
-
-              {mode !== 'mount' && (
-                <Field label="สาเหตุที่ถอด" required={mode === 'unmount'}>
-                  <Select value={reasonId} onChange={(e) => setReasonId(e.target.value)}>
+              <TireEntryFields
+                entry={unEntry}
+                onChange={(key, value) => setUnEntry((e) => ({ ...e, [key]: value }))}
+                serialLabel="เลขยางที่ถอด (ซีเรียล)"
+                serialError={
+                  unMismatch
+                    ? `ไม่ตรงกับที่ระบบบันทึกไว้ (${slotTire!.serial_no}) — ตรวจสอบเลขยางอีกครั้ง`
+                    : undefined
+                }
+                lockedInfo={unMatched && slotTire ? slotTire : null}
+                treadLabel="ดอกยางที่วัดได้ (มม.)"
+                extra={
+                  <>
+                    {!unMatched && (
+                      <Field
+                        label="เลขไมล์ตอนใส่ยางเส้นนี้ (ถ้าทราบ)"
+                        className="max-w-64"
+                        hint="ใส่เพื่อให้ระบบคำนวณระยะวิ่งรอบนี้ ถ้าไม่ทราบให้เว้นว่าง"
+                        error={
+                          unEntry.mounted_odometer.trim() !== '' &&
+                          Number(unEntry.mounted_odometer) > Number(odometer)
+                            ? 'ต้องไม่มากกว่าเลขไมล์ปัจจุบัน'
+                            : undefined
+                        }
+                      >
+                        <Input
+                          type="number" inputMode="numeric" min={0}
+                          value={unEntry.mounted_odometer}
+                          onChange={(e) => setUnEntry((x) => ({ ...x, mounted_odometer: e.target.value }))}
+                          placeholder="เช่น 120000"
+                        />
+                      </Field>
+                    )}
+                    <Field label="หมายเหตุ">
+                      <Textarea
+                        value={unEntry.note}
+                        onChange={(e) => setUnEntry((x) => ({ ...x, note: e.target.value }))}
+                        placeholder="ระบุหมายเหตุ (ถ้ามี)"
+                      />
+                    </Field>
+                  </>
+                }
+              >
+                <Field label="สาเหตุที่ถอด" required className="max-w-md">
+                  <Select value={unReasonId} onChange={(e) => setUnReasonId(e.target.value)}>
                     <option value="">— เลือกสาเหตุ —</option>
                     {reasons.map((r) => (
                       <option key={r.id} value={r.id}>
@@ -920,356 +872,452 @@ export function ServiceWizard({
                     ))}
                   </Select>
                 </Field>
-              )}
+              </TireEntryFields>
 
-              <Field label="หมายเหตุ">
-                <Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="ระบุหมายเหตุ (ถ้ามี)" />
-              </Field>
-            </CardBody>
-          </Card>
-
-          <div className="space-y-4 xl:col-span-2">
-            {mode === 'rotate' ? (
-              <Card>
-                <CardHeader title="เลือกตำแหน่งปลายทาง" description="แตะตำแหน่งว่างที่จะย้ายยางไปติดตั้ง" />
-                <CardBody>
-                  <WheelDiagram
-                    axleType={vehicle.axle_type}
-                    slots={previewSlots}
-                    selected={targetPosition}
-                    onSelect={(pos) => setTargetPosition(pos.code)}
-                    mode="mount"
-                  />
-                </CardBody>
-              </Card>
-            ) : (
-              <Card>
-                <CardHeader title="สรุปตำแหน่ง" />
-                <CardBody>
-                  <WheelDiagram
-                    axleType={vehicle.axle_type}
-                    slots={previewSlots}
-                    selected={position}
-                    mode="view"
-                  />
-                </CardBody>
-              </Card>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* -------------------------------------------------- STEP 4 */}
-      {step === 4 && vehicle && (
-        <div className="grid gap-4 lg:grid-cols-5">
-          <Card className="lg:col-span-3">
-            <CardHeader
-              title={`รายการที่จะบันทึก (${formatNumber(items.length)})`}
-              description="ตรวจสอบให้ครบก่อนกดบันทึก — ระบบจะบันทึกทั้งชุดพร้อมกัน ถ้ามีรายการใดผิดพลาดจะไม่บันทึกเลยสักรายการ"
-              action={
-                <Button size="sm" variant="secondary" onClick={() => setStep(2)}>
-                  <Plus className="size-4" />
-                  เพิ่มรายการ
-                </Button>
-              }
-            />
-            {items.length === 0 ? (
-              <EmptyState
-                icon={<CircleDot className="size-6" />}
-                title="ยังไม่มีรายการในชุดนี้"
-                description="กด “เพิ่มรายการ” เพื่อเลือกยางและตำแหน่งที่ต้องการทำ"
-                action={<Button onClick={() => setStep(2)}><Plus className="size-4.5" />เพิ่มรายการ</Button>}
-              />
-            ) : (
-              <CardBody className="space-y-2.5">
-                {items.map((item, index) => (
-                  <div
-                    key={item.key}
-                    className="flex items-start gap-3 rounded-xl border border-line bg-white p-3.5"
-                  >
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-sm font-semibold text-brand-700">
-                      {index + 1}
-                    </span>
-                    <TireThumb src={itemImage(item)} alt={item.serialNo} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge tone={ITEM_TONE[item.kind]}>{ITEM_LABEL[item.kind]}</Badge>
-                        <span className="font-medium text-ink-900">{item.serialNo}</span>
-                        {item.kind === 'manual_unmount' && <Badge tone="amber">คีย์ข้อมูลเอง</Badge>}
-                      </div>
-                      <p className="mt-1 text-sm text-ink-500">
-                        {item.kind === 'rotate'
-                          ? `${positionLabel(item.positionCode, vehicle.axle_type)} → ${positionLabel(item.targetPosition, vehicle.axle_type)}`
-                          : positionLabel(item.positionCode, vehicle.axle_type)}
-                        {item.brandModel ? ` · ${item.brandModel}` : ''}
-                      </p>
-                      <p className="mt-0.5 text-xs text-ink-400">
-                        {[
-                          item.treadMm !== null ? `ดอกยาง ${item.treadMm} มม.` : null,
-                          item.reasonLabel || null,
-                          item.note,
-                        ]
-                          .filter(Boolean)
-                          .join(' · ') || 'ไม่มีรายละเอียดเพิ่มเติม'}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => removeItem(item.key)}
-                      aria-label="ลบรายการนี้"
-                      className="flex size-11 shrink-0 items-center justify-center rounded-lg text-ink-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
-                    >
-                      <Trash2 className="size-4.5" />
-                    </button>
-                  </div>
-                ))}
-              </CardBody>
-            )}
-          </Card>
-
-          <div className="space-y-4 lg:col-span-2">
-            <Card>
-              <CardHeader title="ข้อมูลรวมของชุดนี้" description="ใช้กับทุกรายการในชุด" />
-              <CardBody className="space-y-3">
-                <Row label="รถ" value={`${vehicle.plate_no} ${vehicle.province}`} />
-                <Row label="วันที่" value={eventDate} />
-                <Row label="เลขไมล์" value={formatKm(Number(odometer))} />
-                <Row label="จำนวนรายการ" value={`${formatNumber(items.length)} รายการ`} />
-                <Row
-                  label="ถอด / ใส่ / สลับ"
-                  value={`${counts.unmount} / ${counts.mount} / ${counts.rotate}`}
-                />
-              </CardBody>
-            </Card>
-
-            <Card>
-              <CardHeader title="ผังล้อหลังบันทึก" description="ภาพรวมตำแหน่งยางเมื่อทุกรายการถูกบันทึกแล้ว" />
-              <CardBody>
-                <WheelDiagram axleType={vehicle.axle_type} slots={previewSlots} mode="view" />
-              </CardBody>
-            </Card>
-          </div>
-        </div>
-      )}
-
-      {/* ------------------------------------------------ nav footer */}
-      <div className="safe-bottom sticky bottom-0 z-20 mt-6 flex items-center justify-between gap-3 border-t border-line bg-surface/85 px-1 py-4 backdrop-blur">
-        <Button
-          variant="secondary"
-          onClick={() => (step === 1 ? resetAll() : setStep((s) => s - 1))}
-          disabled={saving}
-        >
-          <ArrowLeft className="size-4.5" />
-          {step === 1 ? 'ล้างข้อมูล' : 'ย้อนกลับ'}
-        </Button>
-
-        <div className="hidden items-center gap-3 text-sm text-ink-400 sm:flex">
-          <span>ขั้นตอนที่ {step} จาก {STEPS.length} — {STEPS[step - 1]}</span>
-          {items.length > 0 && step !== 4 && (
-            <button
-              type="button"
-              onClick={() => setStep(4)}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-brand-50 px-3 py-1.5 font-medium text-brand-700 hover:bg-brand-100"
-            >
-              <ListChecks className="size-4" />
-              ในชุดนี้ {formatNumber(items.length)} รายการ
-            </button>
+              <Button className="w-full" size="lg" onClick={saveUnmount} disabled={!canSaveUnmount}>
+                <Check className="size-4.5" />
+                บันทึกการถอด แล้วใส่ยางล้อนี้ต่อ
+              </Button>
+            </div>
           )}
-        </div>
 
-        {step < 3 ? (
-          <Button size="lg" onClick={() => setStep((s) => s + 1)} disabled={!canNext}>
-            ถัดไป
-            <ArrowRight className="size-4.5" />
+          {vehicle && position && stage === 'mount' && (
+            <div className="max-w-3xl space-y-4">
+              <p className="flex flex-wrap items-center gap-2 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800 ring-1 ring-inset ring-emerald-100">
+                <Check className="size-4 shrink-0" />
+                ถอด{' '}
+                <span className="font-medium">
+                  {items[items.length - 1]?.serialNo}
+                </span>{' '}
+                ออกจาก {wheelName(position)} แล้ว — คีย์ยางเส้นใหม่ที่ใส่แทน
+              </p>
+
+              <TireEntryFields
+                entry={mnEntry}
+                onChange={(key, value) => setMnEntry((e) => ({ ...e, [key]: value }))}
+                serialLabel="เลขยางที่ใส่ (ซีเรียล)"
+                serialError={mountBlocked ?? undefined}
+                serialHint={
+                  mountCandidate && !mountBlocked
+                    ? 'พบยางเส้นนี้ในระบบแล้ว — ใช้ข้อมูลเดิม'
+                    : 'ถ้ายังไม่มีในระบบ ระบบจะสร้างให้จากข้อมูลที่คีย์'
+                }
+                lockedInfo={mountCandidate && !mountBlocked ? mountCandidate : null}
+                treadLabel="ดอกยางที่วัดได้ (มม.)"
+                extra={
+                  <Field label="หมายเหตุ">
+                    <Textarea
+                      value={mnEntry.note}
+                      onChange={(e) => setMnEntry((x) => ({ ...x, note: e.target.value }))}
+                      placeholder="ระบุหมายเหตุ (ถ้ามี)"
+                    />
+                  </Field>
+                }
+              />
+
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Button className="flex-1" size="lg" onClick={saveMount} disabled={!canSaveMount}>
+                  <Check className="size-4.5" />
+                  บันทึกการใส่ยาง
+                </Button>
+                <Button variant="secondary" size="lg" onClick={skipMount}>
+                  <SkipForward className="size-4.5" />
+                  ไม่ใส่ยางล้อนี้
+                </Button>
+              </div>
+            </div>
+          )}
+        </StepSection>
+
+        {/* ------------------------------------- ขั้นที่ 4 : รายการ + เสร็จสิ้น */}
+        <StepSection
+          index={4}
+          title="รายการที่ทำแล้ว"
+          description="ทำล้อถัดไปได้เรื่อย ๆ หรือกด “เสร็จสิ้น” เพื่อบันทึกทั้งชุดพร้อมกัน"
+          locked={!reviewOpen}
+          lockedText="ยังไม่มีรายการ — เริ่มจากแตะล้อบนแผนผัง"
+          badge={<Badge tone="brand">{items.length} รายการ</Badge>}
+        >
+          {vehicle && (
+            <div className="grid gap-4 lg:grid-cols-5">
+              <div className="lg:col-span-3">
+                <DraftList
+                  items={items}
+                  wheelName={wheelName}
+                  itemImage={itemImage}
+                  onRemove={removeItem}
+                />
+              </div>
+
+              <div className="lg:col-span-2">
+                <p className="mb-2 text-sm font-medium text-ink-700">ผังล้อหลังบันทึก</p>
+                <WheelDiagram
+                  axleType={vehicle.axle_type}
+                  axleTypes={axleTypes}
+                  slots={previewSlots}
+                  mode="view"
+                />
+              </div>
+            </div>
+          )}
+        </StepSection>
+      </div>
+
+      {/* ------------------------------------------------ แถบบันทึกด้านล่าง */}
+      {vehicle && (
+        <div className="safe-bottom sticky bottom-0 z-20 mt-6 flex items-center justify-between gap-3 border-t border-line bg-surface/85 px-1 py-4 backdrop-blur">
+          <Button variant="secondary" onClick={resetAll} disabled={saving || items.length === 0}>
+            <RotateCcw className="size-4.5" />
+            ล้างรายการ
           </Button>
-        ) : step === 3 ? (
-          <Button
-            size="lg"
-            onClick={() => { if (addCurrentItem()) setStep(4) }}
-            disabled={!canNext}
-          >
-            <Plus className="size-4.5" />
-            เพิ่มลงรายการ
-          </Button>
-        ) : (
+
+          <span className="hidden text-sm text-ink-400 sm:block">
+            {position
+              ? stage === 'unmount'
+                ? 'กำลังคีย์ยางที่ถอด'
+                : 'กำลังคีย์ยางที่ใส่'
+              : items.length === 0
+                ? 'แตะล้อบนแผนผังเพื่อเริ่ม'
+                : `ทำแล้ว ${touchedPositions.size} ล้อ`}
+          </span>
+
           <Button
             size="lg"
             variant="success"
             onClick={handleSubmit}
             loading={saving}
-            disabled={items.length === 0}
+            disabled={items.length === 0 || Boolean(position)}
           >
             <Check className="size-4.5" />
-            บันทึกทั้งหมด ({formatNumber(items.length)})
+            เสร็จสิ้น ({formatNumber(items.length)})
           </Button>
-        )}
-      </div>
-
-      <TireFormModal
-        open={tireFormOpen}
-        onClose={() => setTireFormOpen(false)}
-        models={models}
-        onCreated={(newTireId) => setTireId(newTireId)}
-      />
+        </div>
+      )}
     </>
   )
 }
 
 /* ------------------------------------------------------------ subviews */
 
-function Stepper({ step }: { step: number }) {
+/**
+ * กล่องของ 1 ขั้นตอนบนหน้าเดียว — ขั้นที่ยังไม่ถึงจะล็อกไว้ (เห็นหัวข้อแต่เปิดไม่ได้)
+ * และจะเปิดเนื้อหาออกมาเองเมื่อขั้นก่อนหน้าทำเสร็จ
+ */
+function StepSection({
+  index,
+  title,
+  description,
+  lockedText,
+  locked = false,
+  done = false,
+  badge,
+  action,
+  sectionRef,
+  children,
+}: {
+  index: number
+  title: string
+  description: string
+  lockedText?: string
+  locked?: boolean
+  done?: boolean
+  badge?: React.ReactNode
+  action?: React.ReactNode
+  sectionRef?: React.RefObject<HTMLElement | null>
+  children: React.ReactNode
+}) {
   return (
-    <ol className="mb-6 flex items-center gap-2 overflow-x-auto pb-1">
-      {STEPS.map((label, i) => {
-        const index = i + 1
-        const state = index < step ? 'done' : index === step ? 'current' : 'todo'
-        return (
-          <li key={label} className="flex shrink-0 items-center gap-2">
-            <span
-              className={cn(
-                'flex size-8 items-center justify-center rounded-full text-sm font-semibold transition-colors',
-                state === 'done' && 'bg-brand-100 text-brand-700',
-                state === 'current' && 'bg-brand-600 text-white',
-                state === 'todo' && 'bg-slate-100 text-ink-400',
-              )}
-            >
-              {state === 'done' ? <Check className="size-4" /> : index}
-            </span>
-            <span
-              className={cn(
-                'text-sm',
-                state === 'current'
-                  ? 'font-medium text-ink-900'
-                  : 'hidden text-ink-400 sm:inline',
-              )}
-            >
-              {label}
-            </span>
-            {index < STEPS.length && <span className="mx-1 h-px w-6 bg-line sm:w-10" />}
-          </li>
-        )
-      })}
-    </ol>
+    <section
+      ref={sectionRef}
+      className={cn(
+        'scroll-mt-32 overflow-hidden rounded-2xl border bg-white',
+        locked ? 'border-dashed border-line' : 'border-line shadow-[0_1px_2px_rgba(15,23,42,0.04)]',
+      )}
+    >
+      <header
+        className={cn(
+          'flex flex-wrap items-center gap-3 px-4 py-3.5 sm:px-5',
+          !locked && 'border-b border-line/70',
+          locked && 'opacity-60',
+        )}
+      >
+        <span
+          className={cn(
+            'flex size-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold',
+            locked && 'bg-slate-100 text-ink-400',
+            !locked && done && 'bg-emerald-50 text-emerald-600',
+            !locked && !done && 'bg-brand-600 text-white',
+          )}
+        >
+          {locked ? <Lock className="size-4" /> : done ? <Check className="size-4.5" /> : index}
+        </span>
+
+        <div className="min-w-0 flex-1">
+          <p className="text-[17px] font-semibold text-ink-900">{title}</p>
+          <p className="text-sm text-ink-500">{locked ? lockedText : description}</p>
+        </div>
+
+        {!locked && badge}
+        {!locked && action}
+      </header>
+
+      {!locked && <div className="p-4 sm:p-5">{children}</div>}
+    </section>
   )
 }
 
 /**
- * ฟอร์มคีย์ข้อมูลยางเองตอนถอด — ใช้เมื่อหน้างานมียางอยู่จริงแต่ระบบยังไม่มีข้อมูลยางเส้นนั้น
- * กรอกเท่าที่ทราบได้ ระบบจะสร้างประวัติยางให้พร้อมบันทึกการถอด
+ * ชุดช่องคีย์ข้อมูลยาง 1 เส้น ใช้ร่วมกันทั้งตอนถอดและตอนใส่
+ *
+ * โชว์เฉพาะช่องที่ต้องคีย์จริง (เลขยาง · ขนาด · ยี่ห้อ · รุ่น · ดอกยาง)
+ * ส่วนที่ไม่จำเป็นซ่อนไว้ใต้ "รายละเอียดเพิ่มเติม"
+ * ถ้ายางเส้นนั้นมีข้อมูลในระบบอยู่แล้ว จะโชว์ยี่ห้อ/รุ่นจากระบบแทนการให้คีย์ซ้ำ
  */
-function ManualTireCard({
-  manual,
-  models,
-  positionText,
+function TireEntryFields({
+  entry,
   onChange,
-  onPickModel,
+  serialLabel,
+  serialHint,
+  serialError,
+  lockedInfo,
+  treadLabel,
+  extra,
+  children,
 }: {
-  manual: ManualTire
-  models: ModelOption[]
-  positionText: string
-  onChange: <K extends keyof ManualTire>(key: K, value: ManualTire[K]) => void
-  onPickModel: (id: string) => void
+  entry: TireEntry
+  onChange: <K extends keyof TireEntry>(key: K, value: string) => void
+  serialLabel: string
+  serialHint?: string
+  serialError?: string
+  /** ยางที่ระบบรู้จักแล้ว — ถ้ามี ไม่ต้องคีย์ยี่ห้อ/รุ่นซ้ำ */
+  lockedInfo: TireLite | null
+  treadLabel: string
+  /** ช่องเสริมที่ซ่อนไว้ใต้ "รายละเอียดเพิ่มเติม" */
+  extra?: React.ReactNode
+  /** ช่องบังคับของแต่ละขั้น (เช่น สาเหตุที่ถอด) แสดงต่อจากดอกยาง */
+  children?: React.ReactNode
 }) {
   return (
-    <Card className="border-amber-200">
-      <CardHeader
-        title="คีย์ข้อมูลยางเอง"
-        description={`ตำแหน่ง ${positionText} ยังไม่มีข้อมูลยางในระบบ — กรอกเท่าที่ทราบ`}
-        action={
-          <Badge tone="amber">
-            <PencilLine className="size-3.5" />
-            บันทึกเอง
-          </Badge>
-        }
-      />
-      <CardBody className="space-y-4">
-        <Field label="เลขยาง (ซีเรียล)" required hint="ถ้าอ่านเลขยางไม่ได้ ให้ระบุรหัสอ้างอิงที่จำได้ เช่น NO-SERIAL-01">
-          <Input
-            value={manual.serial_no}
-            onChange={(e) => onChange('serial_no', e.target.value)}
-            placeholder="T-295/80R22.5-010"
-            autoFocus
+    <div className="space-y-4">
+      <Field
+        label={serialLabel}
+        required
+        hint={serialError ? undefined : serialHint ?? 'อ่านเลขจากยางเส้นจริงแล้วคีย์ทุกครั้ง'}
+        error={serialError}
+      >
+        <Input
+          value={entry.serial_no}
+          onChange={(e) => onChange('serial_no', e.target.value)}
+          placeholder="T-295/80R22.5-010"
+          autoFocus
+        />
+      </Field>
+
+      {lockedInfo ? (
+        <div className="flex items-center gap-3 rounded-xl bg-emerald-50 p-3 ring-1 ring-inset ring-emerald-100">
+          <TireThumb
+            src={lockedInfo.image_url}
+            alt={[lockedInfo.brand_name, lockedInfo.model_name].filter(Boolean).join(' ')}
+            size="lg"
           />
-        </Field>
-
-        {models.length > 0 && (
-          <Field label="เลือกรุ่นจากแคตตาล็อก (ถ้ามี)">
-            <Select value={manual.tire_model_id} onChange={(e) => onPickModel(e.target.value)}>
-              <option value="">— ไม่เลือก / พิมพ์เอง —</option>
-              {models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.brand} {m.model}{m.size ? ` · ${m.size}` : ''}
-                </option>
-              ))}
-            </Select>
+          <div className="min-w-0">
+            <p className="truncate font-semibold text-ink-900">{lockedInfo.serial_no}</p>
+            <TireSpec
+              size={lockedInfo.size}
+              brandName={lockedInfo.brand_name}
+              modelName={lockedInfo.model_name}
+              className="mt-1"
+              detailClassName="text-sm text-ink-500"
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Field label="ขนาด">
+            <Input
+              value={entry.size}
+              onChange={(e) => onChange('size', e.target.value)}
+              placeholder="295/80R22.5"
+            />
           </Field>
-        )}
-
-        <div className="grid gap-4 sm:grid-cols-2">
           <Field label="ยี่ห้อ">
             <Input
-              value={manual.brand_name}
+              value={entry.brand_name}
               onChange={(e) => onChange('brand_name', e.target.value)}
               placeholder="MICHELIN"
             />
           </Field>
           <Field label="รุ่น">
             <Input
-              value={manual.model_name}
+              value={entry.model_name}
               onChange={(e) => onChange('model_name', e.target.value)}
               placeholder="X MULTI Z"
             />
           </Field>
-          <Field label="ขนาด">
+        </div>
+      )}
+
+      <TreadPicker
+        label={treadLabel}
+        value={entry.tread_mm}
+        onChange={(v) => onChange('tread_mm', v)}
+        max={12}
+      />
+
+      {children}
+
+      <MoreDetails>
+        {!lockedInfo && (
+          <Field label="DOT" className="max-w-64">
             <Input
-              value={manual.size}
-              onChange={(e) => onChange('size', e.target.value)}
-              placeholder="295/80R22.5"
-            />
-          </Field>
-          <Field label="DOT">
-            <Input
-              value={manual.dot}
+              value={entry.dot}
               onChange={(e) => onChange('dot', e.target.value)}
               placeholder="2323"
             />
           </Field>
-        </div>
-
-        <Field label="ดอกยางตอนใหม่ (มม.)" className="max-w-40">
-          <Input
-            type="number" inputMode="decimal" step="0.1" min={0}
-            value={manual.new_tread_mm}
-            onChange={(e) => onChange('new_tread_mm', e.target.value)}
-            placeholder="16"
-          />
-        </Field>
-      </CardBody>
-    </Card>
+        )}
+        {extra}
+      </MoreDetails>
+    </div>
   )
 }
 
-function VehicleCard({ vehicle, mountedCount }: { vehicle: VehicleLite; mountedCount: number }) {
-  const layout = getLayout(vehicle.axle_type)
+/** ช่องที่ไม่ค่อยได้ใช้ — ซ่อนไว้ก่อน กดเปิดเมื่อจำเป็น */
+function MoreDetails({ children }: { children: React.ReactNode }) {
+  const [open, setOpen] = React.useState(false)
   return (
-    <Card>
-      <CardHeader title="ข้อมูลยานพาหนะ" />
-      <CardBody className="space-y-3">
-        <div className="flex items-center gap-3">
-          <span className="flex size-12 items-center justify-center rounded-xl bg-brand-50 text-brand-500">
-            <Truck className="size-6" />
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1.5 rounded-lg px-1 py-1.5 text-sm font-medium text-brand-700 hover:text-brand-800"
+      >
+        <ChevronDown className={cn('size-4 transition-transform', open && 'rotate-180')} />
+        {open ? 'ซ่อนรายละเอียดเพิ่มเติม' : 'รายละเอียดเพิ่มเติม (ไม่บังคับ)'}
+      </button>
+      {open && <div className="mt-3 space-y-4">{children}</div>}
+    </div>
+  )
+}
+
+/**
+ * แผงเลือกค่าดอกยางแบบกดตัวเลข (นิ้วเดียวจบ) พร้อมช่องพิมพ์ทศนิยม
+ */
+function TreadPicker({
+  label,
+  value,
+  onChange,
+  max = 9,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  /** ตัวเลขสูงสุดของปุ่มกด (0..max) — default 9 */
+  max?: number
+}) {
+  return (
+    <div>
+      <p className="mb-1.5 text-sm font-medium text-ink-700">{label}</p>
+      <div className="grid max-w-md grid-cols-5 gap-2">
+        {Array.from({ length: max + 1 }, (_, i) => i).map((n) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => onChange(String(n))}
+            className={cn(
+              'h-12 rounded-xl border text-lg font-semibold transition-all active:scale-95',
+              Number(value) === n && value !== ''
+                ? 'border-brand-600 bg-brand-600 text-white'
+                : 'border-line bg-white text-ink-700 hover:border-brand-300 hover:bg-brand-50',
+            )}
+          >
+            {n}
+          </button>
+        ))}
+      </div>
+      <div className="mt-3 max-w-48">
+        <Input
+          type="number" inputMode="decimal" step="0.1" min={0}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="หรือระบุทศนิยม เช่น 6.5"
+        />
+      </div>
+    </div>
+  )
+}
+
+/** รายการที่คีย์ไว้แล้วในชุดนี้ พร้อมปุ่มลบทีละรายการ */
+function DraftList({
+  items,
+  wheelName,
+  itemImage,
+  onRemove,
+}: {
+  items: DraftItem[]
+  wheelName: (code: string) => string
+  itemImage: (item: DraftItem) => string | null
+  onRemove: (key: string) => void
+}) {
+  if (items.length === 0) {
+    return (
+      <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-ink-400">
+        ยังไม่มีรายการ — แตะล้อบนแผนผังเพื่อเริ่ม
+      </p>
+    )
+  }
+
+  return (
+    <div className="space-y-2.5">
+      {items.map((item, index) => (
+        <div
+          key={item.key}
+          className="flex items-start gap-3 rounded-xl border border-line bg-white p-3.5"
+        >
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-sm font-semibold text-brand-700">
+            {index + 1}
           </span>
-          <div>
-            <p className="text-lg font-semibold text-ink-900">{vehicle.plate_no}</p>
-            <p className="text-sm text-ink-500">{vehicle.province}</p>
+          <TireThumb src={itemImage(item)} alt={item.serialNo} />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={ITEM_TONE[item.kind]}>{ITEM_LABEL[item.kind]}</Badge>
+              <span className="font-medium text-ink-900">{item.serialNo}</span>
+              {item.kind === 'manual_mount' && (
+                <Badge tone="brand">
+                  <PencilLine className="size-3.5" />
+                  สร้างใหม่
+                </Badge>
+              )}
+            </div>
+            <p className="mt-1 text-sm text-ink-500">{wheelName(item.positionCode)}</p>
+            <TireSpec
+              size={item.size}
+              brandName={item.brandName}
+              modelName={item.modelName}
+              className="mt-1"
+              sizeClassName="text-sm"
+            />
+            <p className="mt-0.5 text-xs text-ink-400">
+              {[
+                item.treadMm !== null ? `ดอกยาง ${item.treadMm} มม.` : null,
+                item.reasonLabel || null,
+                item.note,
+              ]
+                .filter(Boolean)
+                .join(' · ') || 'ไม่มีรายละเอียดเพิ่มเติม'}
+            </p>
           </div>
+          <button
+            type="button"
+            onClick={() => onRemove(item.key)}
+            aria-label="ลบรายการนี้"
+            className="flex size-11 shrink-0 items-center justify-center rounded-lg text-ink-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
+          >
+            <Trash2 className="size-4.5" />
+          </button>
         </div>
-        <Row label="ประเภทรถ" value={layout.name} />
-        <Row label="ยี่ห้อ / รุ่น" value={[vehicle.brand, vehicle.model].filter(Boolean).join(' ') || '-'} />
-        <Row label="เลขไมล์ปัจจุบัน" value={formatKm(vehicle.current_mileage)} />
-        <Row label="ยางที่ติดตั้ง" value={`${mountedCount}/${layout.wheelCount} เส้น`} />
-      </CardBody>
-    </Card>
+      ))}
+    </div>
   )
 }
 
@@ -1299,24 +1347,5 @@ function StatChip({
       <span className="opacity-70">{label}</span>
       <span className="font-semibold">{value}</span>
     </span>
-  )
-}
-
-function Row({
-  label,
-  value,
-  highlight,
-}: {
-  label: string
-  value: React.ReactNode
-  highlight?: boolean
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 border-b border-line/70 pb-2 last:border-0 last:pb-0">
-      <span className="text-sm text-ink-500">{label}</span>
-      <span className={cn('text-right text-[15px] font-medium text-ink-900', highlight && 'text-amber-600')}>
-        {value}
-      </span>
-    </div>
   )
 }

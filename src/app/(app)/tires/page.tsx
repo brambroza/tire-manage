@@ -12,6 +12,7 @@ interface ModelRow {
   name: string
   size: string | null
   pattern_code: string | null
+  new_tread_mm: number | null
   image_url: string | null
   tire_brands: { name: string } | null
 }
@@ -30,7 +31,7 @@ export default async function TiresPage({
     supabase.from('tires').select('*').limit(2000),
     supabase
       .from('tire_models')
-      .select('id, name, size, pattern_code, image_url, tire_brands(name)')
+      .select('id, name, size, pattern_code, new_tread_mm, image_url, tire_brands(name)')
       .eq('is_active', true)
       .order('name'),
   ])
@@ -67,6 +68,7 @@ export default async function TiresPage({
     model: m.name,
     size: m.size,
     pattern_code: m.pattern_code,
+    new_tread_mm: m.new_tread_mm,
     image_url: m.image_url,
   }))
 

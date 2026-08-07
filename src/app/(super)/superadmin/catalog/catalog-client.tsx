@@ -9,6 +9,7 @@ import {
 } from '@/components/ui'
 import { Modal } from '@/components/ui/modal'
 import { TireThumb } from '@/components/tire-thumb'
+import { TireSpec } from '@/components/tire-spec'
 import {
   createBrand, createModel, deleteTireImage, setBrandActive, setModelActive, updateModel,
   uploadTireImage, type ModelInput,
@@ -22,6 +23,7 @@ export interface CatalogModel {
   name: string
   size: string | null
   pattern_code: string | null
+  new_tread_mm: number | null
   image_url: string | null
   is_active: boolean
   created_by_company: string | null
@@ -31,10 +33,10 @@ export interface CatalogModel {
 }
 
 const EMPTY_MODEL: ModelInput = {
-  brand_id: '', name: '', size: '', pattern_code: '', image_url: '',
+  brand_id: '', name: '', size: '', pattern_code: '', new_tread_mm: 16, image_url: '',
 }
 
-/** จัดการข้อมูลยางกลาง: ยี่ห้อ / รุ่น / ขนาด / รหัสดอกยาง */
+/** จัดการข้อมูลยางกลาง: ยี่ห้อ / รุ่น / ขนาด / รหัสดอกยาง / ดอกยางตอนใหม่ */
 export function CatalogClient({
   brands,
   models,
@@ -88,6 +90,7 @@ export function CatalogClient({
       name: m.name,
       size: m.size ?? '',
       pattern_code: m.pattern_code ?? '',
+      new_tread_mm: m.new_tread_mm,
       image_url: m.image_url ?? '',
     })
     setError(null)
@@ -215,7 +218,7 @@ export function CatalogClient({
       {/* รุ่น */}
       <Card className="xl:col-span-3">
         <CardHeader
-          title="รุ่นยาง / ซีรีส์ / รหัสดอกยาง"
+          title="รุ่นยาง / ซีรีส์ / ข้อมูลดอกยาง"
           description="ข้อมูลกลางที่นำไปกำหนดสิทธิ์ให้ลูกค้าแต่ละราย"
           action={
             <Button size="sm" onClick={openCreateModel} disabled={brands.length === 0}>
@@ -232,14 +235,13 @@ export function CatalogClient({
           />
         ) : (
           <TableWrap>
-            <Table className="min-w-[760px]">
+            <Table className="min-w-[820px]">
               <thead>
                 <tr>
                   <Th className="w-16">รูป</Th>
-                  <Th>ยี่ห้อ</Th>
-                  <Th>รุ่น</Th>
-                  <Th>ขนาด</Th>
+                  <Th>ขนาด / ยี่ห้อ รุ่น</Th>
                   <Th>รหัสดอกยาง</Th>
+                  <Th className="text-right">ดอกยางตอนใหม่</Th>
                   <Th className="text-right">ยางในระบบ</Th>
                   <Th>ที่มา</Th>
                   <Th>สถานะ</Th>
@@ -252,10 +254,13 @@ export function CatalogClient({
                     <Td>
                       <TireThumb src={m.image_url} alt={`${m.brand_name} ${m.name}`} />
                     </Td>
-                    <Td className="font-medium text-ink-900">{m.brand_name}</Td>
-                    <Td>{m.name}</Td>
-                    <Td>{m.size ?? '-'}</Td>
+                    <Td>
+                      <TireSpec size={m.size} brandName={m.brand_name} modelName={m.name} />
+                    </Td>
                     <Td>{m.pattern_code ?? '-'}</Td>
+                    <Td className="text-right">
+                      {m.new_tread_mm !== null ? `${m.new_tread_mm} มม.` : '-'}
+                    </Td>
                     <Td className="text-right">{m.tire_count}</Td>
                     <Td>
                       {m.created_by_company
@@ -321,6 +326,7 @@ export function CatalogClient({
       <Modal
         open={modelOpen}
         onClose={() => setModelOpen(false)}
+        size="lg"
         title={editing ? 'แก้ไขรุ่นยาง' : 'เพิ่มรุ่นยาง'}
         footer={
           <>
@@ -338,6 +344,13 @@ export function CatalogClient({
               <span>{error}</span>
             </div>
           )}
+          <Field label="ขนาด">
+            <Input
+              value={form.size ?? ''}
+              onChange={(e) => set('size', e.target.value)}
+              placeholder="295/80R22.5"
+            />
+          </Field>
           <Field label="ยี่ห้อ" required error={fieldErrors.brand_id}>
             <Select value={form.brand_id} onChange={(e) => set('brand_id', e.target.value)}>
               {brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
@@ -347,14 +360,26 @@ export function CatalogClient({
             <Input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="X MULTI Z" />
           </Field>
           <div className="grid gap-5 sm:grid-cols-2">
-            <Field label="ขนาด">
-              <Input value={form.size ?? ''} onChange={(e) => set('size', e.target.value)} placeholder="295/80R22.5" />
-            </Field>
             <Field label="รหัสดอกยาง">
               <Input
                 value={form.pattern_code ?? ''}
                 onChange={(e) => set('pattern_code', e.target.value)}
                 placeholder="MZ-295"
+              />
+            </Field>
+            <Field label="ดอกยางตอนใหม่ (มม.)" error={fieldErrors.new_tread_mm}>
+              <Input
+                type="number"
+                inputMode="decimal"
+                step="0.1"
+                min={0}
+                max={99.9}
+                value={form.new_tread_mm ?? ''}
+                onChange={(e) => set(
+                  'new_tread_mm',
+                  e.target.value === '' ? null : Number(e.target.value),
+                )}
+                placeholder="16.0"
               />
             </Field>
           </div>

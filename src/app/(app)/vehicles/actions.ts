@@ -5,7 +5,6 @@ import { z } from 'zod'
 import { requireSession } from '@/lib/auth'
 import { resolveCompanyScope } from '@/lib/company-scope'
 import { createClient } from '@/lib/supabase/server'
-import { AXLE_LAYOUTS } from '@/lib/axle-layouts'
 import { ActionResult, fail, optionalText, zodFail } from '@/lib/action-result'
 
 const vehicleSchema = z.object({
@@ -13,7 +12,7 @@ const vehicleSchema = z.object({
   province: z.string().trim().min(1, 'กรุณาเลือกจังหวัด'),
   brand: optionalText,
   model: optionalText,
-  axle_type: z.string().refine((v) => v in AXLE_LAYOUTS, 'ประเภทเพลาไม่ถูกต้อง'),
+  axle_type: z.string().trim().min(1, 'กรุณาเลือกประเภทเพลา').max(30),
   current_mileage: z.number().int().min(0, 'เลขไมล์ต้องไม่ติดลบ'),
   note: optionalText,
 })
@@ -45,6 +44,21 @@ export async function createVehicle(
   if (!parsed.success) return zodFail(parsed.error)
 
   const supabase = await createClient()
+  const { data: axleType, error: axleTypeError } = await supabase
+    .from('axle_types')
+    .select('code, is_active')
+    .eq('code', parsed.data.axle_type)
+    .maybeSingle()
+
+  if (axleTypeError) return fail(axleTypeError)
+  if (!axleType?.is_active) {
+    return {
+      ok: false,
+      error: 'ประเภทเพลานี้ไม่มีในระบบหรือถูกปิดใช้งาน',
+      fieldErrors: { axle_type: 'กรุณาเลือกประเภทเพลาที่เปิดใช้งาน' },
+    }
+  }
+
   const { data, error } = await supabase
     .from('vehicles')
     .insert({ ...parsed.data, company_id: scope.companyId })
@@ -67,6 +81,31 @@ export async function updateVehicle(id: string, input: VehicleInput): Promise<Ac
   if (!parsed.success) return zodFail(parsed.error)
 
   const supabase = await createClient()
+  const [currentResult, axleTypeResult] = await Promise.all([
+    supabase.from('vehicles').select('company_id, axle_type').eq('id', id).maybeSingle(),
+    supabase
+      .from('axle_types')
+      .select('code, is_active')
+      .eq('code', parsed.data.axle_type)
+      .maybeSingle(),
+  ])
+
+  if (currentResult.error) return fail(currentResult.error)
+  if (!currentResult.data) {
+    return { ok: false, error: 'ไม่พบรถที่ต้องการแก้ไข หรือคุณไม่มีสิทธิ์' }
+  }
+  if (axleTypeResult.error) return fail(axleTypeResult.error)
+  if (
+    !axleTypeResult.data ||
+    (!axleTypeResult.data.is_active && currentResult.data.axle_type !== parsed.data.axle_type)
+  ) {
+    return {
+      ok: false,
+      error: 'ประเภทเพลานี้ไม่มีในระบบหรือถูกปิดใช้งาน',
+      fieldErrors: { axle_type: 'กรุณาเลือกประเภทเพลาที่เปิดใช้งาน' },
+    }
+  }
+
   const { data, error } = await supabase
     .from('vehicles')
     .update(parsed.data)

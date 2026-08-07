@@ -4,6 +4,7 @@ import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import { Check } from 'lucide-react'
 import { Button, Card, CardBody, CardHeader } from '@/components/ui'
+import { TireSpec } from '@/components/tire-spec'
 import { cn } from '@/lib/utils'
 import { setCompanyTireModels } from '../../actions'
 
@@ -145,11 +146,13 @@ export function TireAccessClient({
                         >
                           {active && <Check className="size-3.5" />}
                         </span>
-                        <span className="min-w-0">
-                          <span className="block truncate text-[15px] font-medium text-ink-900">{m.model}</span>
-                          <span className="block truncate text-xs text-ink-400">
-                            {[m.size, m.pattern_code].filter(Boolean).join(' · ') || 'ไม่ระบุขนาด'}
-                          </span>
+                        <span className="min-w-0 flex-1">
+                          <TireSpec size={m.size} brandName={m.brand} modelName={m.model} />
+                          {m.pattern_code ? (
+                            <span className="mt-0.5 block truncate text-xs text-ink-400">
+                              รหัสดอกยาง {m.pattern_code}
+                            </span>
+                          ) : null}
                         </span>
                       </button>
                     )

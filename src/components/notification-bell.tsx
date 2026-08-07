@@ -4,6 +4,7 @@ import * as React from 'react'
 import Link from 'next/link'
 import { AlertTriangle, Bell, CheckCircle2, Gauge, Ruler } from 'lucide-react'
 import { TireThumb } from '@/components/tire-thumb'
+import { TireSpec } from '@/components/tire-spec'
 import { positionLabel } from '@/lib/axle-layouts'
 import { cn, formatKm, formatNumber } from '@/lib/utils'
 import type { NotificationFeed } from '@/lib/notifications'
@@ -101,9 +102,19 @@ export function NotificationBell({ feed }: { feed: NotificationFeed }) {
                       onClick={() => setOpen(false)}
                       className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-brand-50/60"
                     >
-                      <TireThumb src={a.imageUrl} alt={a.brandModel} />
+                      <TireThumb
+                        src={a.imageUrl}
+                        alt={[a.brandName, a.modelName].filter(Boolean).join(' ')}
+                      />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[15px] font-medium text-ink-900">{a.serialNo}</p>
+                        <TireSpec
+                          size={a.size}
+                          brandName={a.brandName}
+                          modelName={a.modelName}
+                          className="mt-1"
+                          sizeClassName="text-sm"
+                        />
                         <p className="truncate text-sm text-ink-500">
                           {a.plateNo ?? '-'} · {positionLabel(a.positionCode, a.vehicleAxleType)}
                         </p>

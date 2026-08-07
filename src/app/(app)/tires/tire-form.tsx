@@ -6,6 +6,7 @@ import { AlertCircle } from 'lucide-react'
 import { Modal } from '@/components/ui/modal'
 import { Button, Field, Input, Select, Textarea } from '@/components/ui'
 import { TireThumb } from '@/components/tire-thumb'
+import { tireSpecLabel } from '@/lib/tire-display'
 import { cn } from '@/lib/utils'
 import { createTire, ensureBrandModel, updateTire, type TireInput } from './actions'
 import type { Tire } from '@/lib/database.types'
@@ -16,6 +17,7 @@ export interface ModelOption {
   model: string
   size: string | null
   pattern_code: string | null
+  new_tread_mm: number | null
   image_url: string | null
 }
 
@@ -58,6 +60,7 @@ export function TireFormModal({
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
+  const isSuperAdmin = companyId !== undefined
 
   // รีเซ็ตค่าในฟอร์มเมื่อเปิด modal ใหม่ (ปรับ state ระหว่าง render ตามแนวทางของ React)
   const formKey = open ? tire?.id ?? 'new' : null
@@ -98,6 +101,7 @@ export function TireFormModal({
       brand_name: m?.brand ?? '',
       model_name: m?.model ?? '',
       size: m?.size ?? '',
+      new_tread_mm: m?.new_tread_mm ?? EMPTY.new_tread_mm,
     }))
   }
 
@@ -196,6 +200,13 @@ export function TireFormModal({
 
         {manual ? (
           <div className="grid gap-5 sm:grid-cols-3">
+            <Field label="ขนาด">
+              <Input
+                value={form.size ?? ''}
+                onChange={(e) => set('size', e.target.value)}
+                placeholder="295/80R22.5"
+              />
+            </Field>
             <Field label="ยี่ห้อ" required error={fieldErrors.brand_name}>
               <Input
                 value={form.brand_name ?? ''}
@@ -210,26 +221,26 @@ export function TireFormModal({
                 placeholder="X MULTI Z"
               />
             </Field>
-            <Field label="ขนาด">
-              <Input
-                value={form.size ?? ''}
-                onChange={(e) => set('size', e.target.value)}
-                placeholder="295/80R22.5"
-              />
-            </Field>
           </div>
         ) : (
           <div className="flex items-end gap-4">
             <Field
-              label="ยี่ห้อ / รุ่น"
-              hint={models.length === 0 ? 'ยังไม่มีรุ่นยางที่เปิดสิทธิ์ให้บริษัทนี้ — ใช้โหมดพิมพ์เองได้' : undefined}
+              label="ขนาด / ยี่ห้อ รุ่น"
+              hint={
+                models.length === 0
+                  ? 'ยังไม่มีรุ่นยางที่เปิดสิทธิ์ให้บริษัทนี้ — ใช้โหมดพิมพ์เองได้'
+                  : selectedModel
+                    ? `ดอกยางตอนใหม่จากแคตตาล็อก: ${selectedModel.new_tread_mm ?? EMPTY.new_tread_mm} มม.`
+                    : undefined
+              }
               className="flex-1"
             >
               <Select value={form.tire_model_id ?? ''} onChange={(e) => pickModel(e.target.value)}>
                 <option value="">— เลือกรุ่นยาง —</option>
                 {models.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.brand} {m.model}{m.size ? ` · ${m.size}` : ''}{m.pattern_code ? ` · ${m.pattern_code}` : ''}
+                    {tireSpecLabel({ size: m.size, brandName: m.brand, modelName: m.model })}
+                    {m.pattern_code ? ` · ${m.pattern_code}` : ''}
                   </option>
                 ))}
               </Select>
@@ -243,17 +254,19 @@ export function TireFormModal({
           </div>
         )}
 
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <div className={cn('grid gap-5 sm:grid-cols-2', isSuperAdmin ? 'lg:grid-cols-4' : 'lg:grid-cols-3')}>
           <Field label="DOT">
             <Input value={form.dot ?? ''} onChange={(e) => set('dot', e.target.value)} placeholder="2323" />
           </Field>
-          <Field label="ดอกยางตอนใหม่ (มม.)">
-            <Input
-              type="number" inputMode="decimal" step="0.1" min={0}
-              value={form.new_tread_mm ?? ''}
-              onChange={(e) => set('new_tread_mm', e.target.value === '' ? null : Number(e.target.value))}
-            />
-          </Field>
+          {isSuperAdmin ? (
+            <Field label="ดอกยางตอนใหม่ (มม.)">
+              <Input
+                type="number" inputMode="decimal" step="0.1" min={0}
+                value={form.new_tread_mm ?? ''}
+                onChange={(e) => set('new_tread_mm', e.target.value === '' ? null : Number(e.target.value))}
+              />
+            </Field>
+          ) : null}
           <Field label="ดอกยางปัจจุบัน (มม.)">
             <Input
               type="number" inputMode="decimal" step="0.1" min={0}

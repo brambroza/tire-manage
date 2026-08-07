@@ -7,18 +7,71 @@ import {
   Badge, Card, CardHeader, EmptyState, StatTile, Table, TableWrap, Td, Th,
 } from '@/components/ui'
 import { formatKm, formatNumber } from '@/lib/utils'
+import { TirePerformanceReport } from './tire-performance-report'
+import type { ReportFilterOption, TirePerformanceRow } from './tire-performance-types'
 import type { Company, TireOverview, Vehicle } from '@/lib/database.types'
 
 export const metadata = { title: 'ภาพรวมระบบ · Dream Tire Admin' }
+
+interface RemovalEventRecord {
+  id: string
+  company_id: string
+  event_date: string
+  distance_km: number | null
+  tread_mm: number | null
+  reason_id: string | null
+  note: string | null
+  tires: {
+    serial_no: string
+    tire_model_id: string | null
+    brand_name: string | null
+    model_name: string | null
+    size: string | null
+  } | null
+  removal_reasons: { name: string } | null
+}
+
+/** Supabase จำกัดจำนวนแถวต่อ request จึงอ่านประวัติเป็นหน้า ๆ เพื่อให้อันดับครอบคลุมทุกข้อมูล */
+async function loadAllRemovalEvents(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const pageSize = 1000
+  const rows: RemovalEventRecord[] = []
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from('tire_events')
+      .select('id, company_id, event_date, distance_km, tread_mm, reason_id, note, ' +
+        'tires(serial_no, tire_model_id, brand_name, model_name, size), removal_reasons(name)')
+      .eq('event_type', 'unmount')
+      .order('event_date', { ascending: false })
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(from, from + pageSize - 1)
+
+    if (error) throw new Error(`โหลดประวัติการเปลี่ยนยางไม่สำเร็จ: ${error.message}`)
+    const page = (data ?? []) as unknown as RemovalEventRecord[]
+    rows.push(...page)
+    if (page.length < pageSize) break
+  }
+
+  return rows
+}
 
 export default async function SuperDashboardPage() {
   await requireSession(['super_admin'])
   const supabase = await createClient()
 
-  const [{ data: companyData }, { data: tireData }, { data: vehicleData }] = await Promise.all([
+  const [
+    { data: companyData },
+    { data: tireData },
+    { data: vehicleData },
+    { data: reasonData },
+    removalEventData,
+  ] = await Promise.all([
     supabase.from('companies').select('*').order('name'),
     supabase.from('tire_overview').select('company_id, status, lifetime_km, current_run_km, alert_km'),
     supabase.from('vehicles').select('company_id, is_active'),
+    supabase.from('removal_reasons').select('id, name').order('sort_order'),
+    loadAllRemovalEvents(supabase),
   ])
 
   const companies = (companyData ?? []) as Company[]
@@ -26,6 +79,28 @@ export default async function SuperDashboardPage() {
     TireOverview, 'company_id' | 'status' | 'lifetime_km' | 'current_run_km' | 'alert_km'
   >[]
   const vehicles = (vehicleData ?? []) as Pick<Vehicle, 'company_id' | 'is_active'>[]
+  const companyNames = new Map(companies.map((company) => [company.id, company.name]))
+  const performanceRows: TirePerformanceRow[] = removalEventData.map((event) => ({
+    id: event.id,
+    companyId: event.company_id,
+    companyName: companyNames.get(event.company_id) ?? 'ไม่พบบริษัท',
+    eventDate: event.event_date,
+    serialNo: event.tires?.serial_no ?? '-',
+    tireModelId: event.tires?.tire_model_id ?? null,
+    brandName: event.tires?.brand_name ?? null,
+    modelName: event.tires?.model_name ?? null,
+    size: event.tires?.size ?? null,
+    distanceKm: event.distance_km,
+    treadMm: event.tread_mm,
+    reasonId: event.reason_id,
+    reasonName: event.removal_reasons?.name ?? null,
+    note: event.note,
+  }))
+  const companyOptions: ReportFilterOption[] = companies.map((company) => ({
+    id: company.id,
+    name: company.name,
+  }))
+  const reasonOptions = (reasonData ?? []) as ReportFilterOption[]
 
   // สรุปรายบริษัท
   const summary = companies.map((c) => {
@@ -67,6 +142,12 @@ export default async function SuperDashboardPage() {
           tone="brand" icon={<Gauge className="size-4.5" />}
         />
       </div>
+
+      <TirePerformanceReport
+        rows={performanceRows}
+        companies={companyOptions}
+        reasons={reasonOptions}
+      />
 
       <Card className="mt-4">
         <CardHeader title="การใช้งานรายบริษัท" description="คลิกชื่อบริษัทเพื่อดูรายละเอียดและกำหนดสิทธิ์ยาง" />

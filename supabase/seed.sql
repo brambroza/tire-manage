@@ -13,24 +13,34 @@ insert into public.removal_reasons (code, name, is_scrap, sort_order) values
   ('RETREAD',    'ส่งหล่อดอก',        false, 6)
 on conflict (code) do nothing;
 
+-- ประเภทเพลา (super admin แก้ไข/เพิ่มได้ภายหลัง) ---------------
+insert into public.axle_types (code, name, axle_kinds, sort_order) values
+  ('4W',        'รถ 4 ล้อ (เพลาเดี่ยว 2 เพลา)',                 array['single', 'single'],                 1),
+  ('6W',        'รถ 6 ล้อ (หน้าเดี่ยว หลังคู่)',                array['single', 'dual'],                   2),
+  ('10W',       'รถ 10 ล้อ (หน้าเดี่ยว หลังคู่ 2 เพลา)',        array['single', 'dual', 'dual'],           3),
+  ('12W',       'รถ 12 ล้อ (หน้าเดี่ยว 2 เพลา หลังคู่ 2 เพลา)', array['single', 'single', 'dual', 'dual'], 4),
+  ('TRAILER_2', 'หางพ่วง 2 เพลา (8 ล้อ)',                       array['dual', 'dual'],                     5),
+  ('TRAILER_3', 'หางพ่วง 3 เพลา (12 ล้อ)',                      array['dual', 'dual', 'dual'],             6)
+on conflict (code) do nothing;
+
 -- ยี่ห้อยางกลาง ------------------------------------------------
 insert into public.tire_brands (name) values
   ('MICHELIN'), ('BRIDGESTONE'), ('OTANI'), ('DEESTONE'), ('YOKOHAMA')
 on conflict (name) do nothing;
 
 -- รุ่นยางกลาง --------------------------------------------------
-insert into public.tire_models (brand_id, name, size, pattern_code)
-select b.id, m.name, m.size, m.pattern
+insert into public.tire_models (brand_id, name, size, pattern_code, new_tread_mm)
+select b.id, m.name, m.size, m.pattern, m.new_tread_mm
 from public.tire_brands b
 join (values
-  ('MICHELIN',    'X MULTI Z',      '295/80R22.5', 'MZ-295'),
-  ('MICHELIN',    'X MULTI D',      '11R22.5',     'MD-11R'),
-  ('BRIDGESTONE', 'R150',           '11R22.5',     'R150-11'),
-  ('BRIDGESTONE', 'M840',           '295/80R22.5', 'M840-295'),
-  ('OTANI',       'OH-110',         '11R22.5',     'OH110'),
-  ('DEESTONE',    'SS431',          '215/70R16',   'SS431'),
-  ('YOKOHAMA',    'RY023',          '225/70R15',   'RY023')
-) as m(brand, name, size, pattern) on m.brand = b.name
+  ('MICHELIN',    'X MULTI Z',      '295/80R22.5', 'MZ-295',  16.0),
+  ('MICHELIN',    'X MULTI D',      '11R22.5',     'MD-11R',  16.0),
+  ('BRIDGESTONE', 'R150',           '11R22.5',     'R150-11', 16.0),
+  ('BRIDGESTONE', 'M840',           '295/80R22.5', 'M840-295',16.0),
+  ('OTANI',       'OH-110',         '11R22.5',     'OH110',   16.0),
+  ('DEESTONE',    'SS431',          '215/70R16',   'SS431',   16.0),
+  ('YOKOHAMA',    'RY023',          '225/70R15',   'RY023',   16.0)
+) as m(brand, name, size, pattern, new_tread_mm) on m.brand = b.name
 on conflict (brand_id, name, size) do nothing;
 
 -- ------------------------------------------------------------

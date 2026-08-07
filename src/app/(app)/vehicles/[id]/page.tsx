@@ -5,12 +5,13 @@ import { requireSession } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/app-shell'
 import { WheelDiagram, type WheelSlot } from '@/components/wheel-diagram'
+import { TireSpec } from '@/components/tire-spec'
 import {
   Badge, Card, CardBody, CardHeader, EmptyState, Table, TableWrap, Td, Th,
 } from '@/components/ui'
 import { getLayout, positionLabel } from '@/lib/axle-layouts'
 import { formatKm, formatThaiDate } from '@/lib/utils'
-import type { TireOverview, Vehicle } from '@/lib/database.types'
+import type { AxleType, TireOverview, Vehicle } from '@/lib/database.types'
 
 interface HistoryRow {
   id: string
@@ -39,10 +40,9 @@ export default async function VehicleDetailPage({
   if (!vehicle) notFound()
 
   const v = vehicle as Vehicle
-  const layout = getLayout(v.axle_type)
   const alertKm = company?.alert_km ?? 10000
 
-  const [{ data: tireData }, { data: historyData }] = await Promise.all([
+  const [{ data: tireData }, { data: historyData }, { data: axleTypeData }] = await Promise.all([
     supabase.from('tire_overview').select('*').eq('vehicle_id', id).eq('status', 'mounted'),
     supabase
       .from('tire_events')
@@ -52,10 +52,13 @@ export default async function VehicleDetailPage({
       .order('event_date', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(50),
+    supabase.from('axle_types').select('*').order('sort_order').order('name'),
   ])
 
   const tires = (tireData ?? []) as TireOverview[]
   const history = (historyData ?? []) as unknown as HistoryRow[]
+  const axleTypes = (axleTypeData ?? []) as AxleType[]
+  const layout = getLayout(v.axle_type, axleTypes)
 
   const slots: Record<string, WheelSlot> = {}
   for (const t of tires) {
@@ -101,7 +104,7 @@ export default async function VehicleDetailPage({
             description={`${layout.name} · ติดตั้งแล้ว ${tires.length}/${layout.wheelCount} เส้น`}
           />
           <CardBody>
-            <WheelDiagram axleType={v.axle_type} slots={slots} mode="view" />
+            <WheelDiagram axleType={v.axle_type} axleTypes={axleTypes} slots={slots} mode="view" />
           </CardBody>
         </Card>
 
@@ -141,14 +144,19 @@ export default async function VehicleDetailPage({
                       .sort((a, b) => (a.position_code ?? '').localeCompare(b.position_code ?? ''))
                       .map((t) => (
                         <tr key={t.id} className="transition-colors hover:bg-brand-50/40">
-                          <Td className="whitespace-nowrap">{positionLabel(t.position_code, v.axle_type)}</Td>
+                          <Td className="whitespace-nowrap">
+                            {positionLabel(t.position_code, v.axle_type, axleTypes)}
+                          </Td>
                           <Td>
                             <Link href={`/tires/${t.id}`} className="font-medium text-ink-900 hover:text-brand-600">
                               {t.serial_no}
                             </Link>
-                            <p className="text-xs text-ink-400">
-                              {[t.brand_name, t.model_name].filter(Boolean).join(' ')}
-                            </p>
+                            <TireSpec
+                              size={t.size}
+                              brandName={t.brand_name}
+                              modelName={t.model_name}
+                              className="mt-1"
+                            />
                           </Td>
                           <Td>{t.tread_mm !== null ? `${t.tread_mm} มม.` : '-'}</Td>
                           <Td className="text-right">
@@ -196,7 +204,7 @@ export default async function VehicleDetailPage({
                       </Badge>
                     </Td>
                     <Td className="font-medium text-ink-900">{h.tires?.serial_no ?? '-'}</Td>
-                    <Td>{positionLabel(h.position_code, v.axle_type)}</Td>
+                    <Td>{positionLabel(h.position_code, v.axle_type, axleTypes)}</Td>
                     <Td className="text-right">{formatKm(h.odometer)}</Td>
                     <Td className="text-right">{h.distance_km !== null ? formatKm(h.distance_km) : '-'}</Td>
                     <Td>{h.removal_reasons?.name ?? '-'}</Td>
@@ -220,4 +228,3 @@ function Info({ label, value }: { label: string; value: React.ReactNode }) {
     </div>
   )
 }
-

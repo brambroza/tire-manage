@@ -12,6 +12,7 @@ interface ModelRow {
   name: string
   size: string | null
   pattern_code: string | null
+  new_tread_mm: number | null
   image_url: string | null
   is_active: boolean
   created_by_company: string | null
@@ -27,7 +28,7 @@ export default async function CatalogPage() {
       supabase.from('tire_brands').select('*').order('name'),
       supabase
         .from('tire_models')
-        .select('id, brand_id, name, size, pattern_code, image_url, is_active, created_by_company, tire_brands(name)')
+        .select('id, brand_id, name, size, pattern_code, new_tread_mm, image_url, is_active, created_by_company, tire_brands(name)')
         .order('name'),
       supabase.from('tires').select('tire_model_id'),
       supabase.from('companies').select('id, name'),
@@ -51,6 +52,7 @@ export default async function CatalogPage() {
     name: m.name,
     size: m.size,
     pattern_code: m.pattern_code,
+    new_tread_mm: m.new_tread_mm,
     image_url: m.image_url,
     is_active: m.is_active,
     created_by_company: m.created_by_company,
@@ -62,7 +64,7 @@ export default async function CatalogPage() {
     <>
       <PageHeader
         title="ข้อมูลยาง"
-        subtitle="จัดการยี่ห้อ รุ่น ซีรีส์ ขนาด และรหัสดอกยาง สำหรับใช้ทั้งระบบ"
+        subtitle="จัดการยี่ห้อ รุ่น ซีรีส์ ขนาด รหัสดอกยาง และดอกยางตอนใหม่ สำหรับใช้ทั้งระบบ"
       />
       <CatalogClient brands={(brandData ?? []) as TireBrand[]} models={models} />
     </>

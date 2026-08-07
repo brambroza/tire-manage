@@ -259,7 +259,7 @@ export function PageHeader({
   action,
 }: {
   title: string
-  subtitle?: string
+  subtitle?: React.ReactNode
   breadcrumb?: string[]
   action?: React.ReactNode
 }) {
@@ -270,7 +270,7 @@ export function PageHeader({
           <p className="mb-1 truncate text-xs text-ink-400">{breadcrumb.join(' / ')}</p>
         )}
         <h1 className="text-2xl font-semibold tracking-tight text-ink-900">{title}</h1>
-        {subtitle && <p className="mt-1 text-sm text-ink-500">{subtitle}</p>}
+        {subtitle && <div className="mt-1 text-sm text-ink-500">{subtitle}</div>}
       </div>
       {action && <div className="flex shrink-0 items-center gap-2">{action}</div>}
     </div>

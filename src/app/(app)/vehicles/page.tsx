@@ -2,7 +2,7 @@ import { requireSession } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/app-shell'
 import { VehiclesClient, type VehicleRow } from './vehicles-client'
-import type { Vehicle } from '@/lib/database.types'
+import type { AxleType, Vehicle } from '@/lib/database.types'
 
 export const metadata = { title: 'จัดการรถ · Dream Tire' }
 
@@ -23,9 +23,10 @@ export default async function VehiclesPage({
     )
   }
 
-  const [{ data: vehicleData }, { data: mountedTires }] = await Promise.all([
+  const [{ data: vehicleData }, { data: mountedTires }, { data: axleTypeData }] = await Promise.all([
     query,
     supabase.from('tires').select('vehicle_id').eq('status', 'mounted'),
+    supabase.from('axle_types').select('*').order('sort_order').order('name'),
   ])
 
   // นับยางที่ติดตั้งอยู่ของแต่ละคัน
@@ -46,7 +47,7 @@ export default async function VehiclesPage({
         title="จัดการรถ"
         subtitle="ข้อมูลทะเบียน จังหวัด ยี่ห้อ/รุ่น ประเภทเพลา และเลขไมล์ล่าสุด"
       />
-      <VehiclesClient vehicles={vehicles} />
+      <VehiclesClient vehicles={vehicles} axleTypes={(axleTypeData ?? []) as AxleType[]} />
     </>
   )
 }

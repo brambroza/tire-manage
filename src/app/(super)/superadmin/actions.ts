@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { requireSession } from '@/lib/auth'
 import { createAdminClient, createClient } from '@/lib/supabase/server'
-import { ActionResult, fail, optionalText, zodFail } from '@/lib/action-result'
+import { ActionResult, fail, optionalNumber, optionalText, zodFail } from '@/lib/action-result'
 
 /* ============================================================ ลูกค้า */
 
@@ -21,6 +21,7 @@ const companySchema = z.object({
 })
 
 export type SuperCompanyInput = z.input<typeof companySchema>
+const companyAutoCodeSchema = companySchema.omit({ code: true })
 
 /**
  * เพิ่มบริษัทลูกค้าใหม่
@@ -28,13 +29,13 @@ export type SuperCompanyInput = z.input<typeof companySchema>
  */
 export async function createCompany(input: SuperCompanyInput): Promise<ActionResult<{ id: string }>> {
   await requireSession(['super_admin'])
-  const parsed = companySchema.safeParse(input)
+  const parsed = companyAutoCodeSchema.safeParse(input)
   if (!parsed.success) return zodFail(parsed.error)
 
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('companies')
-    .insert({ ...parsed.data, code: parsed.data.code.toUpperCase() })
+    .insert(parsed.data)
     .select('id')
     .single()
 
@@ -50,13 +51,13 @@ export async function createCompany(input: SuperCompanyInput): Promise<ActionRes
  */
 export async function updateCompany(id: string, input: SuperCompanyInput): Promise<ActionResult> {
   await requireSession(['super_admin'])
-  const parsed = companySchema.safeParse(input)
+  const parsed = companyAutoCodeSchema.safeParse(input)
   if (!parsed.success) return zodFail(parsed.error)
 
   const supabase = await createClient()
   const { error } = await supabase
     .from('companies')
-    .update({ ...parsed.data, code: parsed.data.code.toUpperCase() })
+    .update(parsed.data)
     .eq('id', id)
 
   if (error) return fail(error)
@@ -168,6 +169,9 @@ const modelSchema = z.object({
   name: z.string().trim().min(1, 'กรุณากรอกชื่อรุ่น'),
   size: optionalText,
   pattern_code: optionalText,
+  new_tread_mm: optionalNumber
+    .refine((value) => value === null || value >= 0, 'ดอกยางตอนใหม่ต้องไม่ติดลบ')
+    .refine((value) => value === null || value <= 99.9, 'ดอกยางตอนใหม่ต้องไม่เกิน 99.9 มม.'),
   image_url: optionalText,
 })
 
@@ -392,5 +396,160 @@ export async function setReasonActive(id: string, isActive: boolean): Promise<Ac
   const { error } = await supabase.from('removal_reasons').update({ is_active: isActive }).eq('id', id)
   if (error) return fail(error)
   revalidatePath('/superadmin/reasons')
+  return { ok: true }
+}
+
+/* ===================================================== ประเภทเพลา */
+
+const axleTypeSchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .min(1, 'กรุณากรอกรหัส')
+    .max(30, 'รหัสต้องไม่เกิน 30 ตัวอักษร')
+    .regex(/^[A-Za-z0-9_]+$/, 'ใช้ได้เฉพาะ A-Z, 0-9 และ _'),
+  name: z.string().trim().min(1, 'กรุณากรอกชื่อประเภทเพลา').max(120),
+  axle_kinds: z
+    .array(z.enum(['single', 'dual']))
+    .min(1, 'ต้องมีอย่างน้อย 1 เพลา')
+    .max(8, 'กำหนดได้ไม่เกิน 8 เพลา'),
+  sort_order: z.number().int().min(0, 'ลำดับต้องไม่ติดลบ').default(0),
+})
+const axleTypeIdSchema = z.string().uuid('รหัสประเภทเพลาไม่ถูกต้อง')
+
+export type AxleTypeInput = z.input<typeof axleTypeSchema>
+
+function revalidateAxleTypes() {
+  revalidatePath('/superadmin/axle-types')
+  revalidatePath('/vehicles', 'layout')
+  revalidatePath('/service')
+  revalidatePath('/superadmin/companies/[id]/vehicles', 'page')
+}
+
+function axleTypeFail(error: { code?: string; message?: string }): ActionResult<never> {
+  if (error.code === '23505') {
+    return { ok: false, error: 'รหัสประเภทเพลานี้มีอยู่ในระบบแล้ว' }
+  }
+  if (error.code === '23503') {
+    return { ok: false, error: 'ประเภทเพลานี้มีรถใช้งานอยู่ จึงยังลบไม่ได้' }
+  }
+  return fail(error)
+}
+
+/** เพิ่มประเภทเพลา */
+export async function createAxleType(input: AxleTypeInput): Promise<ActionResult> {
+  await requireSession(['super_admin'])
+  const parsed = axleTypeSchema.safeParse(input)
+  if (!parsed.success) return zodFail(parsed.error)
+
+  const supabase = await createClient()
+  const { error } = await supabase.from('axle_types').insert({
+    ...parsed.data,
+    code: parsed.data.code.toUpperCase(),
+  })
+  if (error) return axleTypeFail(error)
+
+  revalidateAxleTypes()
+  return { ok: true }
+}
+
+/** แก้ไขประเภทเพลา โดยไม่ยอมให้เปลี่ยนผังของประเภทที่มีรถใช้งานแล้ว */
+export async function updateAxleType(
+  id: string,
+  input: AxleTypeInput,
+): Promise<ActionResult> {
+  await requireSession(['super_admin'])
+  const parsedId = axleTypeIdSchema.safeParse(id)
+  if (!parsedId.success) return zodFail(parsedId.error)
+  const parsed = axleTypeSchema.safeParse(input)
+  if (!parsed.success) return zodFail(parsed.error)
+
+  const supabase = await createClient()
+  const { data: current, error: currentError } = await supabase
+    .from('axle_types')
+    .select('code, axle_kinds')
+    .eq('id', parsedId.data)
+    .maybeSingle()
+
+  if (currentError) return fail(currentError)
+  if (!current) return { ok: false, error: 'ไม่พบประเภทเพลาที่ต้องการแก้ไข' }
+
+  const layoutChanged =
+    current.axle_kinds.length !== parsed.data.axle_kinds.length ||
+    current.axle_kinds.some((kind, index) => kind !== parsed.data.axle_kinds[index])
+
+  if (layoutChanged) {
+    const { count, error: countError } = await supabase
+      .from('vehicles')
+      .select('id', { count: 'exact', head: true })
+      .eq('axle_type', current.code)
+    if (countError) return fail(countError)
+    if ((count ?? 0) > 0) {
+      return {
+        ok: false,
+        error: `มีรถใช้ประเภทเพลานี้อยู่ ${count} คัน จึงเปลี่ยนรูปแบบเพลาไม่ได้ (แก้ชื่อ รหัส และลำดับได้)`,
+      }
+    }
+  }
+
+  const { error } = await supabase
+    .from('axle_types')
+    .update({ ...parsed.data, code: parsed.data.code.toUpperCase() })
+    .eq('id', parsedId.data)
+  if (error) return axleTypeFail(error)
+
+  revalidateAxleTypes()
+  return { ok: true }
+}
+
+/** เปิด/ปิดประเภทเพลา (รถเดิมและประวัติยังคงแสดงตามปกติ) */
+export async function setAxleTypeActive(id: string, isActive: boolean): Promise<ActionResult> {
+  await requireSession(['super_admin'])
+  const parsed = z.object({ id: axleTypeIdSchema, isActive: z.boolean() }).safeParse({ id, isActive })
+  if (!parsed.success) return zodFail(parsed.error)
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('axle_types')
+    .update({ is_active: parsed.data.isActive })
+    .eq('id', parsed.data.id)
+    .select('id')
+    .maybeSingle()
+
+  if (error) return fail(error)
+  if (!data) return { ok: false, error: 'ไม่พบประเภทเพลาที่ต้องการเปลี่ยนสถานะ' }
+  revalidateAxleTypes()
+  return { ok: true }
+}
+
+/** ลบประเภทเพลาที่ไม่มีรถอ้างอิงอยู่ */
+export async function deleteAxleType(id: string): Promise<ActionResult> {
+  await requireSession(['super_admin'])
+  const parsedId = axleTypeIdSchema.safeParse(id)
+  if (!parsedId.success) return zodFail(parsedId.error)
+
+  const supabase = await createClient()
+  const { data: axleType, error: findError } = await supabase
+    .from('axle_types')
+    .select('code')
+    .eq('id', parsedId.data)
+    .maybeSingle()
+
+  if (findError) return fail(findError)
+  if (!axleType) return { ok: false, error: 'ไม่พบประเภทเพลาที่ต้องการลบ' }
+
+  const { count, error: countError } = await supabase
+    .from('vehicles')
+    .select('id', { count: 'exact', head: true })
+    .eq('axle_type', axleType.code)
+  if (countError) return fail(countError)
+  if ((count ?? 0) > 0) {
+    return { ok: false, error: `ประเภทเพลานี้มีรถใช้งานอยู่ ${count} คัน จึงลบไม่ได้` }
+  }
+
+  const { error } = await supabase.from('axle_types').delete().eq('id', parsedId.data)
+  if (error) return axleTypeFail(error)
+
+  revalidateAxleTypes()
   return { ok: true }
 }

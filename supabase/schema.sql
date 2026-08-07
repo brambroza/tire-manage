@@ -8,6 +8,10 @@
 create extension if not exists "pgcrypto";
 create extension if not exists "pg_trgm";
 
+-- เลขรันสำหรับรหัสบริษัท C0001, C0002, ...
+create sequence if not exists public.company_code_seq start with 1 increment by 1;
+grant usage, select on sequence public.company_code_seq to authenticated;
+
 -- ------------------------------------------------------------
 -- ENUMS
 -- ------------------------------------------------------------
@@ -28,7 +32,9 @@ exception when duplicate_object then null; end $$;
 -- ------------------------------------------------------------
 create table if not exists public.companies (
   id            uuid primary key default gen_random_uuid(),
-  code          text not null unique,
+  code          text not null unique default (
+    'C' || lpad(nextval('public.company_code_seq')::text, 4, '0')
+  ),
   name          text not null,
   tax_id        text,
   phone         text,
@@ -98,6 +104,7 @@ create table if not exists public.tire_models (
   name               text not null,             -- รุ่น เช่น X MULTI Z
   size               text,                      -- ขนาด เช่น 295/80R22.5
   pattern_code       text,                      -- รหัสดอกยาง
+  new_tread_mm       numeric(3,1) check (new_tread_mm >= 0), -- ดอกยางตอนใหม่ (มม.)
   image_url          text,                      -- รูปยาง (Supabase Storage: tire-images)
   created_by_company uuid references public.companies(id) on delete set null,
   is_active          boolean not null default true,
@@ -117,8 +124,31 @@ create table if not exists public.company_tire_models (
 );
 
 -- ------------------------------------------------------------
+-- axle_types : ประเภทเพลาและรูปแบบล้อ (super admin CRUD)
+-- axle_kinds เรียงจากเพลาหน้าไปหลัง: single = ล้อเดี่ยว, dual = ล้อคู่
+-- ------------------------------------------------------------
+create table if not exists public.axle_types (
+  id          uuid primary key default gen_random_uuid(),
+  code        text not null unique,
+  name        text not null,
+  axle_kinds  text[] not null,
+  sort_order  integer not null default 0 check (sort_order >= 0),
+  is_active   boolean not null default true,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  constraint axle_types_code_format check (
+    code = upper(code) and code ~ '^[A-Z0-9_]{1,30}$'
+  ),
+  constraint axle_types_name_required check (length(trim(name)) > 0),
+  constraint axle_types_kinds_valid check (
+    cardinality(axle_kinds) between 1 and 8
+    and axle_kinds <@ array['single', 'dual']::text[]
+  )
+);
+
+-- ------------------------------------------------------------
 -- vehicles : รถของลูกค้า
--- axle_type อ้างอิงค่าคงที่ใน src/lib/axle-layouts.ts
+-- axle_type อ้างอิง code ใน axle_types เพื่อเก็บ snapshot ที่อ่านง่าย
 -- ------------------------------------------------------------
 create table if not exists public.vehicles (
   id              uuid primary key default gen_random_uuid(),
@@ -127,7 +157,8 @@ create table if not exists public.vehicles (
   province        text not null,                    -- จังหวัด
   brand           text,                             -- ยี่ห้อรถ
   model           text,                             -- รุ่นรถ
-  axle_type       text not null default '10W',      -- ประเภทเพลา
+  axle_type       text not null
+                  references public.axle_types(code) on update cascade on delete restrict,
   current_mileage integer not null default 0 check (current_mileage >= 0),
   note            text,
   is_active       boolean not null default true,
@@ -136,6 +167,7 @@ create table if not exists public.vehicles (
   unique (company_id, plate_no, province)
 );
 create index if not exists vehicles_company_idx on public.vehicles(company_id);
+create index if not exists vehicles_axle_type_idx on public.vehicles(axle_type);
 create index if not exists vehicles_plate_trgm on public.vehicles using gin (plate_no gin_trgm_ops);
 
 -- ------------------------------------------------------------
@@ -216,7 +248,7 @@ end $$;
 do $$
 declare t text;
 begin
-  foreach t in array array['companies','profiles','vehicles','tires'] loop
+  foreach t in array array['companies','profiles','axle_types','vehicles','tires'] loop
     execute format('drop trigger if exists trg_touch_%1$s on public.%1$I', t);
     execute format('create trigger trg_touch_%1$s before update on public.%1$I
                     for each row execute function public.touch_updated_at()', t);
@@ -485,6 +517,7 @@ alter table public.tire_brands        enable row level security;
 alter table public.tire_models        enable row level security;
 alter table public.company_tire_models enable row level security;
 alter table public.removal_reasons    enable row level security;
+alter table public.axle_types         enable row level security;
 
 -- companies -------------------------------------------------
 drop policy if exists companies_select on public.companies;
@@ -539,6 +572,13 @@ drop policy if exists reasons_select on public.removal_reasons;
 create policy reasons_select on public.removal_reasons for select to authenticated using (true);
 drop policy if exists reasons_write on public.removal_reasons;
 create policy reasons_write on public.removal_reasons for all to authenticated
+  using (is_super_admin()) with check (is_super_admin());
+
+-- axle_types : ทุกคนอ่านได้, super admin เท่านั้นที่แก้ --------
+drop policy if exists axle_types_select on public.axle_types;
+create policy axle_types_select on public.axle_types for select to authenticated using (true);
+drop policy if exists axle_types_write on public.axle_types;
+create policy axle_types_write on public.axle_types for all to authenticated
   using (is_super_admin()) with check (is_super_admin());
 
 -- tire_brands ------------------------------------------------

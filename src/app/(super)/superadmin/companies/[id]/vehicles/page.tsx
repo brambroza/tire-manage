@@ -2,7 +2,7 @@ import { requireSession } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { Card, CardHeader } from '@/components/ui'
 import { VehiclesClient, type VehicleRow } from '@/app/(app)/vehicles/vehicles-client'
-import type { Vehicle } from '@/lib/database.types'
+import type { AxleType, Vehicle } from '@/lib/database.types'
 
 export const metadata = { title: 'จัดการรถของลูกค้า · Dream Tire Admin' }
 
@@ -27,9 +27,10 @@ export default async function CompanyVehiclesPage({
     )
   }
 
-  const [{ data: vehicleData }, { data: mountedTires }] = await Promise.all([
+  const [{ data: vehicleData }, { data: mountedTires }, { data: axleTypeData }] = await Promise.all([
     query,
     supabase.from('tires').select('vehicle_id').eq('company_id', id).eq('status', 'mounted'),
+    supabase.from('axle_types').select('*').order('sort_order').order('name'),
   ])
 
   const mountedCount = new Map<string, number>()
@@ -51,7 +52,12 @@ export default async function CompanyVehiclesPage({
           description="เพิ่ม แก้ไข และปิดใช้งานรถได้เหมือนที่แอดมินของลูกค้าทำ — ทุกการเปลี่ยนแปลงมีผลกับข้อมูลจริงของลูกค้า"
         />
       </Card>
-      <VehiclesClient vehicles={vehicles} companyId={id} enableLinks={false} />
+      <VehiclesClient
+        vehicles={vehicles}
+        axleTypes={(axleTypeData ?? []) as AxleType[]}
+        companyId={id}
+        enableLinks={false}
+      />
     </>
   )
 }

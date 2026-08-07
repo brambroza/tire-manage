@@ -189,48 +189,8 @@ export async function replaceTireAction(
   return mountTireAction(mount)
 }
 
-/**
- * สลับตำแหน่งยาง: ถอดออกแล้วใส่กลับที่ตำแหน่งใหม่ของรถคันเดิม
- * @param tireId รหัสยาง
- * @param vehicleId รหัสรถ
- * @param toPosition ตำแหน่งปลายทาง
- * @param odometer เลขไมล์ปัจจุบัน
- * @param treadMm ดอกยางที่วัดได้
- * @param eventDate วันที่ทำรายการ
- * @param reasonId สาเหตุ (ปกติคือ "สลับตำแหน่ง")
- */
-export async function rotateTireAction(
-  tireId: string,
-  vehicleId: string,
-  toPosition: string,
-  odometer: number,
-  treadMm: number | null,
-  eventDate: string,
-  reasonId: string | null,
-): Promise<ActionResult> {
-  const removed = await unmountTireAction({
-    tire_id: tireId,
-    odometer,
-    tread_mm: treadMm,
-    reason_id: reasonId,
-    note: 'สลับตำแหน่งยาง',
-    event_date: eventDate,
-  })
-  if (!removed.ok) return removed
-
-  return mountTireAction({
-    tire_id: tireId,
-    vehicle_id: vehicleId,
-    position_code: toPosition,
-    odometer,
-    tread_mm: treadMm,
-    note: 'สลับตำแหน่งยาง',
-    event_date: eventDate,
-  })
-}
-
 /* ============================================================
- * บันทึกหลายรายการในครั้งเดียว (ถอด/ใส่/สลับ หลายเส้นต่อรถ 1 คัน)
+ * บันทึกหลายรายการในครั้งเดียว (ถอด/ใส่ หลายเส้นต่อรถ 1 คัน)
  * ============================================================ */
 
 const manualTireSchema = z.object({
@@ -246,12 +206,10 @@ const manualTireSchema = z.object({
 })
 
 const batchItemSchema = z.object({
-  kind: z.enum(['unmount', 'mount', 'rotate', 'manual_unmount']),
+  kind: z.enum(['unmount', 'mount', 'manual_unmount', 'manual_mount']),
   tire_id: optionalText,
-  /** ตำแหน่งต้นทาง (ถอด/สลับ) หรือปลายทาง (ใส่) */
+  /** ตำแหน่งต้นทาง (ถอด) หรือปลายทาง (ใส่) */
   position_code: optionalText,
-  /** ตำแหน่งปลายทางของการสลับ */
-  target_position: optionalText,
   tread_mm: optionalNumber,
   reason_id: optionalText,
   note: optionalText,
@@ -284,8 +242,8 @@ interface TireOp {
  *
  * ลำดับการทำงานถูกจัดให้อัตโนมัติ เพื่อให้ตำแหน่งล้อไม่ชนกันระหว่างทาง
  *   1) ผูกยางที่ช่างคีย์เอง (ยังไม่มีในระบบ) เข้าตำแหน่งเดิมย้อนหลัง
- *   2) ถอดยางทุกเส้นที่ต้องถอด (รวมต้นทางของการสลับ)
- *   3) ใส่ยางทุกเส้นตามตำแหน่งใหม่ (รวมปลายทางของการสลับ)
+ *   2) ถอดยางทุกเส้นที่ต้องถอด
+ *   3) ใส่ยางทุกเส้นตามตำแหน่งที่เลือก
  *
  * ทั้งหมดรันใน RPC เดียว = ทรานแซกชันเดียว ถ้าพลาดรายการใดจะ rollback ทั้งชุด
  *
@@ -383,6 +341,58 @@ export async function applyServiceBatchAction(
       continue
     }
 
+    if (item.kind === 'manual_mount') {
+      // ยางที่ช่างคีย์เองตอนใส่ (ยังไม่มีในคลัง) → สร้างเข้าระบบก่อนแล้วค่อยใส่
+      const manual = item.manual
+      if (!manual) {
+        await rollbackCreatedTires()
+        return { ok: false, error: `${at}: ไม่มีข้อมูลยางที่คีย์เอง` }
+      }
+      if (!item.position_code) {
+        await rollbackCreatedTires()
+        return { ok: false, error: `${at}: กรุณาเลือกตำแหน่งล้อที่จะใส่ยาง` }
+      }
+
+      let modelId = manual.tire_model_id
+      if (!modelId && manual.brand_name) {
+        const ensured = await ensureBrandModel(manual.brand_name, manual.model_name, manual.size)
+        if (!ensured.ok) {
+          await rollbackCreatedTires()
+          return ensured
+        }
+        modelId = ensured.data?.modelId ?? null
+      }
+
+      const created = await createTire({
+        serial_no: manual.serial_no,
+        tire_model_id: modelId,
+        brand_name: manual.brand_name,
+        model_name: manual.model_name,
+        size: manual.size,
+        dot: manual.dot,
+        new_tread_mm: manual.new_tread_mm,
+        tread_mm: item.tread_mm,
+        note: item.note,
+      })
+      if (!created.ok) {
+        await rollbackCreatedTires()
+        return { ok: false, error: `${at}: ${created.error}` }
+      }
+
+      const tireId = created.data!.id
+      createdTireIds.push(tireId)
+
+      mounts.push({
+        op: 'mount',
+        tire_id: tireId,
+        position_code: item.position_code,
+        odometer,
+        tread_mm: item.tread_mm,
+        note: item.note,
+      })
+      continue
+    }
+
     if (!item.tire_id) {
       await rollbackCreatedTires()
       return { ok: false, error: `${at}: ไม่ได้ระบุยาง` }
@@ -397,7 +407,7 @@ export async function applyServiceBatchAction(
         reason_id: item.reason_id,
         note: item.note,
       })
-    } else if (item.kind === 'mount') {
+    } else {
       if (!item.position_code) {
         await rollbackCreatedTires()
         return { ok: false, error: `${at}: กรุณาเลือกตำแหน่งล้อที่จะใส่ยาง` }
@@ -409,28 +419,6 @@ export async function applyServiceBatchAction(
         odometer,
         tread_mm: item.tread_mm,
         note: item.note,
-      })
-    } else {
-      // rotate: ถอดจากตำแหน่งเดิมแล้วใส่กลับที่ตำแหน่งใหม่
-      if (!item.target_position) {
-        await rollbackCreatedTires()
-        return { ok: false, error: `${at}: กรุณาเลือกตำแหน่งปลายทางของการสลับ` }
-      }
-      unmounts.push({
-        op: 'unmount',
-        tire_id: item.tire_id,
-        odometer,
-        tread_mm: item.tread_mm,
-        reason_id: item.reason_id,
-        note: item.note ?? 'สลับตำแหน่งยาง',
-      })
-      mounts.push({
-        op: 'mount',
-        tire_id: item.tire_id,
-        position_code: item.target_position,
-        odometer,
-        tread_mm: item.tread_mm,
-        note: item.note ?? 'สลับตำแหน่งยาง',
       })
     }
   }

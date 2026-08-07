@@ -6,7 +6,9 @@ export type AlertKind = 'distance' | 'tread'
 export interface TireAlert {
   tireId: string
   serialNo: string
-  brandModel: string
+  brandName: string | null
+  modelName: string | null
+  size: string | null
   plateNo: string | null
   positionCode: string | null
   vehicleAxleType: string | null
@@ -58,7 +60,9 @@ export async function getTireAlerts(company: Company | null): Promise<Notificati
     .map((t) => ({
       tireId: t.id,
       serialNo: t.serial_no,
-      brandModel: [t.brand_name, t.model_name].filter(Boolean).join(' '),
+      brandName: t.brand_name,
+      modelName: t.model_name,
+      size: t.size,
       plateNo: t.plate_no,
       positionCode: t.position_code,
       vehicleAxleType: null,

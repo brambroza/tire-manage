@@ -8,6 +8,7 @@ import {
   Badge, Card, CardBody, CardHeader, EmptyState, StatTile, Table, TableWrap, Td, Th,
 } from '@/components/ui'
 import { TireThumb } from '@/components/tire-thumb'
+import { TireSpec } from '@/components/tire-spec'
 import { positionLabel } from '@/lib/axle-layouts'
 import {
   TIRE_STATUS_LABEL, TIRE_STATUS_TONE, formatBaht, formatKm, formatNumber,
@@ -65,7 +66,15 @@ export default async function TireDetailPage({ params }: { params: Promise<{ id:
 
       <PageHeader
         title={t.serial_no}
-        subtitle={[t.brand_name, t.model_name, t.size].filter(Boolean).join(' · ') || 'ไม่ระบุรุ่น'}
+        subtitle={(
+          <TireSpec
+            size={t.size}
+            brandName={t.brand_name}
+            modelName={t.model_name}
+            sizeClassName="text-base"
+            detailClassName="text-sm text-ink-500"
+          />
+        )}
         action={<Badge tone={TIRE_STATUS_TONE[t.status]}>{TIRE_STATUS_LABEL[t.status]}</Badge>}
       />
 
@@ -107,9 +116,14 @@ export default async function TireDetailPage({ params }: { params: Promise<{ id:
               />
               <div className="min-w-0">
                 <p className="truncate text-lg font-semibold text-ink-900">{t.serial_no}</p>
-                <p className="truncate text-sm text-ink-500">
-                  {[t.brand_name, t.model_name, t.size].filter(Boolean).join(' · ') || 'ไม่ระบุรุ่น'}
-                </p>
+                <TireSpec
+                  size={t.size}
+                  brandName={t.brand_name}
+                  modelName={t.model_name}
+                  className="mt-1"
+                  sizeClassName="text-base"
+                  detailClassName="text-sm text-ink-500"
+                />
               </div>
             </div>
             <Info label="เลขยาง" value={t.serial_no} />

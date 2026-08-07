@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import {
   Badge, Card, CardBody, CardHeader, EmptyState, StatTile, Table, TableWrap, Td, Th,
 } from '@/components/ui'
+import { TireSpec } from '@/components/tire-spec'
 import { positionLabel } from '@/lib/axle-layouts'
 import {
   TIRE_STATUS_LABEL, TIRE_STATUS_TONE, formatKm, formatNumber, formatThaiDate,
@@ -195,7 +196,7 @@ export default async function CompanyOverviewPage({
               <thead>
                 <tr>
                   <Th>เลขยาง</Th>
-                  <Th>ยี่ห้อ / รุ่น</Th>
+                  <Th>ขนาด / ยี่ห้อ รุ่น</Th>
                   <Th>สถานะ</Th>
                   <Th>อยู่ที่</Th>
                   <Th>ดอกยาง</Th>
@@ -207,7 +208,9 @@ export default async function CompanyOverviewPage({
                 {tires.slice(0, 15).map((t) => (
                   <tr key={t.id} className="transition-colors hover:bg-brand-50/40">
                     <Td className="font-medium text-ink-900">{t.serial_no}</Td>
-                    <Td>{[t.brand_name, t.model_name].filter(Boolean).join(' ') || '-'}</Td>
+                    <Td>
+                      <TireSpec size={t.size} brandName={t.brand_name} modelName={t.model_name} />
+                    </Td>
                     <Td><Badge tone={TIRE_STATUS_TONE[t.status]}>{TIRE_STATUS_LABEL[t.status]}</Badge></Td>
                     <Td>
                       {t.status === 'mounted'

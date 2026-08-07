@@ -11,7 +11,7 @@ import { getLayout } from '@/lib/axle-layouts'
 import { formatKm } from '@/lib/utils'
 import { VehicleFormModal } from './vehicle-form'
 import { deactivateVehicle, reactivateVehicle } from './actions'
-import type { Vehicle } from '@/lib/database.types'
+import type { AxleType, Vehicle } from '@/lib/database.types'
 
 export interface VehicleRow extends Vehicle {
   /** จำนวนยางที่ติดตั้งอยู่บนรถคันนี้ */
@@ -21,10 +21,13 @@ export interface VehicleRow extends Vehicle {
 /** ตารางรายการรถ + ฟอร์มเพิ่ม/แก้ไข */
 export function VehiclesClient({
   vehicles,
+  axleTypes,
   companyId,
   enableLinks = true,
 }: {
   vehicles: VehicleRow[]
+  /** ประเภทเพลาจาก Supabase ใช้ทั้งชื่อ จำนวนล้อ และฟอร์มรถ */
+  axleTypes: AxleType[]
   /** ระบุเมื่อ super admin จัดการรถแทนลูกค้า */
   companyId?: string
   /** ปิดลิงก์ไปหน้ารายละเอียดรถ (หน้า super admin ยังไม่มี route นั้น) */
@@ -96,7 +99,7 @@ export function VehiclesClient({
               </thead>
               <tbody>
                 {vehicles.map((v) => {
-                  const layout = getLayout(v.axle_type)
+                  const layout = getLayout(v.axle_type, axleTypes)
                   return (
                     <tr key={v.id} className="transition-colors hover:bg-brand-50/40">
                       <Td>
@@ -113,8 +116,8 @@ export function VehiclesClient({
                         <p className="text-xs text-ink-400">
                           {v.province}
                           <span className="lg:hidden">
-                            {[v.brand, v.model].filter(Boolean).join(' ')
-                              ? ` · ${[v.brand, v.model].filter(Boolean).join(' ')}`
+                            {[  v.model , v.brand].filter(Boolean).join(' ')
+                              ? ` · ${[ v.model , v.brand ].filter(Boolean).join(' ')}`
                               : ''}
                           </span>
                         </p>
@@ -171,6 +174,7 @@ export function VehiclesClient({
         onClose={() => setFormOpen(false)}
         vehicle={editing}
         companyId={companyId}
+        axleTypes={axleTypes}
       />
 
       <ConfirmDialog

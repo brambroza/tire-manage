@@ -217,8 +217,16 @@ export function CompaniesClient({ companies }: { companies: CompanyRow[] }) {
           )}
 
           <div className="grid gap-5 sm:grid-cols-3">
-            <Field label="รหัสบริษัท" required error={fieldErrors.code}>
-              <Input value={form.code} onChange={(e) => set('code', e.target.value)} placeholder="ABC" />
+            <Field
+              label="รหัสบริษัท"
+              hint={editing ? 'รหัสบริษัทสร้างโดยระบบและแก้ไขไม่ได้' : 'ระบบจะสร้างรหัสให้อัตโนมัติเมื่อบันทึก'}
+            >
+              <Input
+                value={editing ? form.code : ''}
+                placeholder="อัตโนมัติ เช่น C0001"
+                readOnly
+                className="bg-slate-50 font-mono"
+              />
             </Field>
             <Field label="ชื่อบริษัท" required error={fieldErrors.name} className="sm:col-span-2">
               <Input value={form.name} onChange={(e) => set('name', e.target.value)} />

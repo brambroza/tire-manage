@@ -5,10 +5,10 @@ import { useRouter } from 'next/navigation'
 import { AlertCircle } from 'lucide-react'
 import { Modal } from '@/components/ui/modal'
 import { Button, Field, Input, Select, Textarea } from '@/components/ui'
-import { AXLE_OPTIONS, getLayout } from '@/lib/axle-layouts'
+import { getLayout } from '@/lib/axle-layouts'
 import { PROVINCES } from '@/lib/provinces'
 import { createVehicle, updateVehicle, type VehicleInput } from './actions'
-import type { Vehicle } from '@/lib/database.types'
+import type { AxleType, Vehicle } from '@/lib/database.types'
 
 const EMPTY: VehicleInput = {
   plate_no: '',
@@ -47,12 +47,15 @@ export function VehicleFormModal({
   onClose,
   vehicle,
   companyId,
+  axleTypes,
 }: {
   open: boolean
   onClose: () => void
   vehicle?: Vehicle | null
   /** ระบุเมื่อ super admin เพิ่มรถแทนลูกค้า */
   companyId?: string
+  /** ประเภทเพลาจาก Supabase */
+  axleTypes: AxleType[]
 }) {
   const router = useRouter()
   const [form, setForm] = React.useState<VehicleInput>(EMPTY)
@@ -62,6 +65,11 @@ export function VehicleFormModal({
   // ทะเบียนแยกเป็นสองช่อง (หมวด + เลข) แต่เก็บลง form.plate_no เป็นค่าเดียว
   const [plate, setPlate] = React.useState<[string, string]>(['', ''])
   const plateTailRef = React.useRef<HTMLInputElement>(null)
+  const defaultAxleType =
+    axleTypes.find((type) => type.is_active && type.code === '10W')?.code ??
+    axleTypes.find((type) => type.is_active)?.code ??
+    axleTypes[0]?.code ??
+    EMPTY.axle_type
 
   // รีเซ็ตค่าในฟอร์มเมื่อเปิด modal ใหม่ (ปรับ state ระหว่าง render ตามแนวทางของ React)
   const formKey = open ? vehicle?.id ?? 'new' : null
@@ -82,7 +90,7 @@ export function VehicleFormModal({
             current_mileage: vehicle.current_mileage,
             note: vehicle.note ?? '',
           }
-        : EMPTY,
+        : { ...EMPTY, axle_type: defaultAxleType },
     )
   }
 
@@ -127,7 +135,10 @@ export function VehicleFormModal({
     router.refresh()
   }
 
-  const layout = getLayout(form.axle_type)
+  const layout = getLayout(form.axle_type, axleTypes)
+  const availableAxleTypes = axleTypes.filter(
+    (type) => type.is_active || type.code === vehicle?.axle_type,
+  )
 
   return (
     <Modal
@@ -205,7 +216,15 @@ export function VehicleFormModal({
             error={fieldErrors.axle_type}
           >
             <Select value={form.axle_type} onChange={(e) => set('axle_type', e.target.value)}>
-              {AXLE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              {availableAxleTypes.map((type) => {
+                const optionLayout = getLayout(type.code, axleTypes)
+                return (
+                  <option key={type.id} value={type.code}>
+                    {type.name} · {optionLayout.wheelCount} เส้น
+                    {type.is_active ? '' : ' (ปิดใช้งาน)'}
+                  </option>
+                )
+              })}
             </Select>
           </Field>
 

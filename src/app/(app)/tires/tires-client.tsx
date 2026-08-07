@@ -8,6 +8,7 @@ import { Badge, Button, Card, EmptyState, Table, TableWrap, Td, Th } from '@/com
 import { ConfirmDialog } from '@/components/ui/modal'
 import { SearchInput } from '@/components/search-input'
 import { TireThumb } from '@/components/tire-thumb'
+import { TireSpec } from '@/components/tire-spec'
 import { positionLabel } from '@/lib/axle-layouts'
 import {
   TIRE_STATUS_LABEL, TIRE_STATUS_TONE, cn, formatKm, treadPercent,
@@ -122,7 +123,7 @@ export function TiresClient({
                 <tr>
                   <Th className="w-16">รูป</Th>
                   <Th>เลขยาง</Th>
-                  <Th className="hidden lg:table-cell">ยี่ห้อ / รุ่น</Th>
+                  <Th className="hidden lg:table-cell">ขนาด / ยี่ห้อ รุ่น</Th>
                   <Th>สถานะ</Th>
                   <Th>ตำแหน่งปัจจุบัน</Th>
                   <Th className="hidden md:table-cell">ดอกยาง</Th>
@@ -140,7 +141,7 @@ export function TiresClient({
                       <Td>
                         <TireThumb
                           src={t.image_url}
-                          alt={[t.brand_name, t.model_name].filter(Boolean).join(' ')}
+                          alt={[t.model_name, t.brand_name].filter(Boolean).join(' ')}
                         />
                       </Td>
                       <Td>
@@ -151,15 +152,17 @@ export function TiresClient({
                         ) : (
                           <span className="font-medium text-ink-900">{t.serial_no}</span>
                         )}
-                        {/* จอแคบ: ยุบยี่ห้อ/รุ่นมาไว้ใต้เลขยาง */}
-                        <p className="text-xs text-ink-400 lg:hidden">
-                          {[t.brand_name, t.model_name, t.size].filter(Boolean).join(' ') || '-'}
-                        </p>
+                        {/* จอแคบ: ยุบสเปกยางมาไว้ใต้เลขยาง */}
+                        <TireSpec
+                          size={t.size}
+                          brandName={t.brand_name}
+                          modelName={t.model_name}
+                          className="mt-1 lg:hidden"
+                        />
                         {t.dot && <p className="text-xs text-ink-400">DOT {t.dot}</p>}
                       </Td>
                       <Td className="hidden lg:table-cell">
-                        {[t.brand_name, t.model_name].filter(Boolean).join(' ') || '-'}
-                        {t.size && <p className="text-xs text-ink-400">{t.size}</p>}
+                        <TireSpec size={t.size} brandName={t.brand_name} modelName={t.model_name} />
                       </Td>
                       <Td>
                         <Badge tone={TIRE_STATUS_TONE[t.status as TireStatus]}>
@@ -185,8 +188,8 @@ export function TiresClient({
                       <Td className="hidden md:table-cell">
                         {t.tread_mm !== null
                           ? <span className={cn(t.tread_mm <= t.alert_tread_mm && 'font-medium text-rose-600')}>
-                              {t.tread_mm} มม.{pct !== null ? ` (${pct}%)` : ''}
-                            </span>
+                            {t.tread_mm} มม.{pct !== null ? ` (${pct}%)` : ''}
+                          </span>
                           : '-'}
                       </Td>
                       <Td className={cn('hidden text-right xl:table-cell', alert && 'font-medium text-amber-600')}>

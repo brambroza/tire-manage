@@ -8,24 +8,33 @@ import {
   Badge, Card, CardBody, CardHeader, EmptyState, StatTile, Table, TableWrap, Td, Th,
 } from '@/components/ui'
 import { TireThumb } from '@/components/tire-thumb'
+import { TireSpec } from '@/components/tire-spec'
 import { positionLabel } from '@/lib/axle-layouts'
 import {
-  TIRE_STATUS_LABEL, TIRE_STATUS_TONE, formatKm, formatNumber, formatThaiDate, treadPercent,
+  TIRE_STATUS_LABEL, TIRE_STATUS_TONE, formatKm, formatNumber, treadPercent,
 } from '@/lib/utils'
+import { RemovalReport } from './removal-report'
+import type { RemovalReasonOption, RemovalReportRow } from './removal-report-types'
 import type { TireOverview } from '@/lib/database.types'
 
 export const metadata = { title: 'ภาพรวม · Dream Tire' }
 
-/** แถวประวัติที่ join ข้อมูลยาง/รถ/สาเหตุมาด้วย */
-interface EventRow {
+/** แถวประวัติการถอดยางที่ join ข้อมูลยาง/รถ/สาเหตุมาด้วย */
+interface RemovalEventRow {
   id: string
-  event_type: string
   event_date: string
   position_code: string | null
   odometer: number
   tread_mm: number | null
   distance_km: number | null
-  tires: { serial_no: string; brand_name: string | null; model_name: string | null } | null
+  reason_id: string | null
+  note: string | null
+  tires: {
+    serial_no: string
+    brand_name: string | null
+    model_name: string | null
+    size: string | null
+  } | null
   vehicles: { plate_no: string; province: string; axle_type: string } | null
   removal_reasons: { name: string } | null
 }
@@ -64,8 +73,18 @@ function buildMonthlySeries(
 export default async function DashboardPage() {
   const { company } = await requireSession(['admin'])
   const supabase = await createClient()
+  const firstChartMonth = new Date()
+  firstChartMonth.setDate(1)
+  firstChartMonth.setHours(0, 0, 0, 0)
+  firstChartMonth.setMonth(firstChartMonth.getMonth() - 5)
 
-  const [{ data: tireRows }, { data: eventRows }, { count: vehicleCount }] = await Promise.all([
+  const [
+    { data: tireRows },
+    { data: chartEventRows },
+    { data: removalEventRows },
+    { data: removalReasonRows },
+    { count: vehicleCount },
+  ] = await Promise.all([
     supabase
       .from('tire_overview')
       .select('*')
@@ -73,12 +92,22 @@ export default async function DashboardPage() {
       .limit(2000),
     supabase
       .from('tire_events')
-      .select('id, event_type, event_date, position_code, odometer, tread_mm, distance_km, ' +
-        'tires(serial_no, brand_name, model_name), vehicles(plate_no, province, axle_type), ' +
+      .select('event_type, event_date')
+      .gte('event_date', firstChartMonth.toISOString().slice(0, 10)),
+    supabase
+      .from('tire_events')
+      .select('id, event_date, position_code, odometer, tread_mm, distance_km, reason_id, note, ' +
+        'tires(serial_no, brand_name, model_name, size), vehicles(plate_no, province, axle_type), ' +
         'removal_reasons(name)')
+      .eq('event_type', 'unmount')
       .order('event_date', { ascending: false })
       .order('created_at', { ascending: false })
-      .limit(200),
+      .limit(2000),
+    supabase
+      .from('removal_reasons')
+      .select('id, name')
+      .order('sort_order')
+      .limit(100),
     supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('is_active', true),
   ])
 
@@ -97,8 +126,26 @@ export default async function DashboardPage() {
 
   const totalKm = tires.reduce((sum, t) => sum + t.lifetime_km, 0)
 
-  const events = (eventRows ?? []) as unknown as EventRow[]
-  const removed = events.filter((e) => e.event_type === 'unmount').slice(0, 8)
+  const removalRows: RemovalReportRow[] = ((removalEventRows ?? []) as unknown as RemovalEventRow[])
+    .map((event) => ({
+      id: event.id,
+      eventDate: event.event_date,
+      serialNo: event.tires?.serial_no ?? '-',
+      brandName: event.tires?.brand_name ?? null,
+      modelName: event.tires?.model_name ?? null,
+      size: event.tires?.size ?? null,
+      plateNo: event.vehicles?.plate_no ?? null,
+      province: event.vehicles?.province ?? null,
+      axleType: event.vehicles?.axle_type ?? null,
+      positionCode: event.position_code,
+      odometer: event.odometer,
+      treadMm: event.tread_mm,
+      distanceKm: event.distance_km,
+      reasonId: event.reason_id,
+      reasonName: event.removal_reasons?.name ?? null,
+      note: event.note,
+    }))
+  const removalReasons = (removalReasonRows ?? []) as RemovalReasonOption[]
 
   return (
     <>
@@ -143,7 +190,7 @@ export default async function DashboardPage() {
             description={`ระยะสะสมทั้งหมด ${formatKm(totalKm)} · รถที่ใช้งาน ${formatNumber(vehicleCount ?? 0)} คัน`}
           />
           <CardBody>
-            <MonthlyEventsChart data={buildMonthlySeries(events)} />
+            <MonthlyEventsChart data={buildMonthlySeries(chartEventRows ?? [])} />
           </CardBody>
         </Card>
 
@@ -201,9 +248,12 @@ export default async function DashboardPage() {
                       </Td>
                       <Td className="font-medium text-ink-900">
                         <Link href={`/tires/${t.id}`} className="hover:text-brand-600">{t.serial_no}</Link>
-                        <p className="text-xs font-normal text-ink-400">
-                          {[t.brand_name, t.model_name].filter(Boolean).join(' ') || '-'}
-                        </p>
+                        <TireSpec
+                          size={t.size}
+                          brandName={t.brand_name}
+                          modelName={t.model_name}
+                          className="mt-1"
+                        />
                       </Td>
                       <Td>{t.plate_no ?? '-'}</Td>
                       <Td className="hidden md:table-cell">{positionLabel(t.position_code)}</Td>
@@ -225,44 +275,11 @@ export default async function DashboardPage() {
         )}
       </Card>
 
-      {/* ยางที่ถอดออกล่าสุด */}
-      <Card className="mt-4">
-        <CardHeader title="ยางที่ถอดออกล่าสุด" description="ประวัติการถอดยาง 8 รายการล่าสุด" />
-        {removed.length === 0 ? (
-          <EmptyState icon={<Package className="size-6" />} title="ยังไม่มีประวัติการถอดยาง" />
-        ) : (
-          <TableWrap>
-            <Table>
-              <thead>
-                <tr>
-                  <Th>วันที่</Th>
-                  <Th>เลขยาง</Th>
-                  <Th className="hidden sm:table-cell">ถอดจากรถ</Th>
-                  <Th className="hidden md:table-cell">ตำแหน่ง</Th>
-                  <Th className="text-right">ระยะรอบนี้</Th>
-                  <Th>สาเหตุ</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {removed.map((e) => (
-                  <tr key={e.id} className="transition-colors hover:bg-brand-50/40">
-                    <Td className="whitespace-nowrap">{formatThaiDate(e.event_date)}</Td>
-                    <Td className="font-medium text-ink-900">{e.tires?.serial_no ?? '-'}</Td>
-                    <Td className="hidden sm:table-cell">{e.vehicles?.plate_no ?? '-'}</Td>
-                    <Td className="hidden md:table-cell">
-                      {positionLabel(e.position_code, e.vehicles?.axle_type)}
-                    </Td>
-                    <Td className="text-right">{formatKm(e.distance_km)}</Td>
-                    <Td>
-                      <Badge tone="slate">{e.removal_reasons?.name ?? 'ไม่ระบุ'}</Badge>
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
-          </TableWrap>
-        )}
-      </Card>
+      <RemovalReport
+        companyName={company?.name ?? 'Dream Tire'}
+        rows={removalRows}
+        reasons={removalReasons}
+      />
 
       {/* ยางที่วิ่งมากที่สุด */}
       <Card className="mt-4">
@@ -280,7 +297,7 @@ export default async function DashboardPage() {
                 <tr>
                   <Th className="w-16">รูป</Th>
                   <Th>เลขยาง</Th>
-                  <Th className="hidden lg:table-cell">ยี่ห้อ / รุ่น</Th>
+                  <Th className="hidden lg:table-cell">ขนาด / ยี่ห้อ รุ่น</Th>
                   <Th>สถานะ</Th>
                   <Th className="hidden sm:table-cell">ตำแหน่งปัจจุบัน</Th>
                   <Th className="text-right">ระยะสะสม</Th>
@@ -292,14 +309,20 @@ export default async function DashboardPage() {
                     <Td>
                       <TireThumb
                         src={t.image_url}
-                        alt={[t.brand_name, t.model_name].filter(Boolean).join(' ')}
+                        alt={[ t.model_name ,t.brand_name].filter(Boolean).join(' ')}
                       />
                     </Td>
                     <Td className="font-medium text-ink-900">
                       <Link href={`/tires/${t.id}`} className="hover:text-brand-600">{t.serial_no}</Link>
+                      <TireSpec
+                        size={t.size}
+                        brandName={t.brand_name}
+                        modelName={t.model_name}
+                        className="mt-1 lg:hidden"
+                      />
                     </Td>
                     <Td className="hidden lg:table-cell">
-                      {[t.brand_name, t.model_name].filter(Boolean).join(' ') || '-'}
+                      <TireSpec size={t.size} brandName={t.brand_name} modelName={t.model_name} />
                     </Td>
                     <Td>
                       <Badge tone={TIRE_STATUS_TONE[t.status]}>{TIRE_STATUS_LABEL[t.status]}</Badge>
