@@ -29,6 +29,28 @@ function revalidateVehicle(companyId: string, vehicleId?: string) {
 }
 
 /**
+ * ตรวจว่าบริษัทนั้นได้รับสิทธิ์ใช้ประเภทเพลานี้จาก super admin หรือไม่
+ * (จำเป็นสำหรับกรณี super admin ทำแทนลูกค้า เพราะ RLS ไม่ได้กรองให้)
+ * @param companyId รหัสบริษัทเจ้าของรถ
+ * @param axleTypeCode รหัสประเภทเพลาที่เลือก
+ */
+async function isAxleTypeAllowed(companyId: string, axleTypeCode: string): Promise<boolean> {
+  const supabase = await createClient()
+  const { count } = await supabase
+    .from('company_axle_types')
+    .select('axle_type_id, axle_types!inner(code)', { count: 'exact', head: true })
+    .eq('company_id', companyId)
+    .eq('axle_types.code', axleTypeCode)
+  return (count ?? 0) > 0
+}
+
+const AXLE_TYPE_DENIED: ActionResult<never> = {
+  ok: false,
+  error: 'บริษัทนี้ยังไม่ได้รับสิทธิ์ใช้ประเภทเพลาดังกล่าว',
+  fieldErrors: { axle_type: 'กรุณาเลือกประเภทเพลาที่บริษัทได้รับสิทธิ์' },
+}
+
+/**
  * เพิ่มรถใหม่
  * @param input ข้อมูลรถจากฟอร์ม
  * @param companyId บริษัทเป้าหมาย (ระบุเมื่อ super admin ทำแทนลูกค้า)
@@ -58,6 +80,8 @@ export async function createVehicle(
       fieldErrors: { axle_type: 'กรุณาเลือกประเภทเพลาที่เปิดใช้งาน' },
     }
   }
+
+  if (!(await isAxleTypeAllowed(scope.companyId, parsed.data.axle_type))) return AXLE_TYPE_DENIED
 
   const { data, error } = await supabase
     .from('vehicles')
@@ -104,6 +128,14 @@ export async function updateVehicle(id: string, input: VehicleInput): Promise<Ac
       error: 'ประเภทเพลานี้ไม่มีในระบบหรือถูกปิดใช้งาน',
       fieldErrors: { axle_type: 'กรุณาเลือกประเภทเพลาที่เปิดใช้งาน' },
     }
+  }
+
+  // เปลี่ยนประเภทเพลาได้เฉพาะแบบที่บริษัทได้รับสิทธิ์ (ของเดิมคงไว้ได้เสมอ)
+  if (
+    currentResult.data.axle_type !== parsed.data.axle_type &&
+    !(await isAxleTypeAllowed(currentResult.data.company_id, parsed.data.axle_type))
+  ) {
+    return AXLE_TYPE_DENIED
   }
 
   const { data, error } = await supabase

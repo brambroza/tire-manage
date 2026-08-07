@@ -10,6 +10,7 @@ import {
 import { Modal } from '@/components/ui/modal'
 import { TireThumb } from '@/components/tire-thumb'
 import { TireSpec } from '@/components/tire-spec'
+import { cn } from '@/lib/utils'
 import {
   createBrand, createModel, deleteTireImage, setBrandActive, setModelActive, updateModel,
   uploadTireImage, type ModelInput,
@@ -36,6 +37,10 @@ const EMPTY_MODEL: ModelInput = {
   brand_id: '', name: '', size: '', pattern_code: '', new_tread_mm: 16, image_url: '',
 }
 
+/** รายการชั่วคราวจากหน้าช่างที่ยังใส่ยี่ห้อ/รุ่นจริงไม่ครบ */
+const isPendingModel = (model: CatalogModel) =>
+  model.brand_name.startsWith('รอตรวจสอบ (') || model.name === 'ข้อมูลจากหน้างาน'
+
 /** จัดการข้อมูลยางกลาง: ยี่ห้อ / รุ่น / ขนาด / รหัสดอกยาง / ดอกยางตอนใหม่ */
 export function CatalogClient({
   brands,
@@ -58,7 +63,9 @@ export function CatalogClient({
   const [uploading, setUploading] = React.useState(false)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
 
-  const filteredModels = filterBrand ? models.filter((m) => m.brand_id === filterBrand) : models
+  const filteredModels = (filterBrand ? models.filter((m) => m.brand_id === filterBrand) : models)
+    .toSorted((a, b) => Number(isPendingModel(b)) - Number(isPendingModel(a)))
+  const pendingCount = models.filter(isPendingModel).length
 
   async function handleCreateBrand(e: React.FormEvent) {
     e.preventDefault()
@@ -219,7 +226,11 @@ export function CatalogClient({
       <Card className="xl:col-span-3">
         <CardHeader
           title="รุ่นยาง / ซีรีส์ / ข้อมูลดอกยาง"
-          description="ข้อมูลกลางที่นำไปกำหนดสิทธิ์ให้ลูกค้าแต่ละราย"
+          description={
+            pendingCount > 0
+              ? `มี ${pendingCount} รายการจากหน้างานรอแอดมินตรวจสอบและแก้ไข`
+              : 'ข้อมูลกลางที่นำไปกำหนดสิทธิ์ให้ลูกค้าแต่ละราย'
+          }
           action={
             <Button size="sm" onClick={openCreateModel} disabled={brands.length === 0}>
               <Plus className="size-4" />
@@ -250,7 +261,13 @@ export function CatalogClient({
               </thead>
               <tbody>
                 {filteredModels.map((m) => (
-                  <tr key={m.id} className="transition-colors hover:bg-brand-50/40">
+                  <tr
+                    key={m.id}
+                    className={cn(
+                      'transition-colors hover:bg-brand-50/40',
+                      isPendingModel(m) && 'bg-amber-50/40',
+                    )}
+                  >
                     <Td>
                       <TireThumb src={m.image_url} alt={`${m.brand_name} ${m.name}`} />
                     </Td>
@@ -263,8 +280,10 @@ export function CatalogClient({
                     </Td>
                     <Td className="text-right">{m.tire_count}</Td>
                     <Td>
-                      {m.created_by_company
-                        ? <Badge tone="amber">ลูกค้าเพิ่มเอง{m.company_name ? ` · ${m.company_name}` : ''}</Badge>
+                      {isPendingModel(m)
+                        ? <Badge tone="amber">รอตรวจสอบ{m.company_name ? ` · ${m.company_name}` : ''}</Badge>
+                        : m.created_by_company
+                          ? <Badge tone="slate">ลูกค้าเพิ่มเอง{m.company_name ? ` · ${m.company_name}` : ''}</Badge>
                         : <Badge tone="brand">แคตตาล็อกกลาง</Badge>}
                     </Td>
                     <Td>

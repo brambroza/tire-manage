@@ -11,6 +11,8 @@ import {
 import { ConfirmDialog, Modal } from '@/components/ui/modal'
 import { WheelDiagram } from '@/components/wheel-diagram'
 import { getLayout } from '@/lib/axle-layouts'
+import { VEHICLE_IMAGES } from '@/lib/vehicle-images'
+import { cn } from '@/lib/utils'
 import {
   createAxleType,
   deleteAxleType,
@@ -18,7 +20,7 @@ import {
   updateAxleType,
   type AxleTypeInput,
 } from '../actions'
-import type { AxleKind, AxleType } from '@/lib/database.types'
+import type { AxleCategory, AxleKind, AxleType } from '@/lib/database.types'
 
 export interface AxleTypeRow extends AxleType {
   usage_count: number
@@ -28,12 +30,19 @@ const EMPTY: AxleTypeInput = {
   code: '',
   name: '',
   axle_kinds: ['single', 'dual', 'dual'],
+  category: 'head',
+  image_url: '',
   sort_order: 0,
 }
 
 const KIND_LABEL: Record<AxleKind, string> = {
   single: 'ล้อเดี่ยว (2 ล้อ)',
   dual: 'ล้อคู่ (4 ล้อ)',
+}
+
+const CATEGORY_LABEL: Record<AxleCategory, string> = {
+  head: 'หัว',
+  trailer: 'หาง',
 }
 
 /** CRUD ประเภทเพลา พร้อมตัวแก้ผังแบบเรียงเพลาหน้าไปหลัง */
@@ -73,6 +82,8 @@ export function AxleTypesClient({ axleTypes }: { axleTypes: AxleTypeRow[] }) {
       code: type.code,
       name: type.name,
       axle_kinds: [...type.axle_kinds],
+      category: type.category,
+      image_url: type.image_url ?? '',
       sort_order: type.sort_order,
     })
     setError(null)
@@ -178,7 +189,9 @@ export function AxleTypesClient({ axleTypes }: { axleTypes: AxleTypeRow[] }) {
                 <tr>
                   <Th className="w-20 text-center">ลำดับ</Th>
                   <Th>รหัส</Th>
+                  <Th>ประเภท</Th>
                   <Th>ชื่อประเภทเพลา</Th>
+                  <Th className="w-24">รูป</Th>
                   <Th>รูปแบบเพลา</Th>
                   <Th className="text-center">จำนวนล้อ</Th>
                   <Th className="text-center">รถที่ใช้</Th>
@@ -193,7 +206,24 @@ export function AxleTypesClient({ axleTypes }: { axleTypes: AxleTypeRow[] }) {
                     <tr key={type.id} className="transition-colors hover:bg-brand-50/40">
                       <Td className="text-center text-ink-400">{type.sort_order}</Td>
                       <Td><Badge tone="brand">{type.code}</Badge></Td>
+                      <Td>
+                        <Badge tone={type.category === 'trailer' ? 'amber' : 'slate'}>
+                          {CATEGORY_LABEL[type.category]}
+                        </Badge>
+                      </Td>
                       <Td className="font-medium text-ink-900">{type.name}</Td>
+                      <Td>
+                        {type.image_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={type.image_url}
+                            alt={type.name}
+                            className="h-10 w-20 rounded-lg object-contain"
+                          />
+                        ) : (
+                          <span className="text-xs text-ink-400">ไม่มีรูป</span>
+                        )}
+                      </Td>
                       <Td className="whitespace-nowrap text-sm text-ink-500">
                         {type.axle_kinds.map((kind) => kind === 'single' ? 'เดี่ยว' : 'คู่').join(' · ')}
                       </Td>
@@ -284,6 +314,69 @@ export function AxleTypesClient({ axleTypes }: { axleTypes: AxleTypeRow[] }) {
               />
             </Field>
           </div>
+
+          <Field
+            label="ประเภทรถ"
+            required
+            error={fieldErrors.category}
+            hint="ช่างจะเลือกหมวดนี้ก่อน แล้วจึงเห็นเฉพาะประเภทเพลาในหมวดที่เลือก"
+          >
+            <div className="flex gap-2">
+              {(Object.keys(CATEGORY_LABEL) as AxleCategory[]).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => set('category', value)}
+                  className={cn(
+                    'h-12 flex-1 rounded-xl border text-base font-semibold transition-all active:scale-[0.98]',
+                    form.category === value
+                      ? 'border-brand-600 bg-brand-600 text-white'
+                      : 'border-line bg-white text-ink-700 hover:border-brand-300 hover:bg-brand-50',
+                  )}
+                >
+                  {CATEGORY_LABEL[value]}
+                </button>
+              ))}
+            </div>
+          </Field>
+
+          <Field
+            label="รูปผังล้อสำหรับช่าง"
+            error={fieldErrors.image_url}
+            hint="ช่างเห็นรูปนี้ตอนเลือกตำแหน่งล้อ — เว้นว่างได้ถ้ายังไม่มีรูป"
+          >
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+              <button
+                type="button"
+                onClick={() => set('image_url', '')}
+                className={cn(
+                  'flex h-24 items-center justify-center rounded-xl border text-sm font-medium transition-all',
+                  !form.image_url
+                    ? 'border-brand-600 bg-brand-50 text-brand-700'
+                    : 'border-line bg-white text-ink-500 hover:border-brand-300',
+                )}
+              >
+                ไม่ใช้รูป
+              </button>
+              {VEHICLE_IMAGES.map((image) => (
+                <button
+                  key={image.url}
+                  type="button"
+                  onClick={() => set('image_url', image.url)}
+                  className={cn(
+                    'overflow-hidden rounded-xl border bg-white transition-all',
+                    form.image_url === image.url
+                      ? 'border-brand-600 ring-2 ring-brand-200'
+                      : 'border-line hover:border-brand-300',
+                  )}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={image.url} alt={image.label} className="h-20 w-full object-contain" />
+                  <span className="block truncate px-2 pb-1.5 text-xs text-ink-500">{image.label}</span>
+                </button>
+              ))}
+            </div>
+          </Field>
 
           <div className="grid gap-5 sm:grid-cols-[minmax(0,1fr)_9rem]">
             <div>

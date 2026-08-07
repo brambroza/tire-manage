@@ -40,6 +40,18 @@ export async function createCompany(input: SuperCompanyInput): Promise<ActionRes
     .single()
 
   if (error) return fail(error)
+
+  // ตั้งต้นให้บริษัทใหม่เห็นประเภทเพลาที่เปิดใช้งานอยู่ทั้งหมด แล้วค่อยไปปรับที่แท็บสิทธิ์
+  const { data: axleTypes } = await supabase
+    .from('axle_types')
+    .select('id')
+    .eq('is_active', true)
+  if (axleTypes && axleTypes.length > 0) {
+    await supabase
+      .from('company_axle_types')
+      .insert(axleTypes.map((axleType) => ({ company_id: data.id, axle_type_id: axleType.id })))
+  }
+
   revalidatePath('/superadmin/companies')
   return { ok: true, data: { id: data.id } }
 }
@@ -334,6 +346,70 @@ export async function setCompanyTireModels(
   return { ok: true }
 }
 
+/* ======================================= สิทธิ์การมองเห็นประเภทเพลา */
+
+const axleAccessSchema = z.object({
+  companyId: z.string().uuid('รหัสบริษัทไม่ถูกต้อง'),
+  axleTypeIds: z.array(z.string().uuid('รหัสประเภทเพลาไม่ถูกต้อง')),
+})
+
+/**
+ * กำหนดว่าบริษัทลูกค้าเห็นประเภทเพลาใดได้บ้าง (แทนที่รายการเดิมทั้งหมด)
+ * ประเภทเพลาที่มีรถของบริษัทใช้อยู่จะถูกคงไว้เสมอ เพื่อไม่ให้ข้อมูลรถเดิมพัง
+ * @param companyId รหัสบริษัท
+ * @param axleTypeIds รายการประเภทเพลาที่อนุญาต
+ */
+export async function setCompanyAxleTypes(
+  companyId: string,
+  axleTypeIds: string[],
+): Promise<ActionResult> {
+  await requireSession(['super_admin'])
+  const parsed = axleAccessSchema.safeParse({ companyId, axleTypeIds })
+  if (!parsed.success) return zodFail(parsed.error)
+
+  const supabase = await createClient()
+
+  // เพลาที่รถของบริษัทใช้อยู่ ต้องอยู่ในรายการเสมอ
+  const { data: inUse, error: inUseError } = await supabase
+    .from('vehicles')
+    .select('axle_type')
+    .eq('company_id', parsed.data.companyId)
+  if (inUseError) return fail(inUseError)
+
+  const requiredIds = new Set(parsed.data.axleTypeIds)
+  const inUseCodes = [...new Set((inUse ?? []).map((vehicle) => vehicle.axle_type))]
+  if (inUseCodes.length > 0) {
+    const { data: inUseTypes, error: inUseTypeError } = await supabase
+      .from('axle_types')
+      .select('id')
+      .in('code', inUseCodes)
+    if (inUseTypeError) return fail(inUseTypeError)
+    for (const axleType of inUseTypes ?? []) requiredIds.add(axleType.id)
+  }
+
+  const { error: deleteError } = await supabase
+    .from('company_axle_types')
+    .delete()
+    .eq('company_id', parsed.data.companyId)
+  if (deleteError) return fail(deleteError)
+
+  if (requiredIds.size > 0) {
+    const { error } = await supabase
+      .from('company_axle_types')
+      .insert(
+        [...requiredIds].map((axleTypeId) => ({
+          company_id: parsed.data.companyId,
+          axle_type_id: axleTypeId,
+        })),
+      )
+    if (error) return fail(error)
+  }
+
+  revalidatePath(`/superadmin/companies/${parsed.data.companyId}`)
+  revalidatePath(`/superadmin/companies/${parsed.data.companyId}/axle-access`)
+  return { ok: true }
+}
+
 /* ================================================ สาเหตุการถอดยาง */
 
 const reasonSchema = z.object({
@@ -413,6 +489,10 @@ const axleTypeSchema = z.object({
     .array(z.enum(['single', 'dual']))
     .min(1, 'ต้องมีอย่างน้อย 1 เพลา')
     .max(8, 'กำหนดได้ไม่เกิน 8 เพลา'),
+  /** หมวดที่ช่างเลือกหน้างาน — หัว หรือ หาง */
+  category: z.enum(['head', 'trailer'], { message: 'กรุณาเลือกประเภท หัว หรือ หาง' }),
+  /** รูปผังล้อที่ช่างใช้อ้างอิง (ว่างได้) */
+  image_url: optionalText,
   sort_order: z.number().int().min(0, 'ลำดับต้องไม่ติดลบ').default(0),
 })
 const axleTypeIdSchema = z.string().uuid('รหัสประเภทเพลาไม่ถูกต้อง')

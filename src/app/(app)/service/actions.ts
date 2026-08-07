@@ -214,6 +214,8 @@ const batchItemSchema = z.object({
   reason_id: optionalText,
   note: optionalText,
   manual: manualTireSchema.nullable().optional(),
+  /** true = ช่างเลือก "ยางใหม่" — ต้องใช้รุ่นจากแคตตาล็อกของ super admin และซีรีย์ต้องไม่ซ้ำ */
+  new_tire: z.boolean().optional(),
 })
 
 const batchSchema = z.object({
@@ -293,6 +295,50 @@ export async function applyServiceBatchAction(
         return { ok: false, error: `${at}: เลขไมล์ตอนใส่ยางต้องไม่มากกว่าเลขไมล์ปัจจุบัน` }
       }
 
+      // ซีรีย์นี้อาจมีอยู่แล้วแต่หน้าช่างมองไม่เห็น (เช่น ตัดจำหน่ายแล้ว หรืออยู่ในคลัง)
+      // ต้องใช้เส้นเดิม ไม่งั้นชน unique (company_id, serial_no) และประวัติยางขาดตอน
+      const { data: existingTire, error: existingError } = await supabase
+        .from('tires')
+        .select('id, serial_no, status, vehicle_id, position_code')
+        .eq('serial_no', manual.serial_no)
+        .maybeSingle()
+      if (existingError) {
+        await rollbackCreatedTires()
+        return fail(existingError)
+      }
+
+      if (existingTire) {
+        if (existingTire.status === 'mounted' && existingTire.vehicle_id !== vehicle_id) {
+          await rollbackCreatedTires()
+          return {
+            ok: false,
+            error: `${at}: ซีรีย์ ${existingTire.serial_no} ติดตั้งอยู่บนรถคันอื่น — ตรวจสอบซีรีย์ยางอีกครั้ง`,
+          }
+        }
+
+        // ติดตั้งอยู่ที่ล้อนี้อยู่แล้ว = ถอดได้เลย ไม่ต้องผูกย้อนหลัง
+        const alreadyHere =
+          existingTire.status === 'mounted' && existingTire.position_code === item.position_code
+        if (!alreadyHere) {
+          preMounts.push({
+            op: 'mount',
+            tire_id: existingTire.id,
+            position_code: item.position_code,
+            odometer: mountedOdometer,
+            note: 'บันทึกย้อนหลัง (ระบบไม่มีข้อมูลว่ายางเส้นนี้อยู่ที่ล้อนี้)',
+          })
+        }
+        unmounts.push({
+          op: 'unmount',
+          tire_id: existingTire.id,
+          odometer,
+          tread_mm: item.tread_mm,
+          reason_id: item.reason_id,
+          note: item.note,
+        })
+        continue
+      }
+
       // ยังไม่มีรุ่นในแคตตาล็อกแต่ช่างพิมพ์ยี่ห้อมา → สร้างยี่ห้อ/รุ่นให้อัตโนมัติ
       let modelId = manual.tire_model_id
       if (!modelId && manual.brand_name) {
@@ -351,6 +397,45 @@ export async function applyServiceBatchAction(
       if (!item.position_code) {
         await rollbackCreatedTires()
         return { ok: false, error: `${at}: กรุณาเลือกตำแหน่งล้อที่จะใส่ยาง` }
+      }
+
+      // เช็คซ้ำจากซีรีย์ยางอย่างเดียว — ครอบคลุมยางที่หน้าช่างมองไม่เห็น (เช่น ตัดจำหน่ายแล้ว)
+      const { data: existingTire, error: existingError } = await supabase
+        .from('tires')
+        .select('id, serial_no, status, vehicle_id')
+        .eq('serial_no', manual.serial_no)
+        .maybeSingle()
+      if (existingError) {
+        await rollbackCreatedTires()
+        return fail(existingError)
+      }
+
+      if (existingTire) {
+        if (item.new_tire) {
+          await rollbackCreatedTires()
+          return {
+            ok: false,
+            error: `${at}: ซีรีย์ ${existingTire.serial_no} มีอยู่ในระบบแล้ว — ยางใหม่ต้องเป็นซีรีย์ที่ยังไม่เคยบันทึก`,
+          }
+        }
+        // ยางเก่า: ซ้ำเฉพาะเมื่อซีรีย์นั้นยังติดตั้งอยู่บนรถ ต้องถอดออกก่อนถึงจะเอาไปใส่ที่อื่นได้
+        if (existingTire.status === 'mounted') {
+          await rollbackCreatedTires()
+          return {
+            ok: false,
+            error: `${at}: ซีรีย์ ${existingTire.serial_no} ติดตั้งอยู่บนรถคันอื่น — ต้องถอดออกก่อน`,
+          }
+        }
+        // ไม่ได้ติดตั้งอยู่ = ใช้ยางเส้นเดิม ไม่สร้างซ้ำ ประวัติยางจะได้ต่อเนื่อง
+        mounts.push({
+          op: 'mount',
+          tire_id: existingTire.id,
+          position_code: item.position_code,
+          odometer,
+          tread_mm: item.tread_mm,
+          note: item.note,
+        })
+        continue
       }
 
       let modelId = manual.tire_model_id
@@ -412,6 +497,14 @@ export async function applyServiceBatchAction(
         await rollbackCreatedTires()
         return { ok: false, error: `${at}: กรุณาเลือกตำแหน่งล้อที่จะใส่ยาง` }
       }
+      if (item.new_tire) {
+        // เลือกยางเส้นที่มีอยู่แล้วมาใส่เป็น "ยางใหม่" ไม่ได้ — ซีรีย์ซ้ำกับของเดิม
+        await rollbackCreatedTires()
+        return {
+          ok: false,
+          error: `${at}: ซีรีย์นี้มีอยู่ในระบบแล้ว — ยางใหม่ต้องเป็นซีรีย์ที่ยังไม่เคยบันทึก`,
+        }
+      }
       mounts.push({
         op: 'mount',
         tire_id: item.tire_id,
@@ -438,6 +531,216 @@ export async function applyServiceBatchAction(
 
   revalidateService()
   return { ok: true, data: { count: items.length } }
+}
+
+/* ============================================================
+ * หน้าช่าง: เพิ่มคำค้นที่ไม่มีในแคตตาล็อกเป็นรายการรอตรวจสอบ
+ * ============================================================ */
+
+const companyTireModelSchema = z.object({
+  /** คำค้นดิบจากหน้างาน — super admin จะแก้เป็นยี่ห้อ รุ่น และขนาดที่ถูกต้องภายหลัง */
+  label: z.string().trim().min(1, 'กรุณาพิมพ์ข้อมูลยาง').max(40, 'ข้อมูลยางยาวเกิน 40 ตัวอักษร'),
+})
+
+export type CompanyTireModelInput = z.input<typeof companyTireModelSchema>
+
+export interface CompanyTireModelResult {
+  id: string
+  brand_name: string
+  model_name: string
+  size: string | null
+  new_tread_mm: number | null
+}
+
+/**
+ * เพิ่มคำค้นเป็นรุ่นยางรอตรวจสอบของบริษัทที่ผู้ใช้สังกัด
+ *
+ * ใช้ตอนช่างหายางในรายการไม่เจอหน้างาน โดยไม่ต้องกรอกฟอร์มเพิ่มยี่ห้อ/รุ่น
+ * ระบบเก็บคำค้นไว้เป็นขนาดชั่วคราวภายใต้ยี่ห้อรอตรวจสอบของบริษัทนั้น
+ * และติด created_by_company เพื่อให้ super admin เห็นที่มาและแก้รายละเอียดภายหลัง
+ *
+ * @param input คำค้นขนาด/ยี่ห้อ/รุ่นที่ช่างพิมพ์
+ */
+export async function addCompanyTireModelAction(
+  input: CompanyTireModelInput,
+): Promise<ActionResult<CompanyTireModelResult>> {
+  const { company } = await requireSession(['admin', 'technician'])
+  if (!company) return { ok: false, error: 'บัญชีนี้ยังไม่ได้ผูกกับบริษัท' }
+
+  const parsed = companyTireModelSchema.safeParse(input)
+  if (!parsed.success) return zodFail(parsed.error)
+  const data = parsed.data
+  const pendingBrandName = `รอตรวจสอบ (${company.code})`
+  const pendingModelName = 'ข้อมูลจากหน้างาน'
+
+  // แยกยี่ห้อรอตรวจสอบต่อบริษัท ป้องกันข้อมูลชั่วคราวของคนละบริษัทชนกัน
+  const brand = await ensureBrandModel(pendingBrandName)
+  if (!brand.ok) return brand
+  const brandId = brand.data!.brandId
+
+  const supabase = await createClient()
+
+  // คำค้นเดิมของบริษัทนี้ = ใช้รายการเดิม ไม่สร้างซ้ำ
+  const { data: existing, error: findError } = await supabase
+    .from('tire_models')
+    .select('id, name, size, new_tread_mm, tire_brands(name)')
+    .eq('brand_id', brandId)
+    .ilike('name', pendingModelName)
+    .ilike('size', data.label)
+    .maybeSingle()
+  if (findError) return fail(findError)
+
+  const toResult = (row: {
+    id: string
+    name: string
+    size: string | null
+    new_tread_mm: number | null
+    tire_brands: { name: string } | { name: string }[] | null
+  }): CompanyTireModelResult => {
+    const brands = row.tire_brands
+    return {
+      id: row.id,
+      brand_name: (Array.isArray(brands) ? brands[0]?.name : brands?.name) ?? pendingBrandName,
+      model_name: row.name,
+      size: row.size,
+      new_tread_mm: row.new_tread_mm,
+    }
+  }
+
+  if (existing) {
+    revalidateService()
+    return { ok: true, data: toResult(existing) }
+  }
+
+  const { data: created, error: createError } = await supabase
+    .from('tire_models')
+    .insert({
+      brand_id: brandId,
+      name: pendingModelName,
+      size: data.label,
+      created_by_company: company.id,
+    })
+    .select('id, name, size, new_tread_mm, tire_brands(name)')
+    .single()
+
+  if (createError) return fail(createError)
+
+  revalidateService()
+  return { ok: true, data: toResult(created) }
+}
+
+/* ============================================================
+ * หน้าช่าง: คีย์ทะเบียนแล้วเริ่มงานได้เลย
+ * ============================================================ */
+
+const serviceVehicleSchema = z.object({
+  plate_no: z.string().trim().min(1, 'กรุณากรอกทะเบียนรถ').max(20),
+  province: z.string().trim().min(1, 'กรุณาเลือกจังหวัด').max(60),
+  axle_type: z.string().trim().min(1, 'กรุณาเลือกประเภทรถ').max(30),
+})
+
+export type ServiceVehicleInput = z.input<typeof serviceVehicleSchema>
+
+export interface ServiceVehicleResult {
+  id: string
+  plate_no: string
+  province: string
+  axle_type: string
+  current_mileage: number
+  /** true = เพิ่งสร้างรถคันนี้ให้จากหน้าช่าง */
+  created: boolean
+}
+
+/**
+ * หา (หรือสร้าง) รถจากทะเบียนที่ช่างคีย์หน้างาน แล้วตั้งประเภทรถให้ตรงกับที่เลือก
+ *
+ * ช่างทำงานกับรถที่แอดมินยังไม่ได้บันทึกไว้ได้ ระบบจะสร้างให้อัตโนมัติ
+ * เพื่อไม่ให้ต้องรอแอดมินหน้างาน (RLS จำกัดให้อยู่ในบริษัทของช่างเองอยู่แล้ว)
+ *
+ * @param input ทะเบียน จังหวัด และรหัสประเภทเพลาที่ช่างเลือก
+ */
+export async function ensureServiceVehicleAction(
+  input: ServiceVehicleInput,
+): Promise<ActionResult<ServiceVehicleResult>> {
+  const { company } = await requireSession(['admin', 'technician'])
+  if (!company) return { ok: false, error: 'บัญชีนี้ยังไม่ได้ผูกกับบริษัท' }
+
+  const parsed = serviceVehicleSchema.safeParse(input)
+  if (!parsed.success) return zodFail(parsed.error)
+  const data = parsed.data
+
+  const supabase = await createClient()
+
+  const { data: axleType, error: axleTypeError } = await supabase
+    .from('axle_types')
+    .select('code, is_active')
+    .eq('code', data.axle_type)
+    .maybeSingle()
+  if (axleTypeError) return fail(axleTypeError)
+  if (!axleType?.is_active) {
+    return { ok: false, error: 'ประเภทรถนี้ถูกปิดใช้งานแล้ว — แจ้งแอดมินเพื่อเปิดใช้งาน' }
+  }
+
+  const { data: existing, error: findError } = await supabase
+    .from('vehicles')
+    .select('id, plate_no, province, axle_type, current_mileage')
+    .eq('plate_no', data.plate_no)
+    .maybeSingle()
+  if (findError) return fail(findError)
+
+  if (existing) {
+    // เปลี่ยนประเภทรถได้เฉพาะตอนที่ยังไม่มียางติดตั้งอยู่ ไม่งั้นตำแหน่งล้อเดิมจะเพี้ยน
+    if (existing.axle_type !== data.axle_type) {
+      const { count, error: countError } = await supabase
+        .from('tires')
+        .select('id', { count: 'exact', head: true })
+        .eq('vehicle_id', existing.id)
+        .eq('status', 'mounted')
+      if (countError) return fail(countError)
+      if ((count ?? 0) > 0) {
+        return {
+          ok: false,
+          error:
+            `รถคันนี้บันทึกไว้เป็นประเภทอื่น และมียางติดตั้งอยู่ ${count} เส้น ` +
+            'จึงเปลี่ยนประเภทรถจากหน้าช่างไม่ได้ — แจ้งแอดมินให้แก้ข้อมูลรถ',
+        }
+      }
+
+      const { error: updateError } = await supabase
+        .from('vehicles')
+        .update({ axle_type: data.axle_type })
+        .eq('id', existing.id)
+      if (updateError) return fail(updateError)
+    }
+
+    revalidateService()
+    return {
+      ok: true,
+      data: { ...existing, axle_type: data.axle_type, created: false },
+    }
+  }
+
+  const { data: created, error: createError } = await supabase
+    .from('vehicles')
+    .insert({
+      company_id: company.id,
+      plate_no: data.plate_no,
+      province: data.province,
+      axle_type: data.axle_type,
+      current_mileage: 0,
+    })
+    .select('id, plate_no, province, axle_type, current_mileage')
+    .single()
+
+  if (createError) {
+    if (createError.code === '23505') {
+      return { ok: false, error: 'ทะเบียนนี้มีอยู่ในระบบแล้ว — ลองค้นหาใหม่อีกครั้ง' }
+    }
+    return fail(createError)
+  }
+
+  revalidateService()
+  return { ok: true, data: { ...created, created: true } }
 }
 
 function revalidateService() {

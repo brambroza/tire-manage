@@ -132,10 +132,15 @@ create table if not exists public.axle_types (
   code        text not null unique,
   name        text not null,
   axle_kinds  text[] not null,
+  -- head = รถหัวลาก/รถบรรทุก, trailer = หางพ่วง
+  category    text not null default 'head',
+  -- รูปผังล้อที่ช่างใช้อ้างอิงตอนเลือกตำแหน่งล้อ
+  image_url   text,
   sort_order  integer not null default 0 check (sort_order >= 0),
   is_active   boolean not null default true,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now(),
+  constraint axle_types_category_valid check (category in ('head', 'trailer')),
   constraint axle_types_code_format check (
     code = upper(code) and code ~ '^[A-Z0-9_]{1,30}$'
   ),
@@ -145,6 +150,18 @@ create table if not exists public.axle_types (
     and axle_kinds <@ array['single', 'dual']::text[]
   )
 );
+
+-- ------------------------------------------------------------
+-- company_axle_types : super admin กำหนดว่าบริษัทไหนเห็นประเภทเพลาใดบ้าง
+-- ------------------------------------------------------------
+create table if not exists public.company_axle_types (
+  company_id   uuid not null references public.companies(id) on delete cascade,
+  axle_type_id uuid not null references public.axle_types(id) on delete cascade,
+  created_at   timestamptz not null default now(),
+  primary key (company_id, axle_type_id)
+);
+create index if not exists company_axle_types_axle_idx
+  on public.company_axle_types(axle_type_id);
 
 -- ------------------------------------------------------------
 -- vehicles : รถของลูกค้า
@@ -518,6 +535,7 @@ alter table public.tire_models        enable row level security;
 alter table public.company_tire_models enable row level security;
 alter table public.removal_reasons    enable row level security;
 alter table public.axle_types         enable row level security;
+alter table public.company_axle_types enable row level security;
 
 -- companies -------------------------------------------------
 drop policy if exists companies_select on public.companies;
@@ -574,11 +592,33 @@ drop policy if exists reasons_write on public.removal_reasons;
 create policy reasons_write on public.removal_reasons for all to authenticated
   using (is_super_admin()) with check (is_super_admin());
 
--- axle_types : ทุกคนอ่านได้, super admin เท่านั้นที่แก้ --------
+-- axle_types : ลูกค้าเห็นเฉพาะประเภทที่ super admin กำหนดให้ ---
 drop policy if exists axle_types_select on public.axle_types;
-create policy axle_types_select on public.axle_types for select to authenticated using (true);
+create policy axle_types_select on public.axle_types for select to authenticated
+  using (
+    is_super_admin()
+    or exists (
+      select 1 from public.company_axle_types ca
+      where ca.axle_type_id = axle_types.id
+        and ca.company_id = current_company_id()
+    )
+    -- รถที่ใช้เพลานี้อยู่แล้วต้องอ่านผังล้อได้เสมอ ถึงแม้สิทธิ์จะถูกถอนภายหลัง
+    or exists (
+      select 1 from public.vehicles v
+      where v.company_id = current_company_id()
+        and v.axle_type = axle_types.code
+    )
+  );
 drop policy if exists axle_types_write on public.axle_types;
 create policy axle_types_write on public.axle_types for all to authenticated
+  using (is_super_admin()) with check (is_super_admin());
+
+-- company_axle_types -----------------------------------------
+drop policy if exists cat_select on public.company_axle_types;
+create policy cat_select on public.company_axle_types for select to authenticated
+  using (is_super_admin() or company_id = current_company_id());
+drop policy if exists cat_super_write on public.company_axle_types;
+create policy cat_super_write on public.company_axle_types for all to authenticated
   using (is_super_admin()) with check (is_super_admin());
 
 -- tire_brands ------------------------------------------------

@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, Truck, CircleDot, Users, Building2, Wrench, Search,
+  LayoutDashboard, Truck, CircleDot, Users, Building2, Wrench,
 } from 'lucide-react'
 import { AppShell, type NavItem } from '@/components/app-shell'
 import { NotificationBell } from '@/components/notification-bell'
@@ -18,9 +18,9 @@ const ADMIN_NAV: NavItem[] = [
   { href: '/company',     label: 'ข้อมูลบริษัท',        icon: <Building2 className={ICON} /> },
 ]
 
+// ช่างเห็นเฉพาะหน้าทำงานหน้างาน — ไม่มีเมนูค้นหายาง/รถตามสเปคหน้าช่าง
 const TECH_NAV: NavItem[] = [
   { href: '/service', label: 'บันทึกถอด-ใส่ยาง', icon: <Wrench className={ICON} />, exact: true },
-  { href: '/tires',   label: 'ค้นหายาง / รถ',    icon: <Search className={ICON} /> },
 ]
 
 function navFor(role: UserRole): NavItem[] {

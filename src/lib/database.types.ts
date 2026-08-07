@@ -9,6 +9,9 @@ export type TireStatus = 'in_stock' | 'mounted' | 'scrapped' | 'retreading'
 export type TireEventType = 'mount' | 'unmount'
 export type AxleKind = 'single' | 'dual'
 
+/** หมวดของประเภทเพลาที่ช่างเลือกหน้างาน */
+export type AxleCategory = 'head' | 'trailer'
+
 export type Company = {
   id: string
   code: string
@@ -83,10 +86,20 @@ export type AxleType = {
   name: string
   /** รูปแบบแต่ละเพลา เรียงจากหน้าไปหลัง */
   axle_kinds: AxleKind[]
+  /** หมวดของประเภทเพลา — head = รถหัวลาก/รถบรรทุก, trailer = หางพ่วง */
+  category: AxleCategory
+  /** รูปผังล้อที่ช่างใช้อ้างอิงตอนเลือกตำแหน่งล้อ */
+  image_url: string | null
   sort_order: number
   is_active: boolean
   created_at: string
   updated_at: string
+}
+
+export type CompanyAxleType = {
+  company_id: string
+  axle_type_id: string
+  created_at: string
 }
 
 export type Vehicle = {
@@ -227,9 +240,15 @@ export interface Database {
       }
       axle_types: {
         Row: AxleType
-        Insert: Insert<AxleType, Timestamps | 'sort_order' | 'is_active'>
+        Insert: Insert<AxleType, Timestamps | 'sort_order' | 'is_active' | 'category' | 'image_url'>
         Update: Partial<AxleType>
         Relationships: []
+      }
+      company_axle_types: {
+        Row: CompanyAxleType
+        Insert: Insert<CompanyAxleType, 'created_at'>
+        Update: Partial<CompanyAxleType>
+        Relationships: [FK<'company_id', 'companies'>, FK<'axle_type_id', 'axle_types'>]
       }
       vehicles: {
         Row: Vehicle

@@ -15,6 +15,7 @@ export function CompanyTabs({ companyId }: { companyId: string }) {
     { href: `${base}/tires`, label: 'คลังยาง' },
     { href: `${base}/users`, label: 'ผู้ใช้งาน' },
     { href: `${base}/access`, label: 'สิทธิ์ยาง' },
+    { href: `${base}/axle-access`, label: 'สิทธิ์เพลา' },
   ]
 
   return (

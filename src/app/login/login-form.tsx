@@ -7,6 +7,30 @@ import gsap from 'gsap'
 import { createClient } from '@/lib/supabase/client'
 import { Button, Field, Input } from '@/components/ui'
 
+/**
+ * คีย์ใน localStorage ที่เก็บอีเมล/รหัสผ่านที่ผู้ใช้สั่งให้จำไว้
+ * เก็บเฉพาะเครื่องที่ผู้ใช้ติ๊กเอง และล้างทันทีเมื่อเอาติ๊กออก
+ */
+const REMEMBER_KEY = 'dream-tire.remember'
+
+interface RememberedLogin {
+  email: string
+  password: string
+}
+
+/** อ่านข้อมูล login ที่จำไว้ (คืน null ถ้าไม่มีหรือข้อมูลเสีย) */
+function readRemembered(): RememberedLogin | null {
+  try {
+    const raw = window.localStorage.getItem(REMEMBER_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<RememberedLogin>
+    if (typeof parsed.email !== 'string' || typeof parsed.password !== 'string') return null
+    return { email: parsed.email, password: parsed.password }
+  } catch {
+    return null
+  }
+}
+
 /** ฟอร์ม login ด้วยอีเมล/รหัสผ่านของ Supabase Auth */
 export function LoginForm() {
   const router = useRouter()
@@ -18,6 +42,21 @@ export function LoginForm() {
   const [showPassword, setShowPassword] = React.useState(false)
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  /** จำอีเมลและรหัสผ่านไว้ในเครื่องนี้ (ปิดไว้เป็นค่าเริ่มต้น) */
+  const [remember, setRemember] = React.useState(false)
+
+  /**
+   * เติมข้อมูลที่จำไว้ให้ตอนเปิดหน้า login
+   * อ่านหลัง mount เพราะ localStorage มีเฉพาะฝั่งเบราว์เซอร์ (กัน hydration ไม่ตรงกัน)
+   */
+  React.useEffect(() => {
+    const saved = readRemembered()
+    if (!saved) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- ค่ามาจาก localStorage ซึ่งอ่านได้หลัง mount เท่านั้น
+    setEmail(saved.email)
+    setPassword(saved.password)
+    setRemember(true)
+  }, [])
 
   /** intro: field ค่อย ๆ ไล่ขึ้นมาทีละอัน */
   React.useEffect(() => {
@@ -75,6 +114,16 @@ export function LoginForm() {
       return
     }
 
+    // จำไว้เฉพาะตอนเข้าสู่ระบบสำเร็จ — เอาติ๊กออกแล้วล้างของเดิมทิ้งทันที
+    if (remember) {
+      window.localStorage.setItem(
+        REMEMBER_KEY,
+        JSON.stringify({ email: email.trim(), password } satisfies RememberedLogin),
+      )
+    } else {
+      window.localStorage.removeItem(REMEMBER_KEY)
+    }
+
     router.replace(params.get('next') || '/')
     router.refresh()
   }
@@ -128,6 +177,27 @@ export function LoginForm() {
             </button>
           </div>
         </Field>
+      </div>
+
+      <div data-row>
+        <label className="flex cursor-pointer items-start gap-3 rounded-xl px-1 py-1.5">
+          <input
+            type="checkbox"
+            checked={remember}
+            onChange={(e) => {
+              setRemember(e.target.checked)
+              // เอาติ๊กออกกลางคัน = ลบของที่จำไว้ทันที ไม่ต้องรอ login รอบถัดไป
+              if (!e.target.checked) window.localStorage.removeItem(REMEMBER_KEY)
+            }}
+            className="mt-0.5 size-5 shrink-0 rounded border-line text-brand-600 focus:ring-brand-200"
+          />
+          <span className="text-sm text-ink-700">
+            จำอีเมลและรหัสผ่านไว้ในเครื่องนี้
+            <span className="mt-0.5 block text-xs text-ink-400">
+              ใช้เฉพาะเครื่องส่วนตัว — เครื่องที่ใช้ร่วมกันหลายคนไม่ควรเปิด
+            </span>
+          </span>
+        </label>
       </div>
 
       <div data-row className="pt-1">
