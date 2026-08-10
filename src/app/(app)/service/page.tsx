@@ -70,7 +70,7 @@ export default async function ServicePage({
     <>
       <PageHeader
         title="บันทึกการถอด-ใส่ยาง"
-        subtitle="คีย์ทะเบียน เลือกประเภทรถ แล้วทำทีละล้อจนครบ"
+        subtitle=""
       />
       <ServiceWizard
         vehicles={(vehicleData ?? []) as Pick<Vehicle, keyof VehicleLite>[] as VehicleLite[]}
