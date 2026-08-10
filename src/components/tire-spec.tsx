@@ -20,10 +20,10 @@ export function TireSpec({
   return (
     <span className={cn('block min-w-0', className)}>
       <span className={cn('block truncate text-[15px] font-semibold text-ink-900', sizeClassName)}>
-        {tireSizeLabel(size)}
+        {tireSizeLabel(size) } - {tireSizeLabel(modelName)}
       </span>
       <span className={cn('mt-0.5 block truncate text-xs font-normal text-ink-400', detailClassName)}>
-        {tireBrandModelLabel(brandName, modelName)}
+        {tireBrandModelLabel(brandName, '')}
       </span>
     </span>
   )

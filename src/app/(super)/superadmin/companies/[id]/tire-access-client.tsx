@@ -82,7 +82,7 @@ export function TireAccessClient({
     <Card>
       <CardHeader
         title="สิทธิ์การมองเห็นยาง"
-        description="เลือกรุ่นยางที่บริษัทนี้จะเห็นในระบบ (ยางที่ช่างเพิ่มเองจะเห็นเฉพาะบริษัทตัวเองเสมอ)"
+        description="เลือกรุ่นยางที่บริษัทนี้จะเห็นในระบบ "
         action={
           <div className="flex items-center gap-3">
             {saved && (
