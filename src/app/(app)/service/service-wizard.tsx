@@ -383,21 +383,11 @@ export function ServiceWizard({
 
   const odometerValid = odometer.trim() !== '' && Number(odometer) >= 0
 
-  /**
-   * ล้อนี้มียางในระบบอยู่แล้ว แต่ซีเรียลที่คีย์ไม่ตรง — ต้องให้ช่างตรวจก่อน
-   * ไม่งั้นระบบจะสร้างยางซ้ำทับตำแหน่งเดิมและประวัติยางเพี้ยน
-   */
-  const unMismatch =
-    Boolean(slotTire) &&
-    unPick.serialNo.trim() !== '' &&
-    unPick.serialNo.trim().toLowerCase() !== slotTire!.serial_no.toLowerCase()
-
   const canSubmitUnmount =
     unPick.serialNo.trim() !== '' &&
     unSpec.size !== '' &&
     unPick.treadMm !== '' &&
-    reasonId !== '' &&
-    !unMismatch
+    reasonId !== ''
 
   const mountCandidate = findTire(mnPick.serialNo)
 
@@ -439,17 +429,12 @@ export function ServiceWizard({
 
     setVehicle(found)
     setIsNewVehicle(!found)
-    if (found) {
-      setProvince(found.province)
-      setOdometer(String(found.current_mileage))
-      const currentType = axleTypes.find((t) => t.code === found.axle_type) ?? null
-      setCategory(currentType?.category ?? null)
-      setAxleTypeCode(found.axle_type)
-    } else {
-      setOdometer('')
-      setCategory(null)
-      setAxleTypeCode(null)
-    }
+    // ทะเบียนเดิมที่เคยทำก็เริ่มใหม่หมด — ไม่ดึงประเภทรถ/แบบรถ/เลขไมล์เดิมขึ้นมา
+    // (จังหวัดของรถเดิมยังใช้ต่อเพราะเป็นคีย์ผูกทะเบียน ไม่ได้แสดงบนหน้าจอ)
+    if (found) setProvince(found.province)
+    setOdometer('')
+    setCategory(null)
+    setAxleTypeCode(null)
     setStep('category')
   }
 
@@ -481,7 +466,6 @@ export function ServiceWizard({
       current_mileage: data.current_mileage,
     })
     setIsNewVehicle(false)
-    if (odometer.trim() === '') setOdometer(data.current_mileage > 0 ? String(data.current_mileage) : '')
     setStep('odometer')
     router.refresh()
   }
@@ -517,24 +501,8 @@ export function ServiceWizard({
     setError(null)
     setPosition(pos.code)
 
-    // เติมยางที่ระบบบันทึกไว้ในล้อนี้ให้ก่อน ช่างแก้ได้ถ้าหน้างานไม่ตรง
-    const current = slots[pos.code]
-    const tire = current ? tires.find((t) => t.id === current.tireId) ?? null : null
-    const model = tire
-      ? allModels.find(
-          (m) =>
-            (m.size ?? '').toLowerCase() === (tire.size ?? '').toLowerCase() &&
-            m.brand_name.toLowerCase() === (tire.brand_name ?? '').toLowerCase() &&
-            m.model_name.toLowerCase() === (tire.model_name ?? '').toLowerCase(),
-        ) ?? null
-      : null
-
-    setUnPick({
-      modelId: model?.id ?? '',
-      stockTireId: '',
-      serialNo: tire?.serial_no ?? '',
-      treadMm: '',
-    })
+    // ไม่เติมยางเดิมของล้อนี้ให้ — ช่างคีย์ของจริงหน้างานใหม่ทุกครั้ง
+    setUnPick(EMPTY_PICK)
     setReasonId('')
     setMountKind(null)
     setMnPick(EMPTY_PICK)
@@ -853,11 +821,7 @@ export function ServiceWizard({
       {/* -------------------------------------------- ขั้นที่ 4: เลขไมล์ */}
       {step === 'odometer' && (
         <StepCard title="ใส่เลขไมล์" description={`เลขไมล์ปัจจุบันของ ${vehicle?.plate_no ?? plateNo}`}>
-          <Field
-            label="เลขไมล์ (กม.)"
-            required
-            hint={vehicle ? `ล่าสุดในระบบ ${formatKm(vehicle.current_mileage)}` : undefined}
-          >
+          <Field label="เลขไมล์ (กม.)" required>
             <div className="relative">
               <Gauge className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-ink-400" />
               <Input
@@ -899,7 +863,8 @@ export function ServiceWizard({
           <WheelDiagram
             axleType={vehicle.axle_type}
             axleTypes={axleTypes}
-            slots={slots}
+            // ไม่โชว์ยางเดิมบนผัง — ทุกล้อว่างเสมอ ช่างเลือกแล้วคีย์ใหม่
+            slots={{}}
             selected={position}
             onSelect={startWheel}
             mode="unmount"
@@ -911,13 +876,6 @@ export function ServiceWizard({
       {/* ------------------------------------------- ขั้นที่ 6: ถอดยาง */}
       {step === 'unmount' && (
         <StepCard title="ถอดยาง" description={wheelName(position)}>
-          {slotTire && (
-            <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-ink-500">
-              ระบบบันทึกไว้ว่าล้อนี้คือ{' '}
-              <span className="font-medium text-ink-800">{slotTire.serial_no}</span>
-            </p>
-          )}
-
           <TirePickFields
             pick={unPick}
             onChange={setUnPick}
@@ -926,11 +884,6 @@ export function ServiceWizard({
             onAddModel={addModel}
             withTread
             treadLabel="ดอกยางเหลือ (มม.)"
-            serialError={
-              unMismatch
-                ? `ไม่ตรงกับที่ระบบบันทึกไว้ (${slotTire!.serial_no}) — ตรวจสอบซีรีย์ยางอีกครั้ง`
-                : undefined
-            }
           />
 
           <Field label="สาเหตุ" required>
