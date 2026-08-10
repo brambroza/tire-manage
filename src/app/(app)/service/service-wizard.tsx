@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  AlertCircle, ArrowLeft, Check, ChevronRight, Gauge, MapPin, Plus, Truck,
+  AlertCircle, ArrowLeft, Check, ChevronRight, Gauge, MapPin, Plus, Truck, X,
 } from 'lucide-react'
 import { Badge, Button, Field, Input, Select } from '@/components/ui'
 import { WheelDiagram, type WheelSlot } from '@/components/wheel-diagram'
@@ -106,6 +106,27 @@ const TREAD_OPTIONS = Array.from({ length: 21 }, (_, i) => i)
 function groupDigits(digits: string): string {
   if (digits === '') return ''
   return Number(digits).toLocaleString('en-US')
+}
+
+/**
+ * ทำข้อความให้เทียบง่ายตอนค้นหา — ตัดช่องว่าง ขีด จุด และตัวพิมพ์ใหญ่ทิ้ง
+ * เช่น "11R22.5" "11 r 22 5" "295/80R22.5" จึงค้นเจอกันได้
+ * @param value ข้อความดิบ
+ */
+function normalizeSearch(value: string): string {
+  return value.toLowerCase().replace(/[\s\-_./]/g, '')
+}
+
+/**
+ * ตัดคำค้นเป็นคำย่อย ๆ เพื่อค้นแบบ "ต้องเจอทุกคำ" (ไม่สนลำดับ)
+ * เช่น "bridgestone 11r22.5" ค้นเจอ "11R22.5 · Bridgestone R150"
+ * @param query คำค้นที่ช่างพิมพ์
+ */
+function searchTokens(query: string): string[] {
+  return query
+    .split(/\s+/)
+    .map(normalizeSearch)
+    .filter((token) => token !== '')
 }
 
 /**
@@ -1086,6 +1107,9 @@ function TireAutocomplete({
   const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState('')
   const [adding, setAdding] = React.useState(false)
+  /** true ระหว่างนิ้ว/เมาส์กดค้างอยู่ในรายการ — กัน blur ปิดรายการก่อนคลิกทำงาน (Safari) */
+  const pressingRef = React.useRef(false)
+  const inputRef = React.useRef<HTMLInputElement>(null)
 
   const selectedId = pick.stockTireId || pick.modelId
   const selected = options.find((o) => o.id === selectedId) ?? null
@@ -1094,10 +1118,14 @@ function TireAutocomplete({
   const text = selected ? `${selected.size} · ${selected.detail}` : query
 
   const matches = React.useMemo(() => {
-    const q = query.trim().toLowerCase()
-    if (selected || q === '') return options.slice(0, 50)
+    if (selected) return options.slice(0, 50)
+    const tokens = searchTokens(query)
+    if (tokens.length === 0) return options.slice(0, 50)
     return options
-      .filter((o) => `${o.size} ${o.detail}`.toLowerCase().includes(q))
+      .filter((o) => {
+        const hay = normalizeSearch(`${o.size} ${o.detail}`)
+        return tokens.every((t) => hay.includes(t))
+      })
       .slice(0, 50)
   }, [options, query, selected])
 
@@ -1138,15 +1166,31 @@ function TireAutocomplete({
 
   const canAddQuery = Boolean(onAddModel && query.trim() && matches.length === 0)
 
+  /** ล้างรายการที่เลือก กลับไปค้นหาใหม่ */
+  function clearSelection() {
+    onChange({
+      ...pick,
+      modelId: '',
+      stockTireId: '',
+      ...(pick.stockTireId ? { serialNo: '', treadMm: '' } : {}),
+    })
+    setQuery('')
+    setOpen(true)
+    inputRef.current?.focus()
+  }
+
   return (
     <div
       className="relative"
       onBlur={(e) => {
-        // ปิดรายการเฉพาะตอนโฟกัสหลุดออกนอกกล่องทั้งก้อน (ไม่ใช่ตอนกดตัวเลือก)
+        // Safari ไม่โฟกัสปุ่มตอนกด → relatedTarget เป็น null แล้วรายการปิดก่อน onClick ทำงาน
+        // จึงไม่ปิดถ้ากำลังกดค้างอยู่ในรายการ
+        if (pressingRef.current) return
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false)
       }}
     >
       <Input
+        ref={inputRef}
         value={text}
         onChange={(e) => {
           // พิมพ์ใหม่ = ยกเลิกรายการที่เลือกไว้ แล้วค้นหาต่อ
@@ -1164,7 +1208,13 @@ function TireAutocomplete({
           setOpen(true)
         }}
         onFocus={() => setOpen(true)}
+        // แตะซ้ำที่ช่องเมื่อเลือกไว้แล้ว = เปิดรายการให้เลือกใหม่ได้ทันที
+        onClick={() => setOpen(true)}
         onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            setOpen(false)
+            return
+          }
           if (e.key !== 'Enter' || !canAddQuery) return
           e.preventDefault()
           void addUnmatchedQuery()
@@ -1174,19 +1224,43 @@ function TireAutocomplete({
         disabled={adding}
         enterKeyHint="done"
         autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellCheck={false}
         role="combobox"
         aria-expanded={open}
-        className="h-14 text-lg"
+        className={cn('h-14 text-lg', selected && 'pr-12')}
       />
 
+      {selected && (
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={clearSelection}
+          aria-label="ล้างยางที่เลือก"
+          className="absolute right-1 top-1 flex size-12 items-center justify-center rounded-lg text-ink-400 hover:bg-slate-100 hover:text-ink-700"
+        >
+          <X className="size-5" />
+        </button>
+      )}
+
       {open && (
-        <div className="absolute z-30 mt-1 max-h-72 w-full overflow-auto rounded-xl border border-line bg-white py-1 shadow-lg">
+        <div
+          // กัน input หลุดโฟกัสตอนแตะรายการ — Safari ปิด dropdown ก่อน click ถ้าไม่กัน
+          onMouseDown={(e) => e.preventDefault()}
+          onPointerDown={() => { pressingRef.current = true }}
+          onPointerUp={() => { pressingRef.current = false }}
+          onPointerCancel={() => { pressingRef.current = false }}
+          className="absolute z-30 mt-1 max-h-72 w-full overflow-auto overscroll-contain rounded-xl border border-line bg-white py-1 shadow-lg"
+        >
           {query.trim() === '' && options.length === 0 && (
             <p className="px-4 py-3 text-sm text-ink-500">{emptyText}</p>
           )}
 
-          {query.trim() !== '' && matches.length === 0 && !onAddModel && (
-            <p className="px-4 py-3 text-sm text-ink-500">ไม่พบยางตามคำค้น</p>
+          {query.trim() !== '' && matches.length === 0 && (
+            <p className="px-4 py-3 text-sm text-ink-500">
+              ไม่พบยางตามคำค้น “{query.trim()}” — ลองพิมพ์เฉพาะขนาด เช่น 11R22.5
+            </p>
           )}
 
           {/* หายางที่ใช้หน้างานไม่เจอ → ใช้คำค้นได้เลย แอดมินค่อยแก้รายละเอียด */}
@@ -1214,7 +1288,10 @@ function TireAutocomplete({
               key={option.id}
               type="button"
               onClick={() => choose(option)}
-              className="flex w-full items-center gap-2 px-4 py-3 text-left hover:bg-brand-50"
+              className={cn(
+                'flex min-h-14 w-full items-center gap-2 px-4 py-3 text-left hover:bg-brand-50 active:bg-brand-100',
+                option.id === selectedId && 'bg-brand-50',
+              )}
             >
               <span className="min-w-0 flex-1">
                 <span className="flex flex-wrap items-center gap-2">
