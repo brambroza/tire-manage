@@ -169,12 +169,18 @@ export function ServiceWizard({
   const [step, setStep] = React.useState<Step>('plate')
   const [error, setError] = React.useState<string | null>(null)
   const [saving, setSaving] = React.useState(false)
+  /** ข้อความแจ้งเตือนสั้นหลังบันทึกสำเร็จ (null = ไม่แสดง) */
+  const [toast, setToast] = React.useState<string | null>(null)
 
   /* ทะเบียน: กล่องหน้า (ตัวอักษร/เลข) + กล่องหลัง */
   const initialPlate = (initialVehicle?.plate_no ?? '').split('-')
   const [platePrefix, setPlatePrefix] = React.useState(initialPlate[0] ?? '')
   const [plateNumber, setPlateNumber] = React.useState(initialPlate[1] ?? '')
   const [province, setProvince] = React.useState(initialVehicle?.province ?? PROVINCES[0])
+  /** ช่องทะเบียนส่วนหน้า — โฟกัสกลับเมื่อลบย้อนจากช่องหลังที่ว่าง */
+  const platePrefixRef = React.useRef<HTMLInputElement>(null)
+  /** ช่องทะเบียนส่วนหลัง — โฟกัสอัตโนมัติเมื่อคีย์ส่วนหน้าครบ 2 ตัว */
+  const plateNumberRef = React.useRef<HTMLInputElement>(null)
 
   /** รถที่กำลังทำงานอยู่ (มาจากระบบ หรือเพิ่งสร้างจากทะเบียนที่คีย์) */
   const [vehicle, setVehicle] = React.useState<VehicleLite | null>(initialVehicle)
@@ -207,6 +213,13 @@ export function ServiceWizard({
     const seen = new Set(models.map((m) => m.id))
     return [...models, ...addedModels.filter((m) => !seen.has(m.id))]
   }, [models, addedModels])
+
+  /** ซ่อน snackbar เองหลัง 3 วินาที — ช่างไม่ต้องกดปิด */
+  React.useEffect(() => {
+    if (!toast) return
+    const timer = setTimeout(() => setToast(null), 3000)
+    return () => clearTimeout(timer)
+  }, [toast])
 
   const plateNo = `${platePrefix.trim()}-${plateNumber.trim()}`
   const axleType = axleTypes.find((t) => t.code === axleTypeCode) ?? null
@@ -591,6 +604,7 @@ export function ServiceWizard({
 
     // บันทึกแล้วกลับไปเริ่มรถคันใหม่ทันที — ไม่มีทางเลือกทำต่อรถคันเดิม
     startOver()
+    setToast('บันทึกเรียบร้อย')
     router.refresh()
   }
 
@@ -675,21 +689,36 @@ export function ServiceWizard({
 
       {/* --------------------------------------------- ขั้นที่ 1: ทะเบียน */}
       {step === 'plate' && (
-        <StepCard title="ใส่ทะเบียนรถ" description="คีย์ทะเบียนของรถที่กำลังทำงานอยู่">
+        <StepCard title="ใส่ทะเบียนรถ" description="">
           <div className="flex items-center gap-2">
             <Input
+              ref={platePrefixRef}
               value={platePrefix}
-              onChange={(e) => setPlatePrefix(e.target.value)}
+              onChange={(e) => {
+                // จำกัด 2 ตัว แล้วดีดไปช่องหลังทันที — ช่างคีย์รวดเดียวไม่ต้องแตะจอ
+                const value = e.target.value.slice(0, 2)
+                setPlatePrefix(value)
+                if (value.length === 2) plateNumberRef.current?.focus()
+              }}
               placeholder="70"
-              maxLength={6}
+              maxLength={2}
               autoFocus
               className="h-16 text-center text-2xl font-semibold"
               aria-label="ทะเบียนส่วนหน้า"
             />
             <span className="text-2xl font-semibold text-ink-400">-</span>
             <Input
+              ref={plateNumberRef}
               value={plateNumber}
               onChange={(e) => setPlateNumber(e.target.value)}
+              onKeyDown={(e) => {
+                // ลบย้อนจากช่องว่าง = กลับไปแก้ส่วนหน้า
+                if (e.key === 'Backspace' && plateNumber === '') {
+                  e.preventDefault()
+                  setPlatePrefix((prev) => prev.slice(0, -1))
+                  platePrefixRef.current?.focus()
+                }
+              }}
               placeholder="1234"
               inputMode="numeric"
               maxLength={8}
@@ -747,7 +776,7 @@ export function ServiceWizard({
       {step === 'axle' && (
         <StepCard
           title={`เลือกแบบรถ (${category ? CATEGORY_LABEL[category] : ''})`}
-          description="แตะรูปแบบที่ตรงกับรถหน้างาน"
+          description=""
         >
           {axleChoices.length === 0 ? (
             <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -968,6 +997,25 @@ export function ServiceWizard({
           รถใหม่จะถูกบันทึกเข้าระบบด้วยทะเบียนและจังหวัดที่เลือก
         </p>
       )}
+
+      {/* snackbar ยืนยันบันทึกสำเร็จ — มุมขวาบน ไม่บังปุ่มหน้าจอ */}
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="pointer-events-none fixed right-4 top-4 z-50 max-w-[calc(100vw-2rem)]"
+        >
+          <div className="animate-slide-in-right flex items-center gap-3 rounded-2xl border border-emerald-100 bg-white py-3 pl-3 pr-5 shadow-lg ring-1 ring-black/5">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+              <Check className="size-5" strokeWidth={3} />
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-base font-semibold text-ink-900">{toast}</span>
+              <span className="block text-xs text-ink-500">เริ่มรถคันใหม่ได้เลย</span>
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1142,7 +1190,7 @@ function TireAutocomplete({
           )}
 
           {/* หายางที่ใช้หน้างานไม่เจอ → ใช้คำค้นได้เลย แอดมินค่อยแก้รายละเอียด */}
-          {canAddQuery && (
+         {/*  {canAddQuery && (
             <button
               type="button"
               onClick={() => void addUnmatchedQuery()}
@@ -1159,7 +1207,7 @@ function TireAutocomplete({
                 </span>
               </span>
             </button>
-          )}
+          )} */}
 
           {matches.map((option) => (
             <button
@@ -1227,8 +1275,8 @@ function TirePickFields({
         required
         hint={
           selectionHint ?? (onAddModel
-            ? 'พิมพ์ค้นหาแล้วแตะเลือก — ถ้าไม่พบ แตะ “ใช้คำนี้เลย” ใต้ช่องค้นหา'
-            : 'พิมพ์ค้นหาขนาด/ยี่ห้อ แล้วแตะเลือกจากรายการ')
+            ? ''
+            : '')
         }
       >
         <TireAutocomplete
