@@ -11,6 +11,7 @@ import { Modal } from '@/components/ui/modal'
 import { TireThumb } from '@/components/tire-thumb'
 import { TireSpec } from '@/components/tire-spec'
 import { cn } from '@/lib/utils'
+import { tireSizeLabel } from '@/lib/tire-display'
 import {
   createBrand, createModel, deleteTireImage, setBrandActive, setModelActive, updateModel,
   uploadTireImage, type ModelInput,
@@ -37,11 +38,19 @@ const EMPTY_MODEL: ModelInput = {
   brand_id: '', name: '', size: '', pattern_code: '', new_tread_mm: 16, image_url: '',
 }
 
+/**
+ * รวมขนาดยางกับชื่อรุ่น / ซีรีส์ ไว้ในบรรทัดเดียวสำหรับแสดงเป็นข้อมูลหลัก
+ * @param model รุ่นยางในแคตตาล็อก
+ * @returns ข้อความเช่น "295/80R22.5 X MULTI Z"
+ */
+const sizeWithModel = (model: CatalogModel) =>
+  [tireSizeLabel(model.size), model.name.trim()].filter(Boolean).join(' ')
+
 /** รายการชั่วคราวจากหน้าช่างที่ยังใส่ยี่ห้อ/รุ่นจริงไม่ครบ */
 const isPendingModel = (model: CatalogModel) =>
   model.brand_name.startsWith('รอตรวจสอบ (') || model.name === 'ข้อมูลจากหน้างาน'
 
-/** จัดการข้อมูลยางกลาง: ยี่ห้อ / รุ่น / ขนาด / รหัสดอกยาง / ดอกยางตอนใหม่ */
+/** จัดการข้อมูลยางกลาง: ยี่ห้อ / รุ่น / ขนาด / ดอกยางตอนใหม่ */
 export function CatalogClient({
   brands,
   models,
@@ -250,11 +259,10 @@ export function CatalogClient({
               <thead>
                 <tr>
                   <Th className="w-16">รูป</Th>
-                  <Th>ขนาด / ยี่ห้อ รุ่น</Th>
-                  <Th>รหัสดอกยาง</Th>
+                  <Th>ขนาด รุ่น / ยี่ห้อ</Th>
                   <Th className="text-right">ดอกยางตอนใหม่</Th>
                   <Th className="text-right">ยางในระบบ</Th>
-                  <Th>ที่มา</Th>
+                  {/* <Th>ที่มา</Th> */}
                   <Th>สถานะ</Th>
                   <Th className="text-right">จัดการ</Th>
                 </tr>
@@ -272,20 +280,19 @@ export function CatalogClient({
                       <TireThumb src={m.image_url} alt={`${m.brand_name} ${m.name}`} />
                     </Td>
                     <Td>
-                      <TireSpec size={m.size} brandName={m.brand_name} modelName={m.name} />
+                      <TireSpec size={sizeWithModel(m)} brandName={m.brand_name} />
                     </Td>
-                    <Td>{m.pattern_code ?? '-'}</Td>
                     <Td className="text-right">
                       {m.new_tread_mm !== null ? `${m.new_tread_mm} มม.` : '-'}
                     </Td>
                     <Td className="text-right">{m.tire_count}</Td>
-                    <Td>
+                 {/*    <Td>
                       {isPendingModel(m)
                         ? <Badge tone="amber">รอตรวจสอบ{m.company_name ? ` · ${m.company_name}` : ''}</Badge>
                         : m.created_by_company
                           ? <Badge tone="slate">ลูกค้าเพิ่มเอง{m.company_name ? ` · ${m.company_name}` : ''}</Badge>
                         : <Badge tone="brand">แคตตาล็อกกลาง</Badge>}
-                    </Td>
+                    </Td> */}
                     <Td>
                       <Badge tone={m.is_active ? 'emerald' : 'slate'}>
                         {m.is_active ? 'ใช้งาน' : 'ปิดใช้งาน'}
@@ -378,30 +385,21 @@ export function CatalogClient({
           <Field label="ชื่อรุ่น / ซีรีส์" required error={fieldErrors.name}>
             <Input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="X MULTI Z" />
           </Field>
-          <div className="grid gap-5 sm:grid-cols-2">
-            <Field label="รหัสดอกยาง">
-              <Input
-                value={form.pattern_code ?? ''}
-                onChange={(e) => set('pattern_code', e.target.value)}
-                placeholder="MZ-295"
-              />
-            </Field>
-            <Field label="ดอกยางตอนใหม่ (มม.)" error={fieldErrors.new_tread_mm}>
-              <Input
-                type="number"
-                inputMode="decimal"
-                step="0.1"
-                min={0}
-                max={99.9}
-                value={form.new_tread_mm ?? ''}
-                onChange={(e) => set(
-                  'new_tread_mm',
-                  e.target.value === '' ? null : Number(e.target.value),
-                )}
-                placeholder="16.0"
-              />
-            </Field>
-          </div>
+          <Field label="ดอกยางตอนใหม่ (มม.)" error={fieldErrors.new_tread_mm}>
+            <Input
+              type="number"
+              inputMode="decimal"
+              step="0.1"
+              min={0}
+              max={99.9}
+              value={form.new_tread_mm ?? ''}
+              onChange={(e) => set(
+                'new_tread_mm',
+                e.target.value === '' ? null : Number(e.target.value),
+              )}
+              placeholder="16.0"
+            />
+          </Field>
 
           <Field
             label="รูปยาง"

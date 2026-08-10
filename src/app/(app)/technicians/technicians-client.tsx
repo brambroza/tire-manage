@@ -266,11 +266,11 @@ export function TechniciansClient({
                 />
               </Field>
               <Field label="รหัสผ่านเริ่มต้น" required error={fieldErrors.password}
-                hint="อย่างน้อย 8 ตัวอักษร">
+                hint="อย่างน้อย 6 ตัวอักษร">
                 <Input
                   type="text" value={form.password}
                   onChange={(e) => set('password', e.target.value)}
-                  placeholder="อย่างน้อย 8 ตัวอักษร"
+                  placeholder="อย่างน้อย 6 ตัวอักษร"
                 />
               </Field>
             </div>
@@ -312,7 +312,7 @@ export function TechniciansClient({
           </>
         }
       >
-        <Field label="รหัสผ่านใหม่" required hint="อย่างน้อย 8 ตัวอักษร">
+        <Field label="รหัสผ่านใหม่" required hint="อย่างน้อย 6 ตัวอักษร">
           <Input value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
         </Field>
       </Modal>

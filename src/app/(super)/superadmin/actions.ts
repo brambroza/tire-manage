@@ -97,7 +97,7 @@ export async function setCompanyActive(id: string, isActive: boolean): Promise<A
 const companyAdminSchema = z.object({
   company_id: z.string().uuid(),
   email: z.string().trim().email('อีเมลไม่ถูกต้อง'),
-  password: z.string().min(8, 'รหัสผ่านอย่างน้อย 8 ตัวอักษร'),
+  password: z.string().min(6, 'รหัสผ่านอย่างน้อย 6 ตัวอักษร'),
   full_name: z.string().trim().min(1, 'กรุณากรอกชื่อ-นามสกุล'),
   role: z.enum(['admin', 'technician']),
 })

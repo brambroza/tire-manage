@@ -9,7 +9,7 @@ import { ActionResult, fail, optionalText, zodFail } from '@/lib/action-result'
 
 const createSchema = z.object({
   email: z.string().trim().email('อีเมลไม่ถูกต้อง'),
-  password: z.string().min(8, 'รหัสผ่านอย่างน้อย 8 ตัวอักษร'),
+  password: z.string().min(6, 'รหัสผ่านอย่างน้อย 6 ตัวอักษร'),
   full_name: z.string().trim().min(1, 'กรุณากรอกชื่อ-นามสกุล'),
   phone: optionalText,
   employee_no: optionalText,
@@ -182,7 +182,7 @@ export async function deleteTeamMember(id: string): Promise<ActionResult> {
  */
 export async function resetMemberPassword(id: string, password: string): Promise<ActionResult> {
   const session = await requireSession(['admin', 'super_admin'])
-  if (password.length < 8) return { ok: false, error: 'รหัสผ่านอย่างน้อย 8 ตัวอักษร' }
+  if (password.length < 6) return { ok: false, error: 'รหัสผ่านอย่างน้อย 6 ตัวอักษร' }
 
   const supabase = await createClient()
   const { data: target } = await supabase

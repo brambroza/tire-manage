@@ -133,7 +133,7 @@ export function CompanyUsersClient({
             <Field label="อีเมล" required error={fieldErrors.email}>
               <Input type="email" value={form.email} onChange={(e) => set('email', e.target.value)} />
             </Field>
-            <Field label="รหัสผ่านเริ่มต้น" required error={fieldErrors.password} hint="อย่างน้อย 8 ตัวอักษร">
+            <Field label="รหัสผ่านเริ่มต้น" required error={fieldErrors.password} hint="อย่างน้อย 6 ตัวอักษร">
               <Input value={form.password} onChange={(e) => set('password', e.target.value)} />
             </Field>
           </div>

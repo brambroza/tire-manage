@@ -119,7 +119,7 @@ function normalizeSearch(value: string): string {
 
 /**
  * ตัดคำค้นเป็นคำย่อย ๆ เพื่อค้นแบบ "ต้องเจอทุกคำ" (ไม่สนลำดับ)
- * เช่น "bridgestone 11r22.5" ค้นเจอ "11R22.5 · Bridgestone R150"
+ * เช่น "r150 11r22.5" ค้นเจอ "11R22.5 · R150"
  * @param query คำค้นที่ช่างพิมพ์
  */
 function searchTokens(query: string): string[] {
@@ -130,7 +130,8 @@ function searchTokens(query: string): string[] {
 }
 
 /**
- * แปลงรุ่นยางเป็นตัวเลือกในรายการค้นหา เรียงตามขนาดแล้วยี่ห้อ
+ * แปลงรุ่นยางเป็นตัวเลือกในรายการค้นหา เรียงตามขนาดแล้วชื่อรุ่น
+ * แสดงเฉพาะขนาดและชื่อรุ่น/ซีรีส์ — ไม่แสดงยี่ห้อหน้างาน
  * @param list รุ่นยางที่จะให้เลือก
  */
 function toCatalogOptions(list: TireModelLite[]): TireOption[] {
@@ -138,13 +139,13 @@ function toCatalogOptions(list: TireModelLite[]): TireOption[] {
     .sort(
       (a, b) =>
         (a.size ?? '').localeCompare(b.size ?? '') ||
-        a.brand_name.localeCompare(b.brand_name),
+        a.model_name.localeCompare(b.model_name),
     )
     .map((model) => ({
       kind: 'catalog' as const,
       id: model.id,
       size: model.size ?? 'ไม่ระบุขนาด',
-      detail: [model.brand_name, model.model_name].filter(Boolean).join(' ') || 'ไม่ระบุรุ่น',
+      detail: model.model_name || 'ไม่ระบุรุ่น',
       model,
     }))
 }
@@ -317,7 +318,7 @@ export function ServiceWizard({
           size: tire.size ?? 'ไม่ระบุขนาด',
           detail: [
             tire.serial_no,
-            [tire.brand_name, tire.model_name].filter(Boolean).join(' ') || null,
+            tire.model_name || null,
             tire.tread_mm !== null ? `ดอกยาง ${tire.tread_mm} มม.` : null,
             `วิ่งสะสม ${formatKm(tire.lifetime_km)}`,
           ]
