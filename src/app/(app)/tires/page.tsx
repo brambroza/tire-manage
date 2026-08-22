@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/app-shell'
 import { TiresClient } from './tires-client'
 import type { ModelOption } from './tire-form'
+import { fetchLastRemovals } from '@/lib/tire-events'
 import type { Tire, TireOverview } from '@/lib/database.types'
 
 export const metadata = { title: 'คลังยาง · Dream Tire' }
@@ -72,6 +73,12 @@ export default async function TiresPage({
     image_url: m.image_url,
   }))
 
+  // ยางที่ไม่ได้อยู่บนรถ ต้องรู้ว่าถอดมาจากทะเบียนไหน ที่เลขไมล์เท่าไร
+  const lastRemovals = await fetchLastRemovals(
+    supabase,
+    tires.filter((t) => t.status !== 'mounted').map((t) => t.id),
+  )
+
   return (
     <>
       <PageHeader
@@ -82,6 +89,7 @@ export default async function TiresPage({
         tires={tires}
         rawTires={rawTires}
         models={models}
+        lastRemovals={lastRemovals}
         canManage={profile.role === 'admin'}
       />
     </>

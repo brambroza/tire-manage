@@ -3,16 +3,18 @@
 import * as React from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { CircleDot, Pencil, Plus, Trash2, Undo2 } from 'lucide-react'
+import { CircleDot, History, Pencil, Plus, Trash2, Undo2 } from 'lucide-react'
 import { Badge, Button, Card, EmptyState, Table, TableWrap, Td, Th } from '@/components/ui'
 import { ConfirmDialog } from '@/components/ui/modal'
 import { SearchInput } from '@/components/search-input'
 import { TireThumb } from '@/components/tire-thumb'
 import { TireSpec } from '@/components/tire-spec'
-import { positionLabel } from '@/lib/axle-layouts'
+import { TireHistoryModal } from '@/components/history-modal'
+import { positionLabel, type AxleTypeLayoutSource } from '@/lib/axle-layouts'
 import {
-  TIRE_STATUS_LABEL, TIRE_STATUS_TONE, cn, formatKm, treadPercent,
+  TIRE_STATUS_LABEL, TIRE_STATUS_TONE, cn, formatKm, formatThaiDate, treadPercent,
 } from '@/lib/utils'
+import type { LastRemoval } from '@/lib/tire-events'
 import { TireFormModal, type ModelOption } from './tire-form'
 import { restoreTire, scrapTire } from './actions'
 import type { Tire, TireOverview, TireStatus } from '@/lib/database.types'
@@ -30,15 +32,20 @@ export function TiresClient({
   tires,
   rawTires,
   models,
+  lastRemovals = {},
   canManage,
   companyId,
   basePath = '/tires',
   enableLinks = true,
+  enableHistory = false,
+  axleTypes,
 }: {
   tires: TireOverview[]
   /** ข้อมูลดิบสำหรับเปิดฟอร์มแก้ไข */
   rawTires: Record<string, Tire>
   models: ModelOption[]
+  /** การถอดครั้งล่าสุดของยางที่ไม่ได้อยู่บนรถ (key = tire id) */
+  lastRemovals?: Record<string, LastRemoval>
   canManage: boolean
   /** ระบุเมื่อ super admin จัดการคลังยางแทนลูกค้า */
   companyId?: string
@@ -46,6 +53,10 @@ export function TiresClient({
   basePath?: string
   /** ปิดลิงก์ไปหน้ารายละเอียด (หน้า super admin ยังไม่มี route เหล่านั้น) */
   enableLinks?: boolean
+  /** เปิดปุ่มดูประวัติแบบ modal — ใช้กับหน้า super admin ที่ไม่มี route รายละเอียด */
+  enableHistory?: boolean
+  /** นิยามเพลา ใช้แปลรหัสตำแหน่งล้อในตารางประวัติ */
+  axleTypes?: readonly AxleTypeLayoutSource[]
 }) {
   const router = useRouter()
   const params = useSearchParams()
@@ -54,6 +65,8 @@ export function TiresClient({
   const [formOpen, setFormOpen] = React.useState(false)
   const [editing, setEditing] = React.useState<Tire | null>(null)
   const [confirm, setConfirm] = React.useState<TireOverview | null>(null)
+  /** ยางที่กำลังเปิดดูประวัติ (null = ปิด modal) */
+  const [history, setHistory] = React.useState<TireOverview | null>(null)
   const [busy, setBusy] = React.useState(false)
   const [message, setMessage] = React.useState<string | null>(null)
 
@@ -127,7 +140,7 @@ export function TiresClient({
                   <Th>สถานะ</Th>
                   <Th>ตำแหน่งปัจจุบัน</Th>
                   <Th className="hidden md:table-cell">ดอกยาง</Th>
-                  <Th className="hidden text-right xl:table-cell">ระยะรอบนี้</Th>
+                  <Th className="hidden text-right xl:table-cell">ระยะรอบล่าสุด</Th>
                   <Th className="text-right">ระยะสะสม</Th>
                   {canManage && <Th className="text-right">จัดการ</Th>}
                 </tr>
@@ -136,6 +149,8 @@ export function TiresClient({
                 {tires.map((t) => {
                   const pct = treadPercent(t.tread_mm, t.new_tread_mm)
                   const alert = t.status === 'mounted' && t.current_run_km >= t.alert_km
+                  // ยางในคลัง/ตัดจำหน่าย: บอกที่มาว่าถอดจากรถคันไหน ที่เลขไมล์เท่าไร
+                  const removal = t.status !== 'mounted' ? lastRemovals[t.id] : undefined
                   return (
                     <tr key={t.id} className="transition-colors hover:bg-brand-50/40">
                       <Td>
@@ -149,6 +164,14 @@ export function TiresClient({
                           <Link href={`/tires/${t.id}`} className="font-medium text-ink-900 hover:text-brand-600">
                             {t.serial_no}
                           </Link>
+                        ) : enableHistory ? (
+                          <button
+                            type="button"
+                            onClick={() => setHistory(t)}
+                            className="font-medium text-ink-900 underline decoration-dotted underline-offset-4 hover:text-brand-600"
+                          >
+                            {t.serial_no}
+                          </button>
                         ) : (
                           <span className="font-medium text-ink-900">{t.serial_no}</span>
                         )}
@@ -181,6 +204,26 @@ export function TiresClient({
                             )}
                             <p className="text-xs text-ink-400">{positionLabel(t.position_code)}</p>
                           </>
+                        ) : removal ? (
+                          <>
+                            <span className="text-ink-400">คลังสินค้า</span>
+                            <p className="text-xs text-ink-500">
+                              ถอดจาก{' '}
+                              <span className="font-medium text-ink-700">
+                                {removal.plate_no ?? 'รถที่ถูกลบแล้ว'}
+                              </span>
+                              {removal.position_code && ` · ${positionLabel(removal.position_code)}`}
+                            </p>
+                            <p className="text-xs text-ink-400">
+                              ที่ {formatKm(removal.odometer)} · {formatThaiDate(removal.event_date)}
+                            </p>
+                            {/* จอแคบไม่มีคอลัมน์ "ระยะรอบนี้" — ยุบมาไว้ตรงนี้ */}
+                            {removal.distance_km !== null && (
+                              <p className="text-xs text-ink-400 xl:hidden">
+                                ใช้ไป {formatKm(removal.distance_km)}
+                              </p>
+                            )}
+                          </>
                         ) : (
                           <span className="text-ink-400">คลังสินค้า</span>
                         )}
@@ -193,12 +236,26 @@ export function TiresClient({
                           : '-'}
                       </Td>
                       <Td className={cn('hidden text-right xl:table-cell', alert && 'font-medium text-amber-600')}>
-                        {t.status === 'mounted' ? formatKm(t.current_run_km) : '-'}
+                        {t.status === 'mounted'
+                          ? formatKm(t.current_run_km)
+                          : removal?.distance_km !== null && removal?.distance_km !== undefined
+                            ? <span className="text-ink-500">{formatKm(removal.distance_km)}</span>
+                            : '-'}
                       </Td>
                       <Td className="text-right font-medium">{formatKm(t.lifetime_km)}</Td>
                       {canManage && (
                         <Td>
                           <div className="flex items-center justify-end gap-1">
+                            {enableHistory && (
+                              <button
+                                type="button"
+                                onClick={() => setHistory(t)}
+                                aria-label="ดูประวัติ"
+                                className="flex size-11 items-center justify-center rounded-lg text-ink-500 hover:bg-brand-50 hover:text-brand-600"
+                              >
+                                <History className="size-4.5" />
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => { setEditing(rawTires[t.id] ?? null); setFormOpen(true) }}
@@ -235,6 +292,16 @@ export function TiresClient({
         tire={editing}
         models={models}
         companyId={companyId}
+      />
+
+      <TireHistoryModal
+        tireId={history?.id ?? null}
+        serialNo={history?.serial_no ?? ''}
+        subtitle={[history?.size, history?.brand_name, history?.model_name]
+          .filter(Boolean)
+          .join(' · ') || undefined}
+        axleTypes={axleTypes}
+        onClose={() => setHistory(null)}
       />
 
       <ConfirmDialog

@@ -86,6 +86,28 @@ interface TirePick {
 const EMPTY_PICK: TirePick = { modelId: '', stockTireId: '', serialNo: '', treadMm: '' }
 
 /**
+ * ข้อมูลที่ช่างกรอกของล้อ 1 ตำแหน่ง
+ * เก็บแยกรายล้อเพื่อให้เลือกหลายล้อแล้วไล่กรอกทีละล้อ ก่อนบันทึกทั้งชุดพร้อมกัน
+ */
+interface WheelDraft {
+  /** ยางที่ถอดออกจากล้อนี้ */
+  unPick: TirePick
+  /** สาเหตุที่ถอด */
+  reasonId: string
+  /** ชนิดยางที่จะใส่กลับ (null = ยังไม่ได้เลือก) */
+  mountKind: 'new' | 'used' | null
+  /** ยางที่ใส่เข้าล้อนี้ */
+  mnPick: TirePick
+}
+
+const EMPTY_DRAFT: WheelDraft = {
+  unPick: EMPTY_PICK,
+  reasonId: '',
+  mountKind: null,
+  mnPick: EMPTY_PICK,
+}
+
+/**
  * 1 บรรทัดในรายการเลือกยาง
  * catalog = รุ่นที่ super admin กำหนดให้ (ช่างคีย์ซีเรียลเอง)
  * stock   = ยางเส้นจริงที่ว่างอยู่ในคลัง (ระบบเติมซีเรียลและดอกยางให้)
@@ -217,15 +239,12 @@ export function ServiceWizard({
     initialVehicle ? String(initialVehicle.current_mileage) : '',
   )
 
-  const [position, setPosition] = React.useState<string | null>(null)
-
-  /* ขั้นถอด */
-  const [unPick, setUnPick] = React.useState<TirePick>(EMPTY_PICK)
-  const [reasonId, setReasonId] = React.useState('')
-
-  /* ขั้นใส่ */
-  const [mountKind, setMountKind] = React.useState<'new' | 'used' | null>(null)
-  const [mnPick, setMnPick] = React.useState<TirePick>(EMPTY_PICK)
+  /** ล้อทั้งหมดที่ช่างเลือกจะเปลี่ยนในชุดนี้ เรียงตามเลขล้อ */
+  const [positions, setPositions] = React.useState<string[]>([])
+  /** ล้อที่กำลังกรอกอยู่ (ดัชนีใน positions) */
+  const [activeIndex, setActiveIndex] = React.useState(0)
+  /** ข้อมูลถอด-ใส่ของแต่ละล้อ: position_code -> draft */
+  const [drafts, setDrafts] = React.useState<Record<string, WheelDraft>>({})
 
   /** รุ่นยางรอตรวจสอบที่ช่างเพิ่งเพิ่มจากคำค้นหน้างาน (ยังไม่ผ่าน refresh) */
   const [addedModels, setAddedModels] = React.useState<TireModelLite[]>([])
@@ -274,12 +293,36 @@ export function ServiceWizard({
     return map
   }, [mountedOnVehicle])
 
-  /** ยางที่ระบบบันทึกไว้ในล้อที่กำลังทำ (ใช้เป็นค่าตั้งต้นตอนถอด) */
-  const slotTire = React.useMemo(() => {
-    if (!position) return null
-    const slot = slots[position]
+  /** ล้อที่กำลังกรอกอยู่ (null = ยังไม่ได้เลือกล้อ) */
+  const position = positions[activeIndex] ?? null
+
+  /** ข้อมูลที่กรอกไว้ของล้อนั้น (ยังไม่เคยแตะ = ค่าว่าง) */
+  function draftOf(code: string | null): WheelDraft {
+    return (code && drafts[code]) || EMPTY_DRAFT
+  }
+
+  /** แก้ข้อมูลบางส่วนของล้อหนึ่ง */
+  function patchDraft(code: string, partial: Partial<WheelDraft>) {
+    setDrafts((prev) => ({ ...prev, [code]: { ...(prev[code] ?? EMPTY_DRAFT), ...partial } }))
+  }
+
+  /** ยางที่ระบบบันทึกไว้ในล้อที่ระบุ (ใช้เทียบว่าถอดยางเส้นเดิมหรือเส้นอื่น) */
+  function slotTireOf(code: string | null) {
+    if (!code) return null
+    const slot = slots[code]
     return slot ? tires.find((t) => t.id === slot.tireId) ?? null : null
-  }, [position, slots, tires])
+  }
+
+  /* ฟอร์มของล้อปัจจุบัน — อ่าน/เขียนผ่าน drafts ให้ JSX ใช้ชื่อเดิม */
+  const currentDraft = draftOf(position)
+  const unPick = currentDraft.unPick
+  const reasonId = currentDraft.reasonId
+  const mountKind = currentDraft.mountKind
+  const mnPick = currentDraft.mnPick
+
+  const setUnPick = (pick: TirePick) => { if (position) patchDraft(position, { unPick: pick }) }
+  const setReasonId = (id: string) => { if (position) patchDraft(position, { reasonId: id }) }
+  const setMnPick = (pick: TirePick) => { if (position) patchDraft(position, { mnPick: pick }) }
 
   /** ชื่อล้อแบบสั้น เช่น "ล้อ 3 · เพลา 2 ซ้ายนอก" */
   function wheelName(code: string | null) {
@@ -378,38 +421,109 @@ export function ServiceWizard({
     }
   }
 
-  const unSpec = pickSpec(unPick)
-  const mnSpec = pickSpec(mnPick)
-
   const odometerValid = odometer.trim() !== '' && Number(odometer) >= 0
 
-  const canSubmitUnmount =
-    unPick.serialNo.trim() !== '' &&
-    unSpec.size !== '' &&
-    unPick.treadMm !== '' &&
-    reasonId !== ''
+  /**
+   * เหตุผลที่ยางที่คีย์ "ถอด" ในล้อนี้ใช้ไม่ได้ (null = ถอดได้)
+   * กันคีย์ซีรีย์เดียวกันซ้ำสองล้อในชุดเดียว ซึ่ง server จะ error ทั้งชุด
+   */
+  function unmountBlockedFor(code: string | null): string | null {
+    if (!code) return null
+    const serial = draftOf(code).unPick.serialNo.trim().toLowerCase()
+    if (serial === '') return null
 
-  const mountCandidate = findTire(mnPick.serialNo)
+    const clash = positions.find(
+      (other) => other !== code && draftOf(other).unPick.serialNo.trim().toLowerCase() === serial,
+    )
+    return clash
+      ? `ซีรีย์นี้ถูกถอดที่ ${wheelName(clash)} ในชุดนี้แล้ว — ยาง 1 เส้นถอดได้ครั้งเดียว`
+      : null
+  }
 
-  /** เหตุผลที่ยางเส้นที่คีย์ใส่ไม่ได้ (null = ใส่ได้) */
-  const mountBlocked = (() => {
+  /** ล้อนี้กรอกขั้น "ถอด" ครบหรือยัง */
+  function canSubmitUnmountFor(code: string | null): boolean {
+    if (!code) return false
+    const d = draftOf(code)
+    return (
+      d.unPick.serialNo.trim() !== '' &&
+      pickSpec(d.unPick).size !== '' &&
+      d.unPick.treadMm !== '' &&
+      d.reasonId !== '' &&
+      !unmountBlockedFor(code)
+    )
+  }
+
+  /** เหตุผลที่ยางเส้นที่คีย์ใส่ในล้อนี้ใส่ไม่ได้ (null = ใส่ได้) */
+  function mountBlockedFor(code: string | null): string | null {
+    if (!code) return null
+    const d = draftOf(code)
+    const serial = d.mnPick.serialNo.trim()
+    const candidate = findTire(serial)
+
     // ยางใหม่ = ซีรีย์ต้องไม่เคยมีในระบบ เช็คซ้ำจากซีรีย์อย่างเดียว
-    if (mountKind === 'new' && mountCandidate) {
-      return `ซีรีย์ ${mountCandidate.serial_no} มีอยู่ในระบบแล้ว — ยางใหม่ต้องเป็นซีรีย์ที่ยังไม่เคยบันทึก`
+    if (d.mountKind === 'new' && candidate) {
+      return `ซีรีย์ ${candidate.serial_no} มีอยู่ในระบบแล้ว — ยางใหม่ต้องเป็นซีรีย์ที่ยังไม่เคยบันทึก`
     }
-    if (!mountCandidate) return null
-    // ยางเก่า: ซ้ำได้เฉพาะกรณีซีรีย์นั้นยังติดตั้งอยู่บนรถอยู่แล้ว ต้องถอดออกก่อน
-    if (mountCandidate.status === 'mounted' && mountCandidate.id !== slotTire?.id) {
-      return `ซีรีย์ ${mountCandidate.serial_no} ติดตั้งอยู่ที่ ${mountCandidate.plate_no ?? 'รถคันอื่น'} — ต้องถอดออกก่อน`
+
+    // ซีรีย์เดียวกันใส่ได้ล้อเดียวในชุดนี้
+    if (serial !== '') {
+      const key = serial.toLowerCase()
+      const clash = positions.find(
+        (other) => other !== code && draftOf(other).mnPick.serialNo.trim().toLowerCase() === key,
+      )
+      if (clash) {
+        return `ซีรีย์นี้ถูกใส่ที่ ${wheelName(clash)} ในชุดนี้แล้ว — ยาง 1 เส้นใส่ได้ล้อเดียว`
+      }
+    }
+
+    if (!candidate) return null
+
+    // ถ้าเส้นนี้ถูกถอดออกจากล้ออื่นในชุดเดียวกันอยู่แล้ว = สลับตำแหน่งได้
+    // (server ถอดทุกเส้นให้เสร็จก่อนแล้วค่อยใส่)
+    const key = serial.toLowerCase()
+    const unmountedInBatch = positions.some(
+      (other) => draftOf(other).unPick.serialNo.trim().toLowerCase() === key,
+    )
+    if (unmountedInBatch) return null
+
+    // ยางเก่า: ซ้ำได้เฉพาะกรณีซีรีย์นั้นยังติดตั้งอยู่ที่ล้อนี้อยู่แล้ว
+    if (candidate.status === 'mounted' && candidate.id !== slotTireOf(code)?.id) {
+      return `ซีรีย์ ${candidate.serial_no} ติดตั้งอยู่ที่ ${candidate.plate_no ?? 'รถคันอื่น'} — ต้องถอดออกก่อน`
     }
     return null
-  })()
+  }
 
-  const canSubmitMount =
-    mnPick.serialNo.trim() !== '' &&
-    mnSpec.size !== '' &&
-    !mountBlocked &&
-    (mountKind === 'new' || mnPick.treadMm !== '')
+  /** ล้อนี้กรอกขั้น "ใส่" ครบหรือยัง */
+  function canSubmitMountFor(code: string | null): boolean {
+    if (!code) return false
+    const d = draftOf(code)
+    return (
+      d.mnPick.serialNo.trim() !== '' &&
+      pickSpec(d.mnPick).size !== '' &&
+      !mountBlockedFor(code) &&
+      (d.mountKind === 'new' || d.mnPick.treadMm !== '')
+    )
+  }
+
+  /** ล้อนี้กรอกครบทั้งถอดและใส่ พร้อมบันทึกแล้ว */
+  function isDraftComplete(code: string): boolean {
+    return canSubmitUnmountFor(code) && canSubmitMountFor(code)
+  }
+
+  const unmountBlocked = unmountBlockedFor(position)
+  const canSubmitUnmount = canSubmitUnmountFor(position)
+  const mountBlocked = mountBlockedFor(position)
+  const canSubmitMount = canSubmitMountFor(position)
+
+  /** ล้อในชุดนี้ที่ยังกรอกไม่ครบ — ใช้บล็อกปุ่มบันทึกและแจ้งเตือนสีแดง */
+  const incompletePositions = positions.filter((code) => !isDraftComplete(code))
+  /** ล้ออื่นที่ยังกรอกไม่ครบ — ไม่นับล้อที่กำลังกรอกอยู่ จะได้ไม่เตือนตอนพิมพ์ยังไม่จบ */
+  const otherIncompletePositions = incompletePositions.filter((code) => code !== position)
+  /** ล้อที่กรอกครบแล้ว ใช้ติ๊กถูกบนผังล้อ */
+  const donePositions = positions.filter((code) => isDraftComplete(code))
+  const isLastWheel = activeIndex >= positions.length - 1
+  /** อยู่ในขั้นกรอกข้อมูลของล้อใดล้อหนึ่ง (ไม่ใช่ขั้นเลือกตำแหน่ง) */
+  const inWheelForm = step === 'unmount' || step === 'mount-kind' || step === 'mount'
 
   /* ------------------------------------------------------------- actions */
 
@@ -496,89 +610,135 @@ export function ServiceWizard({
     return model
   }
 
-  /** แตะล้อบนผัง → เริ่มขั้นถอดของล้อนั้น */
-  function startWheel(pos: WheelPosition) {
+  /** แตะล้อบนผัง → เลือก/ยกเลิกล้อนั้นในชุดที่จะเปลี่ยน */
+  function togglePosition(pos: WheelPosition) {
     setError(null)
-    setPosition(pos.code)
 
-    // ไม่เติมยางเดิมของล้อนี้ให้ — ช่างคีย์ของจริงหน้างานใหม่ทุกครั้ง
-    setUnPick(EMPTY_PICK)
-    setReasonId('')
-    setMountKind(null)
-    setMnPick(EMPTY_PICK)
+    setPositions((prev) =>
+      prev.includes(pos.code)
+        ? prev.filter((code) => code !== pos.code)
+        : [...prev, pos.code].sort(
+            (a, b) =>
+              (positionNo(a, axleTypeCode, axleTypes) ?? 0) -
+              (positionNo(b, axleTypeCode, axleTypes) ?? 0),
+          ),
+    )
+
+    // ยกเลิกล้อไหน ทิ้งข้อมูลที่กรอกไว้ของล้อนั้นด้วย
+    setDrafts((prev) => {
+      if (!prev[pos.code]) return prev
+      const next = { ...prev }
+      delete next[pos.code]
+      return next
+    })
+  }
+
+  /** ยืนยันชุดล้อที่เลือก แล้วเริ่มกรอกจากล้อแรก */
+  function startWheels() {
+    if (positions.length === 0) return
+    setError(null)
+    setActiveIndex(0)
+    setStep('unmount')
+  }
+
+  /** กระโดดไปกรอกล้อลำดับที่ระบุ (ใช้กับแถบชิปด้านบน) */
+  function goToWheel(index: number) {
+    if (index < 0 || index >= positions.length) return
+    setError(null)
+    setActiveIndex(index)
+    setStep('unmount')
+  }
+
+  /** ไปกรอกล้อถัดไปในชุด */
+  function goNextWheel() {
+    setError(null)
+    setActiveIndex((i) => Math.min(i + 1, positions.length - 1))
     setStep('unmount')
   }
 
   /** เลือกชนิดยางที่จะใส่ แล้วเตรียมค่าตั้งต้นของฟอร์มใส่ยาง */
   function selectMountKind(kind: 'new' | 'used') {
-    setMountKind(kind)
-    setMnPick(EMPTY_PICK)
+    if (!position) return
+    const current = draftOf(position)
+    // เลือกชนิดเดิมซ้ำ (เช่น ย้อนกลับมาดู) ไม่ต้องล้างสิ่งที่กรอกไว้
+    patchDraft(position, {
+      mountKind: kind,
+      mnPick: current.mountKind === kind ? current.mnPick : EMPTY_PICK,
+    })
     setStep('mount')
   }
 
-  /** สร้างรายการ 1 บรรทัดสำหรับส่งเข้า batch */
+  /** สร้างรายการถอด+ใส่ของทุกล้อในชุด (2 บรรทัดต่อ 1 ล้อ) */
   function buildItems() {
-    if (!position) return []
-    const unTire = findTire(unPick.serialNo)
-    const unIsKnown = Boolean(unTire) && unTire!.id === slotTire?.id
+    return positions.flatMap((code) => {
+      const d = draftOf(code)
+      const unSpecOf = pickSpec(d.unPick)
+      const mnSpecOf = pickSpec(d.mnPick)
 
-    const unmountItem = {
-      kind: unIsKnown ? ('unmount' as const) : ('manual_unmount' as const),
-      tire_id: unIsKnown ? unTire!.id : null,
-      position_code: position,
-      tread_mm: Number(unPick.treadMm),
-      reason_id: reasonId,
-      note: null,
-      manual: unIsKnown
-        ? null
-        : {
-            serial_no: unPick.serialNo.trim(),
-            tire_model_id: unSpec.model?.id ?? null,
-            brand_name: unSpec.brandName || null,
-            model_name: unSpec.modelName || null,
-            size: unSpec.size || null,
-            dot: null,
-            new_tread_mm: unSpec.newTreadMm,
-            mounted_odometer: null,
-          },
-    }
+      const unTire = findTire(d.unPick.serialNo)
+      const unIsKnown = Boolean(unTire) && unTire!.id === slotTireOf(code)?.id
 
-    // ยางใหม่ยังไม่มีดอกยางวัดจริง → ใช้ดอกยางตอนใหม่จากแคตตาล็อก
-    const mountTread =
-      mountKind === 'used' ? Number(mnPick.treadMm) : mnSpec.newTreadMm ?? null
+      const unmountItem = {
+        kind: unIsKnown ? ('unmount' as const) : ('manual_unmount' as const),
+        tire_id: unIsKnown ? unTire!.id : null,
+        position_code: code,
+        tread_mm: Number(d.unPick.treadMm),
+        reason_id: d.reasonId,
+        note: null,
+        manual: unIsKnown
+          ? null
+          : {
+              serial_no: d.unPick.serialNo.trim(),
+              tire_model_id: unSpecOf.model?.id ?? null,
+              brand_name: unSpecOf.brandName || null,
+              model_name: unSpecOf.modelName || null,
+              size: unSpecOf.size || null,
+              dot: null,
+              new_tread_mm: unSpecOf.newTreadMm,
+              mounted_odometer: null,
+            },
+      }
 
-    const mountItem = {
-      kind: mountCandidate ? ('mount' as const) : ('manual_mount' as const),
-      tire_id: mountCandidate?.id ?? null,
-      position_code: position,
-      tread_mm: mountTread,
-      reason_id: null,
-      note: null,
-      // บอก server ว่าเป็นยางใหม่ เพื่อบังคับกฎแคตตาล็อก + ซีรีย์ห้ามซ้ำอีกชั้น
-      new_tire: mountKind === 'new',
-      manual: mountCandidate
-        ? null
-        : {
-            serial_no: mnPick.serialNo.trim(),
-            tire_model_id: mnSpec.model?.id ?? null,
-            brand_name: mnSpec.brandName || null,
-            model_name: mnSpec.modelName || null,
-            size: mnSpec.size || null,
-            dot: null,
-            new_tread_mm: mnSpec.newTreadMm,
-            mounted_odometer: null,
-          },
-    }
+      // ยางใหม่ยังไม่มีดอกยางวัดจริง → ใช้ดอกยางตอนใหม่จากแคตตาล็อก
+      const mountTread =
+        d.mountKind === 'used' ? Number(d.mnPick.treadMm) : mnSpecOf.newTreadMm ?? null
 
-    return [unmountItem, mountItem]
+      const mountCandidate = findTire(d.mnPick.serialNo)
+
+      const mountItem = {
+        kind: mountCandidate ? ('mount' as const) : ('manual_mount' as const),
+        tire_id: mountCandidate?.id ?? null,
+        position_code: code,
+        tread_mm: mountTread,
+        reason_id: null,
+        note: null,
+        // บอก server ว่าเป็นยางใหม่ เพื่อบังคับกฎแคตตาล็อก + ซีรีย์ห้ามซ้ำอีกชั้น
+        new_tire: d.mountKind === 'new',
+        manual: mountCandidate
+          ? null
+          : {
+              serial_no: d.mnPick.serialNo.trim(),
+              tire_model_id: mnSpecOf.model?.id ?? null,
+              brand_name: mnSpecOf.brandName || null,
+              model_name: mnSpecOf.modelName || null,
+              size: mnSpecOf.size || null,
+              dot: null,
+              new_tread_mm: mnSpecOf.newTreadMm,
+              mounted_odometer: null,
+            },
+      }
+
+      return [unmountItem, mountItem]
+    })
   }
 
-  /** บันทึกล้อนี้ทั้งคู่ (ถอด + ใส่) ในทรานแซกชันเดียว */
+  /** บันทึกทุกล้อในชุด (ถอด + ใส่) ในทรานแซกชันเดียว */
   async function handleSave() {
-    if (!vehicle || !position || !canSubmitMount) return
+    if (!vehicle || positions.length === 0 || incompletePositions.length > 0) return
     setSaving(true)
     setError(null)
 
+    const wheelCount = positions.length
     const result = await applyServiceBatchAction({
       vehicle_id: vehicle.id,
       odometer: Number(odometer),
@@ -594,7 +754,7 @@ export function ServiceWizard({
 
     // บันทึกแล้วกลับไปเริ่มรถคันใหม่ทันที — ไม่มีทางเลือกทำต่อรถคันเดิม
     startOver()
-    setToast('บันทึกเรียบร้อย')
+    setToast(`บันทึกเรียบร้อย ${wheelCount} ล้อ`)
     router.refresh()
   }
 
@@ -607,11 +767,9 @@ export function ServiceWizard({
     setCategory(null)
     setAxleTypeCode(null)
     setOdometer('')
-    setPosition(null)
-    setUnPick(EMPTY_PICK)
-    setReasonId('')
-    setMountKind(null)
-    setMnPick(EMPTY_PICK)
+    setPositions([])
+    setActiveIndex(0)
+    setDrafts({})
     setError(null)
     setStep('plate')
   }
@@ -619,12 +777,23 @@ export function ServiceWizard({
   /** ปุ่มย้อนกลับของแต่ละขั้น */
   function goBack() {
     setError(null)
+
+    // ถอยจากล้อแรกของชุด = กลับไปแก้ชุดล้อที่เลือก, ล้อถัด ๆ ไป = กลับไปหน้าใส่ยางของล้อก่อนหน้า
+    if (step === 'unmount') {
+      if (activeIndex > 0) {
+        setActiveIndex(activeIndex - 1)
+        setStep('mount')
+      } else {
+        setStep('wheel')
+      }
+      return
+    }
+
     const back: Partial<Record<Step, Step>> = {
       category: 'plate',
       axle: 'category',
       odometer: 'axle',
       wheel: 'odometer',
-      unmount: 'wheel',
       'mount-kind': 'unmount',
       mount: 'mount-kind',
     }
@@ -661,13 +830,43 @@ export function ServiceWizard({
                 STEP_TITLE[step],
                 axleType?.name,
                 odometerValid ? formatKm(Number(odometer)) : null,
-                position ? wheelName(position) : null,
+                inWheelForm && position ? wheelName(position) : null,
+                inWheelForm && positions.length > 1
+                  ? `ล้อที่ ${activeIndex + 1}/${positions.length}`
+                  : null,
               ]
                 .filter(Boolean)
                 .join(' · ')}
             </p>
           </div>
         </div>
+
+        {/* ชิปล้อทั้งชุด — เห็นความคืบหน้าและกดข้ามไปแก้ล้อไหนก็ได้ */}
+        {inWheelForm && positions.length > 1 && (
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
+            {positions.map((code, index) => {
+              const done = isDraftComplete(code)
+              return (
+                <button
+                  key={code}
+                  type="button"
+                  onClick={() => goToWheel(index)}
+                  className={cn(
+                    'flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors',
+                    index === activeIndex
+                      ? 'border-brand-600 bg-brand-600 text-white'
+                      : done
+                        ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                        : 'border-rose-300 bg-rose-50 text-rose-700',
+                  )}
+                >
+                  {done && index !== activeIndex && <Check className="size-3.5" strokeWidth={3} />}
+                  ล้อ {positionNo(code, axleTypeCode, axleTypes) ?? index + 1}
+                </button>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {error && (
@@ -849,7 +1048,7 @@ export function ServiceWizard({
       {step === 'wheel' && vehicle && (
         <StepCard
           title="เลือกตำแหน่งล้อ"
-          description={`${layout.name} · แตะล้อที่จะเปลี่ยนยาง`}
+          description={`${layout.name} · แตะล้อที่จะเปลี่ยนยาง เลือกได้หลายล้อในครั้งเดียว`}
         >
           {axleType?.image_url && (
             // eslint-disable-next-line @next/next/no-img-element
@@ -865,11 +1064,24 @@ export function ServiceWizard({
             axleTypes={axleTypes}
             // ไม่โชว์ยางเดิมบนผัง — ทุกล้อว่างเสมอ ช่างเลือกแล้วคีย์ใหม่
             slots={{}}
-            selected={position}
-            onSelect={startWheel}
+            selectedCodes={positions}
+            doneCodes={donePositions}
+            onSelect={togglePosition}
             mode="unmount"
             allowEmpty
           />
+
+          <p className="text-center text-sm text-ink-500">
+            {positions.length === 0
+              ? 'แตะล้อที่จะเปลี่ยนยาง — แตะซ้ำเพื่อยกเลิก'
+              : `เลือกไว้ ${positions.length} ล้อ: ${positions
+                  .map((code) => positionNo(code, axleTypeCode, axleTypes) ?? '?')
+                  .join(', ')}`}
+          </p>
+
+          <PrimaryButton disabled={positions.length === 0} onClick={startWheels}>
+            ถัดไป{positions.length > 0 ? ` (${positions.length} ล้อ)` : ''}
+          </PrimaryButton>
         </StepCard>
       )}
 
@@ -877,6 +1089,8 @@ export function ServiceWizard({
       {step === 'unmount' && (
         <StepCard title="ถอดยาง" description={wheelName(position)}>
           <TirePickFields
+            // สลับล้อผ่านแถบชิปโดยไม่เปลี่ยนขั้น — ต้อง remount เพื่อล้างคำค้นของล้อก่อนหน้า
+            key={position ?? 'none'}
             pick={unPick}
             onChange={setUnPick}
             options={catalogOptions}
@@ -884,6 +1098,7 @@ export function ServiceWizard({
             onAddModel={addModel}
             withTread
             treadLabel="ดอกยางเหลือ (มม.)"
+            serialError={unmountBlocked ?? undefined}
           />
 
           <Field label="สาเหตุ" required>
@@ -939,6 +1154,7 @@ export function ServiceWizard({
           description={wheelName(position)}
         >
           <TirePickFields
+            key={position ?? 'none'}
             pick={mnPick}
             onChange={setMnPick}
             options={mountKind === 'used' ? mountUsedOptions : catalogOptions}
@@ -959,10 +1175,32 @@ export function ServiceWizard({
             serialError={mountBlocked ?? undefined}
           />
 
-          <PrimaryButton disabled={!canSubmitMount} loading={saving} onClick={handleSave}>
-            <Check className="size-5" />
-            บันทึก
-          </PrimaryButton>
+          {/* ล้อสุดท้ายแล้วแต่ล้ออื่นยังกรอกไม่ครบ — เตือนสีแดงและห้ามบันทึก */}
+          {isLastWheel && otherIncompletePositions.length > 0 && (
+            <div className="flex items-start gap-2.5 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-inset ring-rose-200">
+              <AlertCircle className="mt-0.5 size-4 shrink-0" />
+              <span>
+                ต้องกรอกข้อมูลให้ครบทุกล้อที่เลือกก่อนบันทึก — ยังขาด{' '}
+                {otherIncompletePositions.map((code) => wheelName(code)).join(', ')}
+              </span>
+            </div>
+          )}
+
+          {isLastWheel ? (
+            <PrimaryButton
+              disabled={!canSubmitMount || incompletePositions.length > 0}
+              loading={saving}
+              onClick={handleSave}
+            >
+              <Check className="size-5" />
+              บันทึก{positions.length > 1 ? `ทั้งหมด (${positions.length} ล้อ)` : ''}
+            </PrimaryButton>
+          ) : (
+            <PrimaryButton disabled={!canSubmitMount} onClick={goNextWheel}>
+              ล้อถัดไป ({activeIndex + 2}/{positions.length})
+              <ChevronRight className="size-5" />
+            </PrimaryButton>
+          )}
         </StepCard>
       )}
 

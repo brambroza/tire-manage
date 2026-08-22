@@ -63,6 +63,7 @@ export default async function CompanyVehiclesPage({
         axleTypes={(axleTypeData ?? []) as AxleType[]}
         companyId={id}
         enableLinks={false}
+        enableHistory
       />
     </>
   )

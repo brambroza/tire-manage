@@ -6,26 +6,12 @@ import { createClient } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/app-shell'
 import { WheelDiagram, type WheelSlot } from '@/components/wheel-diagram'
 import { TireSpec } from '@/components/tire-spec'
-import {
-  Badge, Card, CardBody, CardHeader, EmptyState, Table, TableWrap, Td, Th,
-} from '@/components/ui'
+import { VehicleEventTable } from '@/components/tire-event-table'
+import { Card, CardBody, CardHeader, EmptyState, Table, TableWrap, Td, Th } from '@/components/ui'
 import { getLayout, positionLabel } from '@/lib/axle-layouts'
-import { formatKm, formatThaiDate } from '@/lib/utils'
+import { VEHICLE_EVENT_SELECT, type VehicleEventRow } from '@/lib/tire-events'
+import { formatKm } from '@/lib/utils'
 import type { AxleType, TireOverview, Vehicle } from '@/lib/database.types'
-
-interface HistoryRow {
-  id: string
-  event_type: string
-  event_date: string
-  position_code: string | null
-  odometer: number
-  tread_mm: number | null
-  distance_km: number | null
-  note: string | null
-  tires: { serial_no: string } | null
-  removal_reasons: { name: string } | null
-  profiles: { full_name: string } | null
-}
 
 export default async function VehicleDetailPage({
   params,
@@ -46,8 +32,7 @@ export default async function VehicleDetailPage({
     supabase.from('tire_overview').select('*').eq('vehicle_id', id).eq('status', 'mounted'),
     supabase
       .from('tire_events')
-      .select('id, event_type, event_date, position_code, odometer, tread_mm, distance_km, note, ' +
-        'tires(serial_no), removal_reasons(name), profiles(full_name)')
+      .select(VEHICLE_EVENT_SELECT)
       .eq('vehicle_id', id)
       .order('event_date', { ascending: false })
       .order('created_at', { ascending: false })
@@ -56,7 +41,7 @@ export default async function VehicleDetailPage({
   ])
 
   const tires = (tireData ?? []) as TireOverview[]
-  const history = (historyData ?? []) as unknown as HistoryRow[]
+  const history = (historyData ?? []) as unknown as VehicleEventRow[]
   const axleTypes = (axleTypeData ?? []) as AxleType[]
   const layout = getLayout(v.axle_type, axleTypes)
 
@@ -177,44 +162,7 @@ export default async function VehicleDetailPage({
 
       <Card className="mt-4">
         <CardHeader title="ประวัติการถอด-ใส่ยางของรถคันนี้" />
-        {history.length === 0 ? (
-          <EmptyState title="ยังไม่มีประวัติ" />
-        ) : (
-          <TableWrap>
-            <Table>
-              <thead>
-                <tr>
-                  <Th>วันที่</Th>
-                  <Th>รายการ</Th>
-                  <Th>เลขยาง</Th>
-                  <Th>ตำแหน่ง</Th>
-                  <Th className="text-right">เลขไมล์</Th>
-                  <Th className="text-right">ระยะรอบนี้</Th>
-                  <Th>สาเหตุ</Th>
-                  <Th>ผู้บันทึก</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {history.map((h) => (
-                  <tr key={h.id} className="transition-colors hover:bg-brand-50/40">
-                    <Td className="whitespace-nowrap">{formatThaiDate(h.event_date)}</Td>
-                    <Td>
-                      <Badge tone={h.event_type === 'mount' ? 'brand' : 'amber'}>
-                        {h.event_type === 'mount' ? 'ใส่ยาง' : 'ถอดยาง'}
-                      </Badge>
-                    </Td>
-                    <Td className="font-medium text-ink-900">{h.tires?.serial_no ?? '-'}</Td>
-                    <Td>{positionLabel(h.position_code, v.axle_type, axleTypes)}</Td>
-                    <Td className="text-right">{formatKm(h.odometer)}</Td>
-                    <Td className="text-right">{h.distance_km !== null ? formatKm(h.distance_km) : '-'}</Td>
-                    <Td>{h.removal_reasons?.name ?? '-'}</Td>
-                    <Td className="text-ink-500">{h.profiles?.full_name ?? '-'}</Td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
-          </TableWrap>
-        )}
+        <VehicleEventTable events={history} axleType={v.axle_type} axleTypes={axleTypes} />
       </Card>
     </>
   )

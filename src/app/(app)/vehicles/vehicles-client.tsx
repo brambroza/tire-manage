@@ -3,10 +3,11 @@
 import * as React from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Pencil, Plus, Power, PowerOff, Truck } from 'lucide-react'
+import { History, Pencil, Plus, Power, PowerOff, Truck } from 'lucide-react'
 import { Badge, Button, Card, EmptyState, Table, TableWrap, Td, Th } from '@/components/ui'
 import { ConfirmDialog } from '@/components/ui/modal'
 import { SearchInput } from '@/components/search-input'
+import { VehicleHistoryModal } from '@/components/history-modal'
 import { getLayout } from '@/lib/axle-layouts'
 import { formatKm } from '@/lib/utils'
 import { VehicleFormModal } from './vehicle-form'
@@ -24,6 +25,7 @@ export function VehiclesClient({
   axleTypes,
   companyId,
   enableLinks = true,
+  enableHistory = false,
 }: {
   vehicles: VehicleRow[]
   /** ประเภทเพลาจาก Supabase ใช้ทั้งชื่อ จำนวนล้อ และฟอร์มรถ */
@@ -32,11 +34,15 @@ export function VehiclesClient({
   companyId?: string
   /** ปิดลิงก์ไปหน้ารายละเอียดรถ (หน้า super admin ยังไม่มี route นั้น) */
   enableLinks?: boolean
+  /** เปิดปุ่มดูประวัติแบบ modal — ใช้กับหน้า super admin ที่ไม่มี route รายละเอียด */
+  enableHistory?: boolean
 }) {
   const router = useRouter()
   const [formOpen, setFormOpen] = React.useState(false)
   const [editing, setEditing] = React.useState<Vehicle | null>(null)
   const [confirm, setConfirm] = React.useState<VehicleRow | null>(null)
+  /** รถที่กำลังเปิดดูประวัติ (null = ปิด modal) */
+  const [history, setHistory] = React.useState<VehicleRow | null>(null)
   const [busy, setBusy] = React.useState(false)
   const [message, setMessage] = React.useState<string | null>(null)
 
@@ -110,6 +116,14 @@ export function VehiclesClient({
                           >
                             {v.plate_no}
                           </Link>
+                        ) : enableHistory ? (
+                          <button
+                            type="button"
+                            onClick={() => setHistory(v)}
+                            className="font-medium text-ink-900 underline decoration-dotted underline-offset-4 hover:text-brand-600"
+                          >
+                            {v.plate_no}
+                          </button>
                         ) : (
                           <span className="font-medium text-ink-900">{v.plate_no}</span>
                         )}
@@ -142,6 +156,16 @@ export function VehiclesClient({
                       </Td>
                       <Td>
                         <div className="flex items-center justify-end gap-1">
+                          {enableHistory && (
+                            <button
+                              type="button"
+                              onClick={() => setHistory(v)}
+                              aria-label="ดูประวัติ"
+                              className="flex size-11 items-center justify-center rounded-lg text-ink-500 hover:bg-brand-50 hover:text-brand-600"
+                            >
+                              <History className="size-4.5" />
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => openEdit(v)}
@@ -175,6 +199,15 @@ export function VehiclesClient({
         vehicle={editing}
         companyId={companyId}
         axleTypes={axleTypes}
+      />
+
+      <VehicleHistoryModal
+        vehicleId={history?.id ?? null}
+        plateNo={history?.plate_no ?? ''}
+        subtitle={history ? getLayout(history.axle_type, axleTypes).name : undefined}
+        axleType={history?.axle_type}
+        axleTypes={axleTypes}
+        onClose={() => setHistory(null)}
       />
 
       <ConfirmDialog

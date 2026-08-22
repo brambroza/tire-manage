@@ -23,6 +23,11 @@ export interface WheelDiagramProps {
   /** map position_code -> ยางที่ติดตั้งอยู่ */
   slots: Record<string, WheelSlot>
   selected?: string | null
+  /**
+   * โหมดเลือกหลายตำแหน่ง — รหัสล้อทั้งหมดที่กำลังถูกเลือกอยู่
+   * แตะล้อที่เลือกไว้แล้วซ้ำได้ เพื่อให้ผู้เรียกยกเลิกการเลือกล้อนั้น
+   */
+  selectedCodes?: readonly string[]
   onSelect?: (position: WheelPosition, slot?: WheelSlot) => void
   /**
    * unmount = เลือกได้เฉพาะตำแหน่งที่มียาง
@@ -52,6 +57,7 @@ export function WheelDiagram({
   axleTypes,
   slots,
   selected,
+  selectedCodes,
   onSelect,
   mode = 'view',
   allowEmpty = false,
@@ -61,9 +67,14 @@ export function WheelDiagram({
   const layout = getLayout(axleType, axleTypes)
   const axles = [...new Set(layout.positions.map((p) => p.axle))]
   const doneSet = React.useMemo(() => new Set(doneCodes ?? []), [doneCodes])
+  const selectedSet = React.useMemo(() => new Set(selectedCodes ?? []), [selectedCodes])
+
+  const isActive = (code: string) => selected === code || selectedSet.has(code)
 
   const isSelectable = (code: string) => {
     if (mode === 'view' || !onSelect) return false
+    // ล้อที่เลือกไว้แล้วต้องกดซ้ำได้ เพื่อยกเลิกการเลือก
+    if (selectedSet.has(code)) return true
     if (doneSet.has(code)) return false
     if (mode === 'mount') return !slots[code]
     return allowEmpty || Boolean(slots[code])
@@ -99,7 +110,7 @@ export function WheelDiagram({
                           pos={pos}
                           slot={slots[pos.code]}
                           done={doneSet.has(pos.code)}
-                          active={selected === pos.code}
+                          active={isActive(pos.code)}
                           selectable={isSelectable(pos.code)}
                           viewOnly={mode === 'view'}
                           onSelect={onSelect}
@@ -123,7 +134,7 @@ export function WheelDiagram({
                           pos={pos}
                           slot={slots[pos.code]}
                           done={doneSet.has(pos.code)}
-                          active={selected === pos.code}
+                          active={isActive(pos.code)}
                           selectable={isSelectable(pos.code)}
                           viewOnly={mode === 'view'}
                           onSelect={onSelect}
@@ -189,8 +200,8 @@ function WheelButton({
         !selectable && !viewOnly && !done && 'opacity-40',
       )}
     >
-      {/* ติ๊กถูกเมื่อทำล้อนี้เสร็จแล้วในชุดนี้ */}
-      {done && !active && (
+      {/* ติ๊กถูกเมื่อทำล้อนี้เสร็จแล้วในชุดนี้ — ติดไว้แม้ล้อนั้นยังถูกเลือกอยู่ */}
+      {done && (
         <span className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-emerald-500 text-white shadow-sm">
           <Check className="size-3.5" strokeWidth={3} />
         </span>
@@ -212,7 +223,7 @@ function WheelButton({
           active ? 'text-white/75' : 'opacity-70',
         )}
       >
-        {done ? 'ทำแล้ว' : slot ? (slot.treadMm !== null ? `${slot.treadMm} มม.` : '—') : 'ว่าง'}
+        {done ? 'กรอกครบ' : slot ? (slot.treadMm !== null ? `${slot.treadMm} มม.` : '—') : 'ว่าง'}
       </span>
     </button>
   )
@@ -264,7 +275,7 @@ function Legend({ hasDone }: { hasDone: boolean }) {
       <LegendDot className="border-emerald-300 bg-emerald-50" label="มียางติดตั้ง" />
       <LegendDot className="border-amber-300 bg-amber-50" label="ถึงเกณฑ์เตือน" />
       <LegendDot className="border-dashed border-slate-300 bg-white" label="ตำแหน่งว่าง" />
-      {hasDone && <LegendDot className="border-emerald-500 bg-emerald-500" label="ทำแล้วในชุดนี้" />}
+      {hasDone && <LegendDot className="border-emerald-500 bg-emerald-500" label="กรอกครบแล้ว" />}
     </div>
   )
 }

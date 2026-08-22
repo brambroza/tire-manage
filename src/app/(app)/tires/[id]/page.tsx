@@ -4,54 +4,41 @@ import { ArrowLeft, Gauge, MapPin, Ruler, Wallet } from 'lucide-react'
 import { requireSession } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/app-shell'
-import {
-  Badge, Card, CardBody, CardHeader, EmptyState, StatTile, Table, TableWrap, Td, Th,
-} from '@/components/ui'
+import { Badge, Card, CardBody, CardHeader, StatTile } from '@/components/ui'
 import { TireThumb } from '@/components/tire-thumb'
 import { TireSpec } from '@/components/tire-spec'
+import { TireEventTable } from '@/components/tire-event-table'
 import { positionLabel } from '@/lib/axle-layouts'
+import { TIRE_EVENT_SELECT, type TireEventRow } from '@/lib/tire-events'
 import {
-  TIRE_STATUS_LABEL, TIRE_STATUS_TONE, formatBaht, formatKm, formatNumber,
-  formatThaiDate, treadPercent,
+  TIRE_STATUS_LABEL, TIRE_STATUS_TONE, formatBaht, formatNumber, treadPercent,
 } from '@/lib/utils'
-import type { Tire, TireOverview } from '@/lib/database.types'
-
-interface EventRow {
-  id: string
-  event_type: string
-  event_date: string
-  position_code: string | null
-  odometer: number
-  tread_mm: number | null
-  distance_km: number | null
-  note: string | null
-  vehicles: { plate_no: string; province: string; axle_type: string } | null
-  removal_reasons: { name: string } | null
-  profiles: { full_name: string } | null
-}
+import type { AxleType, Tire, TireOverview } from '@/lib/database.types'
 
 export default async function TireDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await requireSession(['admin', 'technician'])
   const { id } = await params
   const supabase = await createClient()
 
-  const [{ data: overview }, { data: raw }, { data: eventData }] = await Promise.all([
-    supabase.from('tire_overview').select('*').eq('id', id).maybeSingle(),
-    supabase.from('tires').select('*').eq('id', id).maybeSingle(),
-    supabase
-      .from('tire_events')
-      .select('id, event_type, event_date, position_code, odometer, tread_mm, distance_km, note, ' +
-        'vehicles(plate_no, province, axle_type), removal_reasons(name), profiles(full_name)')
-      .eq('tire_id', id)
-      .order('event_date', { ascending: false })
-      .order('created_at', { ascending: false }),
-  ])
+  const [{ data: overview }, { data: raw }, { data: eventData }, { data: axleTypeData }] =
+    await Promise.all([
+      supabase.from('tire_overview').select('*').eq('id', id).maybeSingle(),
+      supabase.from('tires').select('*').eq('id', id).maybeSingle(),
+      supabase
+        .from('tire_events')
+        .select(TIRE_EVENT_SELECT)
+        .eq('tire_id', id)
+        .order('event_date', { ascending: false })
+        .order('created_at', { ascending: false }),
+      supabase.from('axle_types').select('*').order('sort_order').order('name'),
+    ])
 
   if (!overview || !raw) notFound()
 
   const t = overview as TireOverview
   const tire = raw as Tire
-  const events = (eventData ?? []) as unknown as EventRow[]
+  const events = (eventData ?? []) as unknown as TireEventRow[]
+  const axleTypes = (axleTypeData ?? []) as AxleType[]
   const pct = treadPercent(t.tread_mm, t.new_tread_mm)
   const costPerKm = tire.purchase_price && t.lifetime_km > 0
     ? tire.purchase_price / t.lifetime_km
@@ -159,49 +146,7 @@ export default async function TireDetailPage({ params }: { params: Promise<{ id:
             title="ประวัติการใช้งาน"
             description={`ทั้งหมด ${events.length} รายการ`}
           />
-          {events.length === 0 ? (
-            <EmptyState title="ยางเส้นนี้ยังไม่เคยถูกติดตั้ง" />
-          ) : (
-            <TableWrap>
-              <Table className="min-w-[720px]">
-                <thead>
-                  <tr>
-                    <Th>วันที่</Th>
-                    <Th>รายการ</Th>
-                    <Th>รถ / ตำแหน่ง</Th>
-                    <Th className="text-right">เลขไมล์</Th>
-                    <Th className="text-right">ระยะรอบนี้</Th>
-                    <Th>ดอกยาง</Th>
-                    <Th>สาเหตุ</Th>
-                    <Th>ผู้บันทึก</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {events.map((e) => (
-                    <tr key={e.id} className="transition-colors hover:bg-brand-50/40">
-                      <Td className="whitespace-nowrap">{formatThaiDate(e.event_date)}</Td>
-                      <Td>
-                        <Badge tone={e.event_type === 'mount' ? 'brand' : 'amber'}>
-                          {e.event_type === 'mount' ? 'ใส่ยาง' : 'ถอดยาง'}
-                        </Badge>
-                      </Td>
-                      <Td>
-                        {e.vehicles?.plate_no ?? '-'}
-                        <p className="text-xs text-ink-400">
-                          {positionLabel(e.position_code, e.vehicles?.axle_type)}
-                        </p>
-                      </Td>
-                      <Td className="text-right">{formatKm(e.odometer)}</Td>
-                      <Td className="text-right">{e.distance_km !== null ? formatKm(e.distance_km) : '-'}</Td>
-                      <Td>{e.tread_mm !== null ? `${e.tread_mm} มม.` : '-'}</Td>
-                      <Td>{e.removal_reasons?.name ?? '-'}</Td>
-                      <Td className="text-ink-500">{e.profiles?.full_name ?? '-'}</Td>
-                    </tr>
-                  ))}
-                </tbody>
-              </Table>
-            </TableWrap>
-          )}
+          <TireEventTable events={events} axleTypes={axleTypes} />
         </Card>
       </div>
     </>

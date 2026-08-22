@@ -6,6 +6,7 @@ import { requireSession } from '@/lib/auth'
 import { resolveCompanyScope } from '@/lib/company-scope'
 import { createClient } from '@/lib/supabase/server'
 import { ActionResult, fail, optionalText, zodFail } from '@/lib/action-result'
+import { HISTORY_LIMIT, VEHICLE_EVENT_SELECT, type VehicleEventRow } from '@/lib/tire-events'
 
 const vehicleSchema = z.object({
   plate_no: z.string().trim().min(1, 'กรุณากรอกทะเบียนรถ').max(20),
@@ -224,4 +225,33 @@ export async function updateMileage(id: string, mileage: number): Promise<Action
   if (error) return fail(error)
   if (data) revalidateVehicle(data.company_id, id)
   return { ok: true }
+}
+
+/**
+ * ดึงประวัติการถอด-ใส่ยางของรถ 1 คัน (ล่าสุดขึ้นก่อน)
+ *
+ * ใช้กับ modal ประวัติที่โหลดตอนกดเปิดเท่านั้น จึงไม่ถ่วงเวลาโหลดตาราง
+ * RLS คัดกรองให้อยู่แล้ว — super admin เห็นทุกบริษัท ลูกค้าเห็นเฉพาะของตัวเอง
+ *
+ * @param vehicleId รหัสรถ
+ */
+export async function getVehicleHistoryAction(
+  vehicleId: string,
+): Promise<ActionResult<VehicleEventRow[]>> {
+  await requireSession(['admin', 'technician', 'super_admin'])
+
+  const parsed = z.string().uuid('รหัสรถไม่ถูกต้อง').safeParse(vehicleId)
+  if (!parsed.success) return zodFail(parsed.error)
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('tire_events')
+    .select(VEHICLE_EVENT_SELECT)
+    .eq('vehicle_id', parsed.data)
+    .order('event_date', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(HISTORY_LIMIT)
+
+  if (error) return fail(error)
+  return { ok: true, data: (data ?? []) as unknown as VehicleEventRow[] }
 }

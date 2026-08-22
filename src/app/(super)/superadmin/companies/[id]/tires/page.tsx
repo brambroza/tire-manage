@@ -3,7 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 import { Card, CardHeader } from '@/components/ui'
 import { TiresClient } from '@/app/(app)/tires/tires-client'
 import type { ModelOption } from '@/app/(app)/tires/tire-form'
-import type { Tire, TireOverview } from '@/lib/database.types'
+import { fetchLastRemovals } from '@/lib/tire-events'
+import type { AxleType, Tire, TireOverview } from '@/lib/database.types'
 
 export const metadata = { title: 'จัดการคลังยางของลูกค้า · Dream Tire Admin' }
 
@@ -30,15 +31,18 @@ export default async function CompanyTiresPage({
   const { q, status } = await searchParams
   const supabase = await createClient()
 
-  const [{ data: overviewData }, { data: rawData }, { data: modelData }] = await Promise.all([
-    supabase.from('tire_overview').select('*').eq('company_id', id).order('serial_no').limit(2000),
-    supabase.from('tires').select('*').eq('company_id', id).limit(2000),
-    supabase
-      .from('tire_models')
-      .select('id, name, size, pattern_code, new_tread_mm, image_url, tire_brands(name)')
-      .eq('is_active', true)
-      .order('name'),
-  ])
+  const [{ data: overviewData }, { data: rawData }, { data: modelData }, { data: axleTypeData }] =
+    await Promise.all([
+      supabase.from('tire_overview').select('*').eq('company_id', id).order('serial_no').limit(2000),
+      supabase.from('tires').select('*').eq('company_id', id).limit(2000),
+      supabase
+        .from('tire_models')
+        .select('id, name, size, pattern_code, new_tread_mm, image_url, tire_brands(name)')
+        .eq('is_active', true)
+        .order('name'),
+      // ใช้แปลรหัสตำแหน่งล้อในตารางประวัติให้ตรงกับผังเพลาจริง
+      supabase.from('axle_types').select('*').order('sort_order').order('name'),
+    ])
 
   let tires = (overviewData ?? []) as TireOverview[]
 
@@ -74,6 +78,12 @@ export default async function CompanyTiresPage({
     image_url: m.image_url,
   }))
 
+  // ยางที่ไม่ได้อยู่บนรถ ต้องรู้ว่าถอดมาจากทะเบียนไหน ที่เลขไมล์เท่าไร
+  const lastRemovals = await fetchLastRemovals(
+    supabase,
+    tires.filter((t) => t.status !== 'mounted').map((t) => t.id),
+  )
+
   return (
     <>
       <Card className="mb-4">
@@ -86,10 +96,13 @@ export default async function CompanyTiresPage({
         tires={tires}
         rawTires={rawTires}
         models={models}
+        lastRemovals={lastRemovals}
         canManage
         companyId={id}
         basePath={`/superadmin/companies/${id}/tires`}
         enableLinks={false}
+        enableHistory
+        axleTypes={(axleTypeData ?? []) as AxleType[]}
       />
     </>
   )
