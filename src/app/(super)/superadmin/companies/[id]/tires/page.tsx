@@ -46,10 +46,19 @@ export default async function CompanyTiresPage({
 
   let tires = (overviewData ?? []) as TireOverview[]
 
+  // ยางที่ไม่ได้อยู่บนรถ ต้องรู้ว่าถอดมาจากทะเบียนไหน ที่เลขไมล์เท่าไร
+  // ดึงก่อนกรอง เพื่อให้ค้นด้วยทะเบียนเจอยางที่ถอดออกจากรถคันนั้นแล้วด้วย
+  const lastRemovals = await fetchLastRemovals(
+    supabase,
+    tires.filter((t) => t.status !== 'mounted').map((t) => t.id),
+  )
+
+  // ค้นหาได้ทั้งเลขยาง ยี่ห้อ รุ่น DOT และทะเบียนรถ — ทะเบียนดูทั้งคันที่ติดตั้งอยู่
+  // และคันที่ถอดยางเส้นนั้นออกมาล่าสุด
   const term = q?.trim().toLowerCase()
   if (term) {
     tires = tires.filter((t) =>
-      [t.serial_no, t.brand_name, t.model_name, t.size, t.plate_no, t.dot]
+      [t.serial_no, t.brand_name, t.model_name, t.size, t.plate_no, t.dot, lastRemovals[t.id]?.plate_no]
         .filter(Boolean)
         .some((field) => String(field).toLowerCase().includes(term)),
     )
@@ -77,12 +86,6 @@ export default async function CompanyTiresPage({
     new_tread_mm: m.new_tread_mm,
     image_url: m.image_url,
   }))
-
-  // ยางที่ไม่ได้อยู่บนรถ ต้องรู้ว่าถอดมาจากทะเบียนไหน ที่เลขไมล์เท่าไร
-  const lastRemovals = await fetchLastRemovals(
-    supabase,
-    tires.filter((t) => t.status !== 'mounted').map((t) => t.id),
-  )
 
   return (
     <>
