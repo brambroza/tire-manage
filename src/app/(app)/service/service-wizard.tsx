@@ -6,6 +6,7 @@ import {
   AlertCircle, ArrowLeft, Check, ChevronRight, Gauge, MapPin, Plus, Truck, X,
 } from 'lucide-react'
 import { Badge, Button, Field, Input, Select } from '@/components/ui'
+import { Modal } from '@/components/ui/modal'
 import { WheelDiagram, type WheelSlot } from '@/components/wheel-diagram'
 import { getLayout, positionLabel, positionNo, type WheelPosition } from '@/lib/axle-layouts'
 import { PROVINCES } from '@/lib/provinces'
@@ -213,6 +214,8 @@ export function ServiceWizard({
   const [step, setStep] = React.useState<Step>('plate')
   const [error, setError] = React.useState<string | null>(null)
   const [saving, setSaving] = React.useState(false)
+  /** เปิดกล่องยืนยันก่อนบันทึกจริง — กันช่างกดพลาดแล้วข้อมูลลงระบบ */
+  const [confirmOpen, setConfirmOpen] = React.useState(false)
   /** ข้อความแจ้งเตือนสั้นหลังบันทึกสำเร็จ (null = ไม่แสดง) */
   const [toast, setToast] = React.useState<string | null>(null)
 
@@ -419,6 +422,16 @@ export function ServiceWizard({
       modelName: model?.model_name ?? '',
       newTreadMm: model?.new_tread_mm ?? null,
     }
+  }
+
+  /**
+   * ชื่อยางแบบสั้นสำหรับกล่องยืนยัน เช่น "11R22.5 · R150"
+   * ไม่แสดงยี่ห้อ ให้ตรงกับรายการเลือกยางในขั้นตอนก่อนหน้า
+   * @param pick ยางที่ช่างเลือกไว้ในล้อนั้น
+   */
+  function pickLabel(pick: TirePick): string {
+    const spec = pickSpec(pick)
+    return [spec.size, spec.modelName].filter(Boolean).join(' · ') || 'ไม่ระบุรุ่น'
   }
 
   const odometerValid = odometer.trim() !== '' && Number(odometer) >= 0
@@ -732,8 +745,15 @@ export function ServiceWizard({
     })
   }
 
-  /** บันทึกทุกล้อในชุด (ถอด + ใส่) ในทรานแซกชันเดียว */
-  async function handleSave() {
+  /** กดปุ่มบันทึก — เปิดกล่องสรุปให้ยืนยันก่อน ยังไม่ยิงเข้าระบบ */
+  function handleSave() {
+    if (!vehicle || positions.length === 0 || incompletePositions.length > 0) return
+    setError(null)
+    setConfirmOpen(true)
+  }
+
+  /** บันทึกทุกล้อในชุด (ถอด + ใส่) ในทรานแซกชันเดียว — เรียกหลังช่างกดยืนยัน */
+  async function confirmSave() {
     if (!vehicle || positions.length === 0 || incompletePositions.length > 0) return
     setSaving(true)
     setError(null)
@@ -748,11 +768,13 @@ export function ServiceWizard({
 
     setSaving(false)
     if (!result.ok) {
+      setConfirmOpen(false)
       setError(result.error)
       return
     }
 
     // บันทึกแล้วกลับไปเริ่มรถคันใหม่ทันที — ไม่มีทางเลือกทำต่อรถคันเดิม
+    setConfirmOpen(false)
     startOver()
     setToast(`บันทึกเรียบร้อย ${wheelCount} ล้อ`)
     router.refresh()
@@ -1210,6 +1232,51 @@ export function ServiceWizard({
           รถใหม่จะถูกบันทึกเข้าระบบด้วยทะเบียนและจังหวัดที่เลือก
         </p>
       )}
+
+      {/* กล่องสรุปก่อนบันทึก — ทวนทะเบียน เลขไมล์ และยางทุกล้อให้ช่างตรวจอีกรอบ */}
+      <Modal
+        open={confirmOpen}
+        onClose={() => { if (!saving) setConfirmOpen(false) }}
+        title="ยืนยันการบันทึก"
+        description={`${vehicle?.plate_no ?? plateNo} · เลขไมล์ ${formatKm(Number(odometer) || 0)} กม.`}
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setConfirmOpen(false)}
+              disabled={saving}
+              className="h-12 rounded-xl border border-line bg-white px-5 text-[15px] font-medium text-ink-700 hover:bg-brand-50 disabled:opacity-50"
+            >
+              ยกเลิก
+            </button>
+            <Button className="h-12 px-5" loading={saving} onClick={confirmSave}>
+              <Check className="size-5" />
+              ยืนยันบันทึก
+            </Button>
+          </>
+        }
+      >
+        <ul className="space-y-2.5">
+          {positions.map((code) => {
+            const d = drafts[code] ?? EMPTY_DRAFT
+            return (
+              <li key={code} className="rounded-xl bg-surface-alt px-4 py-3 ring-1 ring-inset ring-line">
+                <p className="text-[15px] font-semibold text-ink-900">{wheelName(code)}</p>
+                <p className="mt-1 text-sm text-ink-600">
+                  ถอด {pickLabel(d.unPick)} · ซีรีย์ {d.unPick.serialNo || '-'}
+                </p>
+                <p className="mt-0.5 text-sm text-ink-600">
+                  ใส่ {pickLabel(d.mnPick)} · ซีรีย์ {d.mnPick.serialNo || '-'}
+                  {d.mountKind === 'new' ? ' (ยางใหม่)' : d.mountKind === 'used' ? ' (ยางเก่า)' : ''}
+                </p>
+              </li>
+            )
+          })}
+        </ul>
+        <p className="mt-4 text-sm text-ink-500">
+          บันทึกแล้วแก้ไขเองไม่ได้ ตรวจให้ครบก่อนกดยืนยัน
+        </p>
+      </Modal>
 
       {/* snackbar ยืนยันบันทึกสำเร็จ — มุมขวาบน ไม่บังปุ่มหน้าจอ */}
       {toast && (
