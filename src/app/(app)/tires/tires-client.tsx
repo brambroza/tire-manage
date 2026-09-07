@@ -12,7 +12,7 @@ import { TireSpec } from '@/components/tire-spec'
 import { TireHistoryModal } from '@/components/history-modal'
 import { positionLabel, type AxleTypeLayoutSource } from '@/lib/axle-layouts'
 import {
-  TIRE_STATUS_LABEL, TIRE_STATUS_TONE, cn, formatKm, formatThaiDate, treadPercent,
+  TIRE_STATUS_LABEL, TIRE_STATUS_TONE, cn, diffDays, formatDuration, formatKm, formatThaiDate, treadPercent,
 } from '@/lib/utils'
 import type { LastRemoval } from '@/lib/tire-events'
 import { TireFormModal, type ModelOption } from './tire-form'
@@ -141,6 +141,7 @@ export function TiresClient({
                   <Th>ตำแหน่งปัจจุบัน</Th>
                   <Th className="hidden md:table-cell">ดอกยาง</Th>
                   <Th className="hidden text-right xl:table-cell">ระยะรอบล่าสุด</Th>
+                  <Th className="hidden text-right xl:table-cell">ระยะเวลาใช้งาน</Th>
                   <Th className="text-right">ระยะสะสม</Th>
                   {canManage && <Th className="text-right">จัดการ</Th>}
                 </tr>
@@ -151,6 +152,12 @@ export function TiresClient({
                   const alert = t.status === 'mounted' && t.current_run_km >= t.alert_km
                   // ยางในคลัง/ตัดจำหน่าย: บอกที่มาว่าถอดจากรถคันไหน ที่เลขไมล์เท่าไร
                   const removal = t.status !== 'mounted' ? lastRemovals[t.id] : undefined
+                  // ระยะเวลาใช้งาน: มีเลขไมล์หรือไม่ก็นับได้ — mounted นับถึงวันนี้, ถอดแล้วนับถึงวันที่ถอด
+                  const usageDays = t.status === 'mounted' && t.mounted_at
+                    ? diffDays(t.mounted_at, new Date().toISOString())
+                    : removal?.mounted_at
+                      ? diffDays(removal.mounted_at, removal.event_date)
+                      : null
                   return (
                     <tr key={t.id} className="transition-colors hover:bg-brand-50/40">
                       <Td>
@@ -242,6 +249,7 @@ export function TiresClient({
                             ? <span className="text-ink-500">{formatKm(removal.distance_km)}</span>
                             : '-'}
                       </Td>
+                      <Td className="hidden text-right xl:table-cell">{formatDuration(usageDays)}</Td>
                       <Td className="text-right font-medium">{formatKm(t.lifetime_km)}</Td>
                       {canManage && (
                         <Td>

@@ -49,6 +49,22 @@ export function todayISO(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
+/** จำนวนวันระหว่างสองวันที่ (อย่างน้อย 0) */
+export function diffDays(startISO: string, endISO: string): number {
+  const start = new Date(startISO).getTime()
+  const end = new Date(endISO).getTime()
+  return Math.max(0, Math.floor((end - start) / 86_400_000))
+}
+
+/** จัดรูปแบบระยะเวลาใช้งาน เช่น "3 เดือน 5 วัน" — เดือนนับแบบ 30 วัน */
+export function formatDuration(days: number | null | undefined): string {
+  if (days === null || days === undefined || Number.isNaN(days)) return '-'
+  if (days < 30) return `${days} วัน`
+  const months = Math.floor(days / 30)
+  const rest = days % 30
+  return rest === 0 ? `${months} เดือน` : `${months} เดือน ${rest} วัน`
+}
+
 export const TIRE_STATUS_LABEL: Record<TireStatus, string> = {
   in_stock: 'อยู่ในคลัง',
   mounted: 'ใช้งานอยู่',

@@ -63,6 +63,8 @@ export interface LastRemoval {
   /** ระยะที่ยางวิ่งในรอบที่ถอดออก */
   distance_km: number | null
   event_date: string
+  /** วันที่ใส่ยางครั้งนั้น (คู่กับ event_date ที่ถอด) — null ถ้าหา mount event คู่กันไม่เจอ */
+  mounted_at: string | null
 }
 
 /** จำนวน tire_id ต่อ 1 query — กัน URL ยาวเกินลิมิตของ PostgREST/proxy */
@@ -94,32 +96,46 @@ export async function fetchLastRemovals(
     chunks.map((ids) =>
       supabase
         .from('tire_events')
-        .select('tire_id, position_code, odometer, distance_km, event_date, vehicles(plate_no, province)')
-        .eq('event_type', 'unmount')
+        .select('tire_id, event_type, position_code, odometer, distance_km, event_date, vehicles(plate_no, province)')
+        .in('event_type', ['mount', 'unmount'])
         .in('tire_id', ids)
         .order('event_date', { ascending: false })
         .order('created_at', { ascending: false }),
     ),
   )
 
+  // แยก mount event ที่ยังไม่ได้จับคู่กับ unmount ของยางแต่ละเส้น (รอ mount ที่มาก่อนหน้า unmount ล่าสุด)
+  const pendingMountMatch = new Set<string>()
+
   for (const { data } of responses) {
     for (const row of (data ?? []) as unknown as Array<{
       tire_id: string
+      event_type: string
       position_code: string | null
       odometer: number
       distance_km: number | null
       event_date: string
       vehicles: { plate_no: string; province: string } | null
     }>) {
-      // แถวเรียงใหม่สุดมาก่อน — เก็บเฉพาะแถวแรกของยางแต่ละเส้น
-      if (result[row.tire_id]) continue
-      result[row.tire_id] = {
-        plate_no: row.vehicles?.plate_no ?? null,
-        province: row.vehicles?.province ?? null,
-        position_code: row.position_code,
-        odometer: row.odometer,
-        distance_km: row.distance_km,
-        event_date: row.event_date,
+      // แถวเรียงใหม่สุดมาก่อน (ต่อ tire): แถวแรกที่เจอต้องเป็น unmount ล่าสุด
+      if (!result[row.tire_id]) {
+        if (row.event_type !== 'unmount') continue
+        result[row.tire_id] = {
+          plate_no: row.vehicles?.plate_no ?? null,
+          province: row.vehicles?.province ?? null,
+          position_code: row.position_code,
+          odometer: row.odometer,
+          distance_km: row.distance_km,
+          event_date: row.event_date,
+          mounted_at: null,
+        }
+        pendingMountMatch.add(row.tire_id)
+        continue
+      }
+      // เจอ unmount ล่าสุดแล้ว — หา mount ที่ตามมา (แถวแรกที่เป็น mount) เพื่อจับคู่
+      if (pendingMountMatch.has(row.tire_id) && row.event_type === 'mount') {
+        result[row.tire_id].mounted_at = row.event_date
+        pendingMountMatch.delete(row.tire_id)
       }
     }
   }
