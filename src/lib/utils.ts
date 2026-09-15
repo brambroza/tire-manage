@@ -105,6 +105,15 @@ export function sanitizeOdometer(value: string): string {
   return value.replace(/\D/g, '').slice(0, 6)
 }
 
+/**
+ * ใส่จุลภาคคั่นหลักพันให้ตัวเลขที่กำลังคีย์ เช่น "555505" → "555,505"
+ * @param digits ตัวเลขล้วน (ว่างได้)
+ */
+export function groupDigits(digits: string): string {
+  if (digits === '') return ''
+  return Number(digits).toLocaleString('en-US')
+}
+
 /** ซีรีย์ยางยาวได้ไม่เกินกี่ตัว */
 export const SERIAL_MAX = 30
 /** ซีรีย์ยางรับเฉพาะตัวเลข ตัวอักษรอังกฤษพิมพ์ใหญ่ และขีดกลาง */

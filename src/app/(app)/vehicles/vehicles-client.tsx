@@ -143,7 +143,17 @@ export function VehiclesClient({
                         <Badge tone="brand">{v.axle_type}</Badge>
                         <span className="ml-2 text-sm text-ink-400">{layout.wheelCount} ตำแหน่ง</span>
                       </Td>
-                      <Td className="text-right">{formatKm(v.current_mileage)}</Td>
+                      <Td className="text-right">
+                        {formatKm(v.current_mileage)}
+                        {enableLinks && v.is_active && (
+                          <Link
+                            href={`/mileage?vehicle=${v.id}`}
+                            className="mt-0.5 block text-xs font-medium text-brand-600 hover:underline"
+                          >
+                            บันทึกไมล์
+                          </Link>
+                        )}
+                      </Td>
                       <Td className="text-center">
                         <span className={v.mounted_count === layout.wheelCount ? 'text-emerald-600' : 'text-amber-600'}>
                           {v.mounted_count}/{layout.wheelCount}

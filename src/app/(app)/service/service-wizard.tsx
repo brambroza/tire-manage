@@ -11,7 +11,7 @@ import { WheelDiagram, type WheelSlot } from '@/components/wheel-diagram'
 import { getLayout, positionLabel, positionNo, type WheelPosition } from '@/lib/axle-layouts'
 import { PROVINCES } from '@/lib/provinces'
 import {
-  cn, formatKm, todayISO,
+  cn, formatKm, groupDigits, todayISO,
   ODOMETER_MAX, PLATE_NUMBER_MAX, PLATE_PATTERN, PLATE_PATTERN_MESSAGE, PLATE_PREFIX_MAX, SERIAL_MAX,
   sanitizeOdometer, sanitizePlateNumber, sanitizePlatePrefix, sanitizeSerial,
 } from '@/lib/utils'
@@ -133,15 +133,6 @@ const TREAD_OPTIONS = Array.from({ length: 21 }, (_, i) => i)
 /** ข้อความเมื่อแคตตาล็อกของบริษัทว่าง — ช่างเพิ่มรุ่นเองไม่ได้แล้ว ต้องให้ผู้ดูแลระบบเปิดสิทธิ์ */
 const CATALOG_EMPTY_TEXT =
   'ยังไม่มีรุ่นยางในแคตตาล็อกของบริษัทนี้ — แจ้งผู้ดูแลระบบให้เปิดสิทธิ์รุ่นยาง'
-
-/**
- * ใส่จุลภาคคั่นหลักพันให้ตัวเลขที่กำลังคีย์ เช่น "555505" → "555,505"
- * @param digits ตัวเลขล้วน (ว่างได้)
- */
-function groupDigits(digits: string): string {
-  if (digits === '') return ''
-  return Number(digits).toLocaleString('en-US')
-}
 
 /**
  * ทำข้อความให้เทียบง่ายตอนค้นหา — ตัดช่องว่าง ขีด จุด และตัวพิมพ์ใหญ่ทิ้ง

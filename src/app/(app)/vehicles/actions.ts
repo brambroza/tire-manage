@@ -222,28 +222,80 @@ export async function reactivateVehicle(id: string): Promise<ActionResult> {
   return { ok: true }
 }
 
+const mileageSchema = z.object({
+  vehicle_id: z.string().uuid(),
+  mileage: z
+    .number()
+    .int('เลขไมล์ต้องเป็นจำนวนเต็ม')
+    .min(0, 'เลขไมล์ต้องไม่ติดลบ')
+    .max(ODOMETER_MAX, ODOMETER_MAX_MESSAGE),
+})
+
+export interface UpdateMileageResult {
+  plate_no: string
+  previous_mileage: number
+  current_mileage: number
+}
+
 /**
- * อัปเดตเลขไมล์ล่าสุดของรถ
+ * บันทึกเลขไมล์ล่าสุดของรถโดยไม่ต้องถอด-ใส่ยาง
+ *
+ * ใช้ให้ระยะรอบนี้ของยางทุกเส้นบนรถอัปเดตตามการวิ่งจริง (view tire_overview คำนวณสดจากค่านี้)
+ * เลขไมล์ใหม่ต้องไม่น้อยกว่าค่าเดิม เพราะระยะรอบนี้ = ไมล์รถ − ไมล์ตอนใส่ยาง ห้ามถอยหลัง
+ * RLS จำกัดให้เห็นเฉพาะรถของบริษัทตัวเองอยู่แล้ว (super admin เห็นทุกบริษัท)
+ *
  * @param id รหัสรถ
- * @param mileage เลขไมล์ล่าสุด
+ * @param mileage เลขไมล์ล่าสุด (ไม่เกิน 6 หลัก)
  */
-export async function updateMileage(id: string, mileage: number): Promise<ActionResult> {
+export async function updateMileage(
+  id: string,
+  mileage: number,
+): Promise<ActionResult<UpdateMileageResult>> {
   await requireSession(['admin', 'technician', 'super_admin'])
-  if (!Number.isFinite(mileage) || mileage < 0) {
-    return { ok: false, error: 'เลขไมล์ไม่ถูกต้อง' }
-  }
+  const parsed = mileageSchema.safeParse({ vehicle_id: id, mileage })
+  if (!parsed.success) return zodFail(parsed.error)
 
   const supabase = await createClient()
+  const { data: current, error: findError } = await supabase
+    .from('vehicles')
+    .select('id, plate_no, current_mileage, is_active')
+    .eq('id', id)
+    .maybeSingle()
+  if (findError) return fail(findError)
+  if (!current) return { ok: false, error: 'ไม่พบรถคันนี้ หรือคุณไม่มีสิทธิ์' }
+  if (!current.is_active) return { ok: false, error: 'รถคันนี้ถูกปิดใช้งานแล้ว — แจ้งแอดมินให้เปิดใช้งานก่อน' }
+
+  if (parsed.data.mileage < current.current_mileage) {
+    return {
+      ok: false,
+      error: `เลขไมล์ใหม่ต้องไม่น้อยกว่าเลขไมล์ล่าสุดในระบบ (${current.current_mileage.toLocaleString('th-TH')} กม.)`,
+      fieldErrors: { mileage: 'ต้องไม่น้อยกว่าเลขไมล์ล่าสุด' },
+    }
+  }
+
   const { data, error } = await supabase
     .from('vehicles')
-    .update({ current_mileage: Math.round(mileage) })
+    .update({ current_mileage: parsed.data.mileage })
     .eq('id', id)
     .select('company_id')
     .maybeSingle()
 
   if (error) return fail(error)
-  if (data) revalidateVehicle(data.company_id, id)
-  return { ok: true }
+  if (data) {
+    revalidateVehicle(data.company_id, id)
+    revalidatePath('/dashboard')
+    revalidatePath('/tires')
+    revalidatePath('/mileage')
+    revalidatePath(`/superadmin/companies/${data.company_id}/tires`)
+  }
+  return {
+    ok: true,
+    data: {
+      plate_no: current.plate_no,
+      previous_mileage: current.current_mileage,
+      current_mileage: parsed.data.mileage,
+    },
+  }
 }
 
 /**

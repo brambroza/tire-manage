@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, Truck, CircleDot, Users, Building2, Wrench,
+  LayoutDashboard, Truck, CircleDot, Users, Building2, Wrench, Gauge,
 } from 'lucide-react'
 import { AppShell, type NavItem } from '@/components/app-shell'
 import { NotificationBell } from '@/components/notification-bell'
@@ -14,6 +14,7 @@ const ADMIN_NAV: NavItem[] = [
   { href: '/vehicles',    label: 'จัดการรถ',           icon: <Truck className={ICON} /> },
   { href: '/tires',       label: 'คลังยาง',            icon: <CircleDot className={ICON} /> },
   { href: '/service',     label: 'บันทึกถอด-ใส่ยาง',   icon: <Wrench className={ICON} /> },
+  { href: '/mileage',     label: 'บันทึกเลขไมล์',       icon: <Gauge className={ICON} /> },
   { href: '/technicians', label: 'ช่างของบริษัท',       icon: <Users className={ICON} /> },
   { href: '/company',     label: 'ข้อมูลบริษัท',        icon: <Building2 className={ICON} /> },
 ]
@@ -21,6 +22,7 @@ const ADMIN_NAV: NavItem[] = [
 // ช่างเห็นเฉพาะหน้าทำงานหน้างาน — ไม่มีเมนูค้นหายาง/รถตามสเปคหน้าช่าง
 const TECH_NAV: NavItem[] = [
   { href: '/service', label: 'บันทึกถอด-ใส่ยาง', icon: <Wrench className={ICON} />, exact: true },
+  { href: '/mileage', label: 'บันทึกเลขไมล์',     icon: <Gauge className={ICON} />, exact: true },
 ]
 
 function navFor(role: UserRole): NavItem[] {
