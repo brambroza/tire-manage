@@ -7,9 +7,17 @@ import { resolveCompanyScope } from '@/lib/company-scope'
 import { createClient } from '@/lib/supabase/server'
 import { ActionResult, fail, optionalNumber, optionalText, zodFail } from '@/lib/action-result'
 import { HISTORY_LIMIT, TIRE_EVENT_SELECT, type TireEventRow } from '@/lib/tire-events'
+import { SERIAL_MAX, SERIAL_PATTERN, SERIAL_PATTERN_MESSAGE } from '@/lib/utils'
 
 const tireSchema = z.object({
-  serial_no: z.string().trim().min(1, 'กรุณากรอกเลขยาง (ซีเรียล)').max(50),
+  /** ซีรีย์ยาง: แปลงเป็นตัวพิมพ์ใหญ่ก่อน แล้วรับเฉพาะ A-Z 0-9 ขีด (ให้พิมพ์เล็ก/ใหญ่หากันเจอ) */
+  serial_no: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .min(1, 'กรุณากรอกเลขยาง (ซีเรียล)')
+    .max(SERIAL_MAX, `ซีรีย์ยางยาวได้ไม่เกิน ${SERIAL_MAX} ตัว`)
+    .regex(SERIAL_PATTERN, SERIAL_PATTERN_MESSAGE),
   /** เลือกจากแคตตาล็อกที่ super admin กำหนดให้ (ถ้ามี) */
   tire_model_id: optionalText,
   /** กรณีช่างพิมพ์ยี่ห้อ/รุ่นเองเพราะยังไม่มีในระบบ */

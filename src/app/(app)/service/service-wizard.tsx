@@ -10,7 +10,11 @@ import { Modal } from '@/components/ui/modal'
 import { WheelDiagram, type WheelSlot } from '@/components/wheel-diagram'
 import { getLayout, positionLabel, positionNo, type WheelPosition } from '@/lib/axle-layouts'
 import { PROVINCES } from '@/lib/provinces'
-import { cn, formatKm, todayISO } from '@/lib/utils'
+import {
+  cn, formatKm, todayISO,
+  ODOMETER_MAX, PLATE_NUMBER_MAX, PLATE_PATTERN, PLATE_PATTERN_MESSAGE, PLATE_PREFIX_MAX, SERIAL_MAX,
+  sanitizeOdometer, sanitizePlateNumber, sanitizePlatePrefix, sanitizeSerial,
+} from '@/lib/utils'
 import {
   addCompanyTireModelAction, applyServiceBatchAction, ensureServiceVehicleAction,
 } from './actions'
@@ -434,7 +438,8 @@ export function ServiceWizard({
     return [spec.size, spec.modelName].filter(Boolean).join(' · ') || 'ไม่ระบุรุ่น'
   }
 
-  const odometerValid = odometer.trim() !== '' && Number(odometer) >= 0
+  const odometerValid =
+    odometer.trim() !== '' && Number(odometer) >= 0 && Number(odometer) <= ODOMETER_MAX
 
   /**
    * เหตุผลที่ยางที่คีย์ "ถอด" ในล้อนี้ใช้ไม่ได้ (null = ถอดได้)
@@ -545,6 +550,10 @@ export function ServiceWizard({
     setError(null)
     if (platePrefix.trim() === '' || plateNumber.trim() === '') {
       setError('กรุณาใส่ทะเบียนรถให้ครบทั้งสองช่อง')
+      return
+    }
+    if (!PLATE_PATTERN.test(plateNo)) {
+      setError(PLATE_PATTERN_MESSAGE)
       return
     }
 
@@ -906,13 +915,13 @@ export function ServiceWizard({
               ref={platePrefixRef}
               value={platePrefix}
               onChange={(e) => {
-                // จำกัด 2 ตัว แล้วดีดไปช่องหลังทันที — ช่างคีย์รวดเดียวไม่ต้องแตะจอ
-                const value = e.target.value.slice(0, 2)
+                // รับเฉพาะพยัญชนะไทย/ตัวเลข 2 ตัว แล้วดีดไปช่องหลังทันที — ช่างคีย์รวดเดียวไม่ต้องแตะจอ
+                const value = sanitizePlatePrefix(e.target.value)
                 setPlatePrefix(value)
-                if (value.length === 2) plateNumberRef.current?.focus()
+                if (value.length === PLATE_PREFIX_MAX) plateNumberRef.current?.focus()
               }}
               placeholder="70"
-              maxLength={2}
+              maxLength={PLATE_PREFIX_MAX}
               autoFocus
               className="h-16 text-center text-2xl font-semibold"
               aria-label="ทะเบียนส่วนหน้า"
@@ -921,7 +930,7 @@ export function ServiceWizard({
             <Input
               ref={plateNumberRef}
               value={plateNumber}
-              onChange={(e) => setPlateNumber(e.target.value)}
+              onChange={(e) => setPlateNumber(sanitizePlateNumber(e.target.value))}
               onKeyDown={(e) => {
                 // ลบย้อนจากช่องว่าง = กลับไปแก้ส่วนหน้า
                 if (e.key === 'Backspace' && plateNumber === '') {
@@ -932,7 +941,7 @@ export function ServiceWizard({
               }}
               placeholder="1234"
               inputMode="numeric"
-              maxLength={8}
+              maxLength={PLATE_NUMBER_MAX}
               className="h-16 text-center text-2xl font-semibold"
               aria-label="ทะเบียนส่วนหลัง"
             />
@@ -1042,15 +1051,24 @@ export function ServiceWizard({
       {/* -------------------------------------------- ขั้นที่ 4: เลขไมล์ */}
       {step === 'odometer' && (
         <StepCard title="ใส่เลขไมล์" description={`เลขไมล์ปัจจุบันของ ${vehicle?.plate_no ?? plateNo}`}>
-          <Field label="เลขไมล์ (กม.)" required>
+          <Field
+            label="เลขไมล์ (กม.)"
+            required
+            hint={
+              vehicle && !isNewVehicle
+                ? `ไมล์ล่าสุดในระบบ ${formatKm(vehicle.current_mileage)} · กรอกได้ไม่เกิน 6 หลัก`
+                : 'กรอกได้ไม่เกิน 6 หลัก'
+            }
+          >
             <div className="relative">
               <Gauge className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-ink-400" />
               <Input
                 type="text"
                 inputMode="numeric"
-                // โชว์คั่นหลักพันให้อ่านง่ายหน้างาน แต่เก็บเป็นตัวเลขล้วนใน state
+                // โชว์คั่นหลักพันให้อ่านง่ายหน้างาน แต่เก็บเป็นตัวเลขล้วนใน state (ไม่เกิน 6 หลัก)
                 value={groupDigits(odometer)}
-                onChange={(e) => setOdometer(e.target.value.replace(/\D/g, ''))}
+                onChange={(e) => setOdometer(sanitizeOdometer(e.target.value))}
+                maxLength={7}
                 autoFocus
                 className="h-16 pl-12 text-2xl font-semibold"
               />
@@ -1628,13 +1646,22 @@ function TirePickFields({
         label="ซีรีย์ยาง"
         required
         error={serialError}
-        hint={serialLocked ? 'ซีเรียลของยางเส้นที่เลือกจากคลัง' : undefined}
+        hint={
+          serialLocked
+            ? 'ซีเรียลของยางเส้นที่เลือกจากคลัง'
+            : 'ตัวเลขและตัวอักษรภาษาอังกฤษเท่านั้น (ระบบแปลงเป็นตัวพิมพ์ใหญ่ให้)'
+        }
       >
         <Input
           value={pick.serialNo}
-          onChange={(e) => set('serialNo', e.target.value)}
+          // กรองให้เหลือ A-Z 0-9 ขีด และแปลงเป็นตัวพิมพ์ใหญ่ทันที เพื่อให้ค้นเจอกันไม่ว่าจะพิมพ์เล็ก/ใหญ่
+          onChange={(e) => set('serialNo', serialLocked ? e.target.value : sanitizeSerial(e.target.value))}
           placeholder="111111"
-          className="h-14 text-lg"
+          maxLength={SERIAL_MAX}
+          autoCapitalize="characters"
+          autoCorrect="off"
+          spellCheck={false}
+          className="h-14 text-lg uppercase"
           readOnly={serialLocked}
         />
       </Field>

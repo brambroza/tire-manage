@@ -65,6 +65,61 @@ export function formatDuration(days: number | null | undefined): string {
   return rest === 0 ? `${months} เดือน` : `${months} เดือน ${rest} วัน`
 }
 
+/* ------------------------------------------------------------------
+ * กฎการกรอกข้อมูลหน้างาน (ใช้ร่วมกันทั้งฝั่ง client และ zod ใน server action)
+ * ------------------------------------------------------------------ */
+
+/** ทะเบียนส่วนหน้า (หมวด) ยาวได้ไม่เกิน 2 ตัว เช่น "70" หรือ "กข" */
+export const PLATE_PREFIX_MAX = 2
+/** ทะเบียนส่วนหลัง (เลข) ยาวได้ไม่เกิน 4 หลัก */
+export const PLATE_NUMBER_MAX = 4
+/** รูปแบบทะเบียนเต็ม เช่น "70-1234" หรือ "กข-12" */
+export const PLATE_PATTERN = /^[ก-ฮ0-9]{1,2}-\d{1,4}$/
+export const PLATE_PATTERN_MESSAGE = 'ทะเบียนต้องเป็น หมวด 1-2 ตัว (ไทย/เลข) ขีด เลขไม่เกิน 4 หลัก เช่น 70-1234'
+
+/**
+ * ตัดอักขระที่ใช้ในทะเบียนส่วนหน้าไม่ได้ออก (เหลือเฉพาะพยัญชนะไทยและตัวเลข) และจำกัดความยาว
+ * @param value ค่าที่พิมพ์
+ */
+export function sanitizePlatePrefix(value: string): string {
+  return value.replace(/[^ก-ฮ0-9]/g, '').slice(0, PLATE_PREFIX_MAX)
+}
+
+/**
+ * ตัดอักขระที่ไม่ใช่ตัวเลขออกจากทะเบียนส่วนหลัง และจำกัดความยาว
+ * @param value ค่าที่พิมพ์
+ */
+export function sanitizePlateNumber(value: string): string {
+  return value.replace(/\D/g, '').slice(0, PLATE_NUMBER_MAX)
+}
+
+/** เลขไมล์สูงสุดที่ระบบรับ (6 หลัก) */
+export const ODOMETER_MAX = 999_999
+export const ODOMETER_MAX_MESSAGE = 'เลขไมล์ต้องไม่เกิน 6 หลัก (999,999 กม.)'
+
+/**
+ * เหลือเฉพาะตัวเลขและตัดให้ไม่เกิน 6 หลัก สำหรับช่องกรอกเลขไมล์
+ * @param value ค่าที่พิมพ์ (อาจมีจุลภาคคั่นหลัก)
+ */
+export function sanitizeOdometer(value: string): string {
+  return value.replace(/\D/g, '').slice(0, 6)
+}
+
+/** ซีรีย์ยางยาวได้ไม่เกินกี่ตัว */
+export const SERIAL_MAX = 30
+/** ซีรีย์ยางรับเฉพาะตัวเลข ตัวอักษรอังกฤษพิมพ์ใหญ่ และขีดกลาง */
+export const SERIAL_PATTERN = /^[A-Z0-9-]+$/
+export const SERIAL_PATTERN_MESSAGE = 'ซีรีย์ยางใช้ได้เฉพาะตัวเลขและตัวอักษรภาษาอังกฤษ'
+
+/**
+ * แปลงซีรีย์ยางให้เป็นรูปแบบมาตรฐาน: ตัวพิมพ์ใหญ่ ไม่มีช่องว่างหรืออักขระพิเศษ
+ * ใช้ทั้งตอนพิมพ์และก่อนบันทึก เพื่อให้ "abc123" กับ "ABC123" ถือเป็นเส้นเดียวกัน
+ * @param value ค่าที่พิมพ์
+ */
+export function sanitizeSerial(value: string): string {
+  return value.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, SERIAL_MAX)
+}
+
 export const TIRE_STATUS_LABEL: Record<TireStatus, string> = {
   in_stock: 'อยู่ในคลัง',
   mounted: 'ใช้งานอยู่',

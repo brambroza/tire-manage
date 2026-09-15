@@ -7,6 +7,7 @@ import { resolveCompanyScope } from '@/lib/company-scope'
 import { createClient } from '@/lib/supabase/server'
 import { ActionResult, fail, optionalText, zodFail } from '@/lib/action-result'
 import { HISTORY_LIMIT, VEHICLE_EVENT_SELECT, type VehicleEventRow } from '@/lib/tire-events'
+import { ODOMETER_MAX, ODOMETER_MAX_MESSAGE, PLATE_PATTERN, PLATE_PATTERN_MESSAGE } from '@/lib/utils'
 
 const vehicleSchema = z.object({
   plate_no: z.string().trim().min(1, 'กรุณากรอกทะเบียนรถ').max(20),
@@ -14,8 +15,17 @@ const vehicleSchema = z.object({
   brand: optionalText,
   model: optionalText,
   axle_type: z.string().trim().min(1, 'กรุณาเลือกประเภทเพลา').max(30),
-  current_mileage: z.number().int().min(0, 'เลขไมล์ต้องไม่ติดลบ'),
+  current_mileage: z
+    .number()
+    .int()
+    .min(0, 'เลขไมล์ต้องไม่ติดลบ')
+    .max(ODOMETER_MAX, ODOMETER_MAX_MESSAGE),
   note: optionalText,
+})
+
+/** รถใหม่ต้องใช้ทะเบียนตามรูปแบบมาตรฐาน (รถเดิมที่บันทึกไว้ก่อนกฎนี้ยังแก้ข้อมูลอื่นได้) */
+const newVehicleSchema = vehicleSchema.extend({
+  plate_no: vehicleSchema.shape.plate_no.regex(PLATE_PATTERN, PLATE_PATTERN_MESSAGE),
 })
 
 export type VehicleInput = z.input<typeof vehicleSchema>
@@ -63,7 +73,7 @@ export async function createVehicle(
   const scope = await resolveCompanyScope(['admin'], companyId)
   if (!scope.ok) return scope
 
-  const parsed = vehicleSchema.safeParse(input)
+  const parsed = newVehicleSchema.safeParse(input)
   if (!parsed.success) return zodFail(parsed.error)
 
   const supabase = await createClient()
@@ -107,7 +117,7 @@ export async function updateVehicle(id: string, input: VehicleInput): Promise<Ac
 
   const supabase = await createClient()
   const [currentResult, axleTypeResult] = await Promise.all([
-    supabase.from('vehicles').select('company_id, axle_type').eq('id', id).maybeSingle(),
+    supabase.from('vehicles').select('company_id, axle_type, plate_no').eq('id', id).maybeSingle(),
     supabase
       .from('axle_types')
       .select('code, is_active')
@@ -120,6 +130,15 @@ export async function updateVehicle(id: string, input: VehicleInput): Promise<Ac
     return { ok: false, error: 'ไม่พบรถที่ต้องการแก้ไข หรือคุณไม่มีสิทธิ์' }
   }
   if (axleTypeResult.error) return fail(axleTypeResult.error)
+
+  // ทะเบียนที่เปลี่ยนใหม่ต้องเป็นรูปแบบมาตรฐาน (ทะเบียนเดิมที่บันทึกไว้ก่อนกฎนี้คงไว้ได้)
+  if (
+    currentResult.data.plate_no !== parsed.data.plate_no &&
+    !PLATE_PATTERN.test(parsed.data.plate_no)
+  ) {
+    return { ok: false, error: PLATE_PATTERN_MESSAGE, fieldErrors: { plate_no: PLATE_PATTERN_MESSAGE } }
+  }
+
   if (
     !axleTypeResult.data ||
     (!axleTypeResult.data.is_active && currentResult.data.axle_type !== parsed.data.axle_type)

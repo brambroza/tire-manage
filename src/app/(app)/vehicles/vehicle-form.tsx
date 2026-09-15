@@ -7,6 +7,9 @@ import { Modal } from '@/components/ui/modal'
 import { Button, Field, Input, Select, Textarea } from '@/components/ui'
 import { getLayout } from '@/lib/axle-layouts'
 import { PROVINCES } from '@/lib/provinces'
+import {
+  ODOMETER_MAX, PLATE_NUMBER_MAX, PLATE_PREFIX_MAX, sanitizePlateNumber, sanitizePlatePrefix,
+} from '@/lib/utils'
 import { createVehicle, updateVehicle, type VehicleInput } from './actions'
 import type { AxleType, Vehicle } from '@/lib/database.types'
 
@@ -103,12 +106,18 @@ export function VehicleFormModal({
    * @param value ค่าที่พิมพ์
    */
   function setPlatePart(part: 0 | 1, value: string) {
-    let next: [string, string] = part === 0 ? [value, plate[1]] : [plate[0], value]
+    let next: [string, string] =
+      part === 0 ? [value, plate[1]] : [plate[0], sanitizePlateNumber(value)]
     // พิมพ์ขีดกลางในช่องแรก = ข้ามไปช่องเลขทะเบียนให้เลย
     if (part === 0 && value.includes('-')) {
       const [head, tail] = splitPlate(value)
-      next = [head, tail || plate[1]]
+      next = [head, sanitizePlateNumber(tail) || plate[1]]
       plateTailRef.current?.focus()
+    }
+    if (part === 0) {
+      // หมวดทะเบียน: พยัญชนะไทย/ตัวเลข ไม่เกิน 2 ตัว ครบแล้วดีดไปช่องเลข
+      next = [sanitizePlatePrefix(next[0]), next[1]]
+      if (next[0].length === PLATE_PREFIX_MAX) plateTailRef.current?.focus()
     }
     setPlate(next)
     set('plate_no', joinPlate(next[0], next[1]))
@@ -165,12 +174,18 @@ export function VehicleFormModal({
         )}
 
         <div className="grid gap-5 sm:grid-cols-2">
-          <Field label="ทะเบียนรถ" required error={fieldErrors.plate_no}>
+          <Field
+            label="ทะเบียนรถ"
+            required
+            hint="หมวด 1-2 ตัว · เลขไม่เกิน 4 หลัก"
+            error={fieldErrors.plate_no}
+          >
             <div className="flex items-center gap-2">
               <Input
                 value={plate[0]}
                 onChange={(e) => setPlatePart(0, e.target.value)}
                 placeholder="70"
+                maxLength={PLATE_PREFIX_MAX}
                 aria-label="หมวดทะเบียน"
                 className="w-24 text-center"
                 autoFocus
@@ -180,7 +195,9 @@ export function VehicleFormModal({
                 ref={plateTailRef}
                 value={plate[1]}
                 onChange={(e) => setPlatePart(1, e.target.value)}
-                placeholder="12345"
+                placeholder="1234"
+                inputMode="numeric"
+                maxLength={PLATE_NUMBER_MAX}
                 aria-label="เลขทะเบียน"
                 className="flex-1"
               />
@@ -228,13 +245,21 @@ export function VehicleFormModal({
             </Select>
           </Field>
 
-          <Field label="เลขไมล์ล่าสุด (กม.)" required error={fieldErrors.current_mileage}>
+          <Field
+            label="เลขไมล์ล่าสุด (กม.)"
+            required
+            hint="ไม่เกิน 6 หลัก"
+            error={fieldErrors.current_mileage}
+          >
             <Input
               type="number"
               inputMode="numeric"
               min={0}
+              max={ODOMETER_MAX}
               value={form.current_mileage}
-              onChange={(e) => set('current_mileage', Number(e.target.value))}
+              onChange={(e) =>
+                set('current_mileage', Math.min(ODOMETER_MAX, Math.max(0, Number(e.target.value) || 0)))
+              }
             />
           </Field>
         </div>

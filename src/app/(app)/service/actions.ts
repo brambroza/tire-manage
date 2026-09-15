@@ -6,10 +6,30 @@ import { requireSession } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { ActionResult, fail, optionalNumber, optionalText, zodFail } from '@/lib/action-result'
 import { createTire, ensureBrandModel } from '../tires/actions'
+import {
+  ODOMETER_MAX, ODOMETER_MAX_MESSAGE, PLATE_PATTERN, PLATE_PATTERN_MESSAGE,
+  SERIAL_MAX, SERIAL_PATTERN, SERIAL_PATTERN_MESSAGE,
+} from '@/lib/utils'
+
+/** เลขไมล์: จำนวนเต็ม 0 ถึง 999,999 (6 หลัก) */
+const odometerSchema = z
+  .number()
+  .int()
+  .min(0, 'กรุณากรอกเลขไมล์')
+  .max(ODOMETER_MAX, ODOMETER_MAX_MESSAGE)
+
+/** ซีรีย์ยาง: แปลงเป็นตัวพิมพ์ใหญ่ก่อน แล้วรับเฉพาะ A-Z 0-9 ขีด */
+const serialSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .min(1, 'กรุณากรอกเลขยาง (ซีเรียล)')
+  .max(SERIAL_MAX, `ซีรีย์ยางยาวได้ไม่เกิน ${SERIAL_MAX} ตัว`)
+  .regex(SERIAL_PATTERN, SERIAL_PATTERN_MESSAGE)
 
 const unmountSchema = z.object({
   tire_id: z.string().uuid(),
-  odometer: z.number().int().min(0, 'กรุณากรอกเลขไมล์'),
+  odometer: odometerSchema,
   tread_mm: optionalNumber,
   reason_id: optionalText,
   note: optionalText,
@@ -20,7 +40,7 @@ const mountSchema = z.object({
   tire_id: z.string().uuid(),
   vehicle_id: z.string().uuid(),
   position_code: z.string().min(1, 'กรุณาเลือกตำแหน่งล้อ'),
-  odometer: z.number().int().min(0, 'กรุณากรอกเลขไมล์'),
+  odometer: odometerSchema,
   tread_mm: optionalNumber,
   note: optionalText,
   event_date: z.string().min(1),
@@ -82,7 +102,7 @@ const manualUnmountSchema = z.object({
   vehicle_id: z.string().uuid(),
   position_code: z.string().min(1, 'กรุณาเลือกตำแหน่งล้อ'),
   /** ข้อมูลยางที่ช่างคีย์เองหน้างาน */
-  serial_no: z.string().trim().min(1, 'กรุณากรอกเลขยาง (ซีเรียล)').max(50),
+  serial_no: serialSchema,
   tire_model_id: optionalText,
   brand_name: optionalText,
   model_name: optionalText,
@@ -91,7 +111,7 @@ const manualUnmountSchema = z.object({
   new_tread_mm: optionalNumber,
   /** เลขไมล์ตอนที่ยางเส้นนี้ถูกใส่ (ถ้าทราบ) — ใช้คำนวณระยะวิ่งรอบนี้ */
   mounted_odometer: optionalNumber,
-  odometer: z.number().int().min(0, 'กรุณากรอกเลขไมล์'),
+  odometer: odometerSchema,
   tread_mm: optionalNumber,
   reason_id: optionalText,
   note: optionalText,
@@ -194,7 +214,7 @@ export async function replaceTireAction(
  * ============================================================ */
 
 const manualTireSchema = z.object({
-  serial_no: z.string().trim().min(1, 'กรุณากรอกเลขยาง (ซีเรียล)').max(50),
+  serial_no: serialSchema,
   tire_model_id: optionalText,
   brand_name: optionalText,
   model_name: optionalText,
@@ -220,7 +240,7 @@ const batchItemSchema = z.object({
 
 const batchSchema = z.object({
   vehicle_id: z.string().uuid(),
-  odometer: z.number().int().min(0, 'กรุณากรอกเลขไมล์'),
+  odometer: odometerSchema,
   event_date: z.string().min(1),
   items: z.array(batchItemSchema).min(1, 'กรุณาเพิ่มอย่างน้อย 1 รายการ').max(60),
 })
@@ -634,7 +654,12 @@ export async function addCompanyTireModelAction(
  * ============================================================ */
 
 const serviceVehicleSchema = z.object({
-  plate_no: z.string().trim().min(1, 'กรุณากรอกทะเบียนรถ').max(20),
+  plate_no: z
+    .string()
+    .trim()
+    .min(1, 'กรุณากรอกทะเบียนรถ')
+    .max(20)
+    .regex(PLATE_PATTERN, PLATE_PATTERN_MESSAGE),
   province: z.string().trim().min(1, 'กรุณาเลือกจังหวัด').max(60),
   axle_type: z.string().trim().min(1, 'กรุณาเลือกประเภทรถ').max(30),
 })

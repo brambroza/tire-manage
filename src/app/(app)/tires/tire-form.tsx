@@ -7,7 +7,7 @@ import { Modal } from '@/components/ui/modal'
 import { Button, Field, Input, Select, Textarea } from '@/components/ui'
 import { TireThumb } from '@/components/tire-thumb'
 import { tireSpecLabel } from '@/lib/tire-display'
-import { cn } from '@/lib/utils'
+import { cn, SERIAL_MAX, sanitizeSerial } from '@/lib/utils'
 import { createTire, ensureBrandModel, updateTire, type TireInput } from './actions'
 import type { Tire } from '@/lib/database.types'
 
@@ -169,11 +169,21 @@ export function TireFormModal({
           </div>
         )}
 
-        <Field label="เลขยาง (ซีเรียล)" required error={fieldErrors.serial_no}>
+        <Field
+          label="เลขยาง (ซีเรียล)"
+          required
+          hint="ตัวเลขและตัวอักษรภาษาอังกฤษเท่านั้น (ระบบแปลงเป็นตัวพิมพ์ใหญ่ให้)"
+          error={fieldErrors.serial_no}
+        >
           <Input
             value={form.serial_no}
-            onChange={(e) => set('serial_no', e.target.value)}
-            placeholder="T-295/80R22.5-010"
+            onChange={(e) => set('serial_no', sanitizeSerial(e.target.value))}
+            placeholder="T29580R225010"
+            maxLength={SERIAL_MAX}
+            autoCapitalize="characters"
+            autoCorrect="off"
+            spellCheck={false}
+            className="uppercase"
             autoFocus
           />
         </Field>
