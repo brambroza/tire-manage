@@ -101,6 +101,7 @@ export default async function CompanyTiresPage({
         models={models}
         lastRemovals={lastRemovals}
         canManage
+        canAdd
         companyId={id}
         basePath={`/superadmin/companies/${id}/tires`}
         enableLinks={false}

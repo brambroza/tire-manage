@@ -34,6 +34,7 @@ export function TiresClient({
   models,
   lastRemovals = {},
   canManage,
+  canAdd = false,
   companyId,
   basePath = '/tires',
   enableLinks = true,
@@ -46,7 +47,10 @@ export function TiresClient({
   models: ModelOption[]
   /** การถอดครั้งล่าสุดของยางที่ไม่ได้อยู่บนรถ (key = tire id) */
   lastRemovals?: Record<string, LastRemoval>
+  /** แก้ไข/ตัดจำหน่ายยางได้ */
   canManage: boolean
+  /** เพิ่มยางเข้าคลังได้ — เปิดเฉพาะ super admin (ลูกค้าเพิ่มยางเองไม่ได้ตามที่ตกลง) */
+  canAdd?: boolean
   /** ระบุเมื่อ super admin จัดการคลังยางแทนลูกค้า */
   companyId?: string
   /** route ของหน้านี้ ใช้ตอนอัปเดตตัวกรองใน query string */
@@ -108,7 +112,7 @@ export function TiresClient({
           ))}
         </div>
 
-        {canManage && (
+        {canAdd && (
           <Button onClick={() => { setEditing(null); setFormOpen(true) }} className="lg:ml-auto">
             <Plus className="size-4.5" />
             เพิ่มยาง
