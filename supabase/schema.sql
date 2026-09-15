@@ -217,12 +217,14 @@ create table if not exists public.tires (
   note               text,
   created_at         timestamptz not null default now(),
   updated_at         timestamptz not null default now(),
-  unique (company_id, serial_no),
   constraint tires_mounted_consistency check (
     (status = 'mounted' and vehicle_id is not null and position_code is not null)
     or (status <> 'mounted')
   )
 );
+-- ซีรีย์ยางห้ามซ้ำในบริษัทเดียวกันโดยไม่สนตัวพิมพ์เล็ก/ใหญ่ (แอปบันทึกเป็นตัวพิมพ์ใหญ่เสมอ)
+create unique index if not exists tires_company_serial_upper_key
+  on public.tires (company_id, upper(serial_no));
 create index if not exists tires_company_idx  on public.tires(company_id);
 create index if not exists tires_vehicle_idx  on public.tires(vehicle_id);
 create index if not exists tires_status_idx   on public.tires(company_id, status);

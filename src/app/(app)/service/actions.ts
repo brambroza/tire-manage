@@ -320,7 +320,8 @@ export async function applyServiceBatchAction(
       const { data: existingTire, error: existingError } = await supabase
         .from('tires')
         .select('id, serial_no, status, vehicle_id, position_code')
-        .eq('serial_no', manual.serial_no)
+        // ilike = ไม่สนตัวพิมพ์ ครอบคลุมยางเก่าที่บันทึกไว้เป็นตัวพิมพ์เล็กก่อน migration 008
+        .ilike('serial_no', manual.serial_no)
         .maybeSingle()
       if (existingError) {
         await rollbackCreatedTires()
@@ -423,7 +424,8 @@ export async function applyServiceBatchAction(
       const { data: existingTire, error: existingError } = await supabase
         .from('tires')
         .select('id, serial_no, status, vehicle_id')
-        .eq('serial_no', manual.serial_no)
+        // ilike = ไม่สนตัวพิมพ์ ครอบคลุมยางเก่าที่บันทึกไว้เป็นตัวพิมพ์เล็กก่อน migration 008
+        .ilike('serial_no', manual.serial_no)
         .maybeSingle()
       if (existingError) {
         await rollbackCreatedTires()
