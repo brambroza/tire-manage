@@ -127,11 +127,12 @@ export const TIRE_STATUS_LABEL: Record<TireStatus, string> = {
   retreading: 'ส่งหล่อดอก',
 }
 
-export const TIRE_STATUS_TONE: Record<TireStatus, 'sky' | 'emerald' | 'slate' | 'amber'> = {
-  in_stock: 'slate',
+// เขียว = ใช้งาน, ฟ้า = พร้อมใช้ในคลัง, แดง = ตัดจำหน่าย, ส้ม = อยู่ระหว่างหล่อดอก
+export const TIRE_STATUS_TONE: Record<TireStatus, 'sky' | 'emerald' | 'rose' | 'amber'> = {
+  in_stock: 'sky',
   mounted: 'emerald',
-  scrapped: 'amber',
-  retreading: 'sky',
+  scrapped: 'rose',
+  retreading: 'amber',
 }
 
 /**

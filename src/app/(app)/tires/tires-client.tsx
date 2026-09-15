@@ -4,7 +4,7 @@ import * as React from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { CircleDot, History, Pencil, Plus, Trash2, Undo2 } from 'lucide-react'
-import { Badge, Button, Card, EmptyState, Table, TableWrap, Td, Th } from '@/components/ui'
+import { ALERT_ROW, Badge, Button, Card, EmptyState, Table, TableWrap, Td, Th, alertLevel } from '@/components/ui'
 import { ConfirmDialog } from '@/components/ui/modal'
 import { SearchInput } from '@/components/search-input'
 import { TireThumb } from '@/components/tire-thumb'
@@ -150,6 +150,9 @@ export function TiresClient({
                 {tires.map((t) => {
                   const pct = treadPercent(t.tread_mm, t.new_tread_mm)
                   const alert = t.status === 'mounted' && t.current_run_km >= t.alert_km
+                  const level = alertLevel(
+                    t.status === 'mounted', t.current_run_km, t.alert_km, t.tread_mm, t.alert_tread_mm,
+                  )
                   // ยางในคลัง/ตัดจำหน่าย: บอกที่มาว่าถอดจากรถคันไหน ที่เลขไมล์เท่าไร
                   const removal = t.status !== 'mounted' ? lastRemovals[t.id] : undefined
                   // ระยะเวลาใช้งาน: มีเลขไมล์หรือไม่ก็นับได้ — mounted นับถึงวันนี้, ถอดแล้วนับถึงวันที่ถอด
@@ -159,7 +162,7 @@ export function TiresClient({
                       ? diffDays(removal.mounted_at, removal.event_date)
                       : null
                   return (
-                    <tr key={t.id} className="transition-colors hover:bg-brand-50/40">
+                    <tr key={t.id} className={cn(ALERT_ROW[level], t.status === 'scrapped' && 'opacity-70')}>
                       <Td>
                         <TireThumb
                           src={t.image_url}
@@ -246,12 +249,12 @@ export function TiresClient({
                       </Td>
                       <Td className="hidden md:table-cell">
                         {t.tread_mm !== null
-                          ? <span className={cn(t.tread_mm <= t.alert_tread_mm && 'font-medium text-rose-600')}>
+                          ? <span className={cn(t.tread_mm <= t.alert_tread_mm && 'font-semibold text-rose-600')}>
                             {t.tread_mm} มม.{pct !== null ? ` (${pct}%)` : ''}
                           </span>
                           : '-'}
                       </Td>
-                      <Td className={cn('hidden text-right xl:table-cell', alert && 'font-medium text-amber-600')}>
+                      <Td className={cn('hidden text-right xl:table-cell', alert && 'font-semibold text-rose-600')}>
                         {t.status === 'mounted'
                           ? formatKm(t.current_run_km)
                           : removal?.distance_km !== null && removal?.distance_km !== undefined

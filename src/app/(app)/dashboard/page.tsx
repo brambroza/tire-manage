@@ -5,13 +5,13 @@ import { createClient } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/app-shell'
 import { MonthlyEventsChart, StatusDonut, type MonthPoint } from '@/components/charts'
 import {
-  Badge, Card, CardBody, CardHeader, EmptyState, StatTile, Table, TableWrap, Td, Th,
+  ALERT_ROW, Badge, Card, CardBody, CardHeader, EmptyState, StatTile, Table, TableWrap, Td, Th, alertLevel,
 } from '@/components/ui'
 import { TireThumb } from '@/components/tire-thumb'
 import { TireSpec } from '@/components/tire-spec'
 import { positionLabel } from '@/lib/axle-layouts'
 import {
-  TIRE_STATUS_LABEL, TIRE_STATUS_TONE, formatKm, formatNumber, treadPercent,
+  TIRE_STATUS_LABEL, TIRE_STATUS_TONE, cn, formatKm, formatNumber, treadPercent,
 } from '@/lib/utils'
 import { RemovalReport } from './removal-report'
 import type { RemovalReasonOption, RemovalReportRow } from './removal-report-types'
@@ -178,7 +178,13 @@ export default async function DashboardPage() {
         />
         <StatTile
           label={`ถึงเกณฑ์เตือน (${formatNumber(alertKm)} กม.)`}
-          value={formatNumber(alerts.length)} unit="เส้น" tone="amber"
+          value={
+            <span className={alerts.length > 0 ? 'text-rose-600' : undefined}>
+              {formatNumber(alerts.length)}
+            </span>
+          }
+          unit="เส้น"
+          tone={alerts.length > 0 ? 'rose' : 'emerald'}
           icon={<AlertTriangle className="size-4.5" />}
         />
       </div>
@@ -213,7 +219,7 @@ export default async function DashboardPage() {
         <CardHeader
           title="ยางที่ถึงเกณฑ์แจ้งเตือน"
           description={`วิ่งเกิน ${formatNumber(alertKm)} กม. ในรอบปัจจุบัน หรือดอกยางเหลือ ≤ ${alertTread} มม.`}
-          action={<Badge tone={alerts.length ? 'amber' : 'emerald'}>{formatNumber(alerts.length)} เส้น</Badge>}
+          action={<Badge tone={alerts.length ? 'rose' : 'emerald'}>{formatNumber(alerts.length)} เส้น</Badge>}
         />
         {alerts.length === 0 ? (
           <EmptyState
@@ -238,8 +244,9 @@ export default async function DashboardPage() {
               <tbody>
                 {alerts.slice(0, 10).map((t) => {
                   const pct = treadPercent(t.tread_mm, t.new_tread_mm)
+                  const level = alertLevel(true, t.current_run_km, alertKm, t.tread_mm, alertTread)
                   return (
-                    <tr key={t.id} className="transition-colors hover:bg-brand-50/40">
+                    <tr key={t.id} className={ALERT_ROW[level]}>
                       <Td>
                         <TireThumb
                           src={t.image_url}
@@ -255,9 +262,16 @@ export default async function DashboardPage() {
                           className="mt-1"
                         />
                       </Td>
-                      <Td>{t.plate_no ?? '-'}</Td>
+                      <Td className="font-semibold text-ink-900">{t.plate_no ?? '-'}</Td>
                       <Td className="hidden md:table-cell">{positionLabel(t.position_code)}</Td>
-                      <Td className="text-right font-medium text-amber-600">{formatKm(t.current_run_km)}</Td>
+                      <Td
+                        className={cn(
+                          'text-right font-semibold',
+                          t.current_run_km >= alertKm ? 'text-rose-600' : 'text-ink-700',
+                        )}
+                      >
+                        {formatKm(t.current_run_km)}
+                      </Td>
                       <Td className="hidden text-right lg:table-cell">{formatKm(t.lifetime_km)}</Td>
                       <Td className="hidden sm:table-cell">
                         {t.tread_mm !== null

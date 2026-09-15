@@ -185,13 +185,14 @@ export function Field({
 
 type Tone = 'sky' | 'emerald' | 'rose' | 'amber' | 'slate' | 'brand'
 
+// สีเข้มขึ้นกว่าเดิม (100/800/300) ให้สถานะอ่านออกชัดบนจอหน้างานที่แสงจ้า
 const TONE: Record<Tone, string> = {
-  sky: 'bg-sky-50 text-sky-700 ring-sky-200',
-  emerald: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  rose: 'bg-rose-50 text-rose-700 ring-rose-200',
-  amber: 'bg-amber-50 text-amber-700 ring-amber-200',
-  slate: 'bg-slate-100 text-slate-600 ring-slate-200',
-  brand: 'bg-brand-50 text-brand-700 ring-brand-200',
+  sky: 'bg-sky-100 text-sky-800 ring-sky-300',
+  emerald: 'bg-emerald-100 text-emerald-800 ring-emerald-300',
+  rose: 'bg-rose-100 text-rose-800 ring-rose-300',
+  amber: 'bg-amber-100 text-amber-800 ring-amber-300',
+  slate: 'bg-slate-100 text-slate-700 ring-slate-300',
+  brand: 'bg-brand-100 text-brand-800 ring-brand-300',
 }
 
 export function Badge({
@@ -202,13 +203,43 @@ export function Badge({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset',
+        'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset',
         TONE[tone],
         className,
       )}
       {...props}
     />
   )
+}
+
+/** พื้นหลังแถวตารางตามระดับการแจ้งเตือน — ใช้ให้เหมือนกันทุกตาราง */
+export const ALERT_ROW: Record<'none' | 'warn' | 'danger', string> = {
+  none: 'transition-colors hover:bg-brand-50/40',
+  // วิ่งเกินระยะ: เหลืองส้ม
+  warn: 'bg-amber-50 transition-colors hover:bg-amber-100/70',
+  // ดอกยางต่ำกว่าเกณฑ์: แดง (ความปลอดภัย)
+  danger: 'bg-rose-50 transition-colors hover:bg-rose-100/70',
+}
+
+/**
+ * ระดับการแจ้งเตือนของยาง 1 เส้น (ใช้เลือกสีแถว/ตัวเลข)
+ * @param mounted ยางติดตั้งอยู่บนรถหรือไม่
+ * @param runKm ระยะรอบนี้
+ * @param alertKm เกณฑ์ระยะ
+ * @param treadMm ดอกยางปัจจุบัน
+ * @param alertTreadMm เกณฑ์ดอกยาง
+ */
+export function alertLevel(
+  mounted: boolean,
+  runKm: number,
+  alertKm: number,
+  treadMm: number | null,
+  alertTreadMm: number,
+): 'none' | 'warn' | 'danger' {
+  if (!mounted) return 'none'
+  if (treadMm !== null && treadMm <= alertTreadMm) return 'danger'
+  if (runKm >= alertKm) return 'warn'
+  return 'none'
 }
 
 /* ---------------------------------------------------- Empty state */

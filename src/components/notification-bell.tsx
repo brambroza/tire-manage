@@ -55,7 +55,7 @@ export function NotificationBell({ feed }: { feed: NotificationFeed }) {
           <span
             className={cn(
               'absolute -right-0.5 -top-0.5 flex min-w-5 items-center justify-center rounded-full',
-              'bg-amber-500 px-1.5 text-[11px] font-semibold text-white ring-2 ring-white',
+              'bg-rose-600 px-1.5 text-[11px] font-bold text-white ring-2 ring-white',
             )}
           >
             {total > 99 ? '99+' : total}
@@ -80,7 +80,7 @@ export function NotificationBell({ feed }: { feed: NotificationFeed }) {
               </p>
             </div>
             {hasAlerts && (
-              <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-200">
+              <span className="rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-800 ring-1 ring-inset ring-rose-300">
                 {formatNumber(total)} เส้น
               </span>
             )}
@@ -100,7 +100,12 @@ export function NotificationBell({ feed }: { feed: NotificationFeed }) {
                     <Link
                       href={`/tires/${a.tireId}`}
                       onClick={() => setOpen(false)}
-                      className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-brand-50/60"
+                      className={cn(
+                        'flex items-start gap-3 border-l-4 px-4 py-3 transition-colors',
+                        a.kind === 'tread'
+                          ? 'border-rose-500 bg-rose-50/60 hover:bg-rose-100/60'
+                          : 'border-amber-500 bg-amber-50/60 hover:bg-amber-100/60',
+                      )}
                     >
                       <TireThumb
                         src={a.imageUrl}
@@ -115,13 +120,14 @@ export function NotificationBell({ feed }: { feed: NotificationFeed }) {
                           className="mt-1"
                           sizeClassName="text-sm"
                         />
-                        <p className="truncate text-sm text-ink-500">
-                          {a.plateNo ?? '-'} · {positionLabel(a.positionCode, a.vehicleAxleType)}
+                        <p className="truncate text-sm text-ink-700">
+                          <span className="font-semibold text-ink-900">{a.plateNo ?? '-'}</span>
+                          {' · '}{positionLabel(a.positionCode, a.vehicleAxleType)}
                         </p>
                         <p
                           className={cn(
-                            'mt-1 inline-flex items-center gap-1.5 text-xs font-medium',
-                            a.kind === 'tread' ? 'text-rose-600' : 'text-amber-600',
+                            'mt-1 inline-flex items-center gap-1.5 text-xs font-semibold',
+                            a.kind === 'tread' ? 'text-rose-700' : 'text-amber-700',
                           )}
                         >
                           {a.kind === 'tread' ? (
