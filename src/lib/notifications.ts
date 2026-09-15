@@ -51,12 +51,22 @@ export async function getTireAlerts(company: Company | null): Promise<Notificati
     .order('current_run_km', { ascending: false })
     .limit(500)
 
-  const rows = (data ?? []) as TireOverview[]
+  const rows = ((data ?? []) as TireOverview[]).filter(
+    (t) => t.current_run_km >= alertKm || (t.tread_mm !== null && t.tread_mm <= alertTreadMm),
+  )
+
+  // view tire_overview ไม่มีประเภทเพลา — ดึงเพิ่มเพื่อให้ชื่อตำแหน่งล้อ (เช่น "เพลา 2 ซ้ายนอก") ถูกต้อง
+  const vehicleIds = Array.from(new Set(rows.map((t) => t.vehicle_id).filter((id): id is string => !!id)))
+  const axleTypeByVehicle: Record<string, string> = {}
+  if (vehicleIds.length > 0) {
+    const { data: vehicleRows } = await supabase
+      .from('vehicles')
+      .select('id, axle_type')
+      .in('id', vehicleIds)
+    for (const v of vehicleRows ?? []) axleTypeByVehicle[v.id] = v.axle_type
+  }
 
   const alerts: TireAlert[] = rows
-    .filter(
-      (t) => t.current_run_km >= alertKm || (t.tread_mm !== null && t.tread_mm <= alertTreadMm),
-    )
     .map((t) => ({
       tireId: t.id,
       serialNo: t.serial_no,
@@ -65,7 +75,7 @@ export async function getTireAlerts(company: Company | null): Promise<Notificati
       size: t.size,
       plateNo: t.plate_no,
       positionCode: t.position_code,
-      vehicleAxleType: null,
+      vehicleAxleType: t.vehicle_id ? axleTypeByVehicle[t.vehicle_id] ?? null : null,
       currentRunKm: t.current_run_km,
       treadMm: t.tread_mm,
       kind:
