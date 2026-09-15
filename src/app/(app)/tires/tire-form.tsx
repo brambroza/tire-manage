@@ -69,7 +69,8 @@ export function TireFormModal({
     setActiveKey(formKey)
     setError(null)
     setFieldErrors({})
-    setManual(Boolean(tire && !tire.tire_model_id))
+    // โหมดพิมพ์เองเปิดให้เฉพาะ super admin — ลูกค้าเลือกได้จากแคตตาล็อกที่เปิดสิทธิ์เท่านั้น
+    setManual(isSuperAdmin && Boolean(tire && !tire.tire_model_id))
     setForm(
       tire
         ? {
@@ -188,25 +189,35 @@ export function TireFormModal({
           />
         </Field>
 
-        {/* สลับโหมดเลือกจากแคตตาล็อก / พิมพ์เอง */}
-        <div className="inline-flex rounded-xl bg-brand-50 p-1">
-          {[
-            { key: false, label: 'เลือกจากแคตตาล็อก' },
-            { key: true, label: 'พิมพ์ยี่ห้อ/รุ่นเอง' },
-          ].map((tab) => (
-            <button
-              key={String(tab.key)}
-              type="button"
-              onClick={() => setManual(tab.key)}
-              className={cn(
-                'tap-target rounded-lg px-4 text-sm font-medium transition-colors',
-                manual === tab.key ? 'bg-white text-brand-700 shadow-sm' : 'text-ink-500',
-              )}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+        {/* สลับโหมดเลือกจากแคตตาล็อก / พิมพ์เอง — เฉพาะ super admin เพื่อกันลูกค้าสร้างยี่ห้อ/รุ่นลงฐานข้อมูลเอง */}
+        {isSuperAdmin && (
+          <div className="inline-flex rounded-xl bg-brand-50 p-1">
+            {[
+              { key: false, label: 'เลือกจากแคตตาล็อก' },
+              { key: true, label: 'พิมพ์ยี่ห้อ/รุ่นเอง' },
+            ].map((tab) => (
+              <button
+                key={String(tab.key)}
+                type="button"
+                onClick={() => setManual(tab.key)}
+                className={cn(
+                  'tap-target rounded-lg px-4 text-sm font-medium transition-colors',
+                  manual === tab.key ? 'bg-white text-brand-700 shadow-sm' : 'text-ink-500',
+                )}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* ยางเดิมที่บันทึกยี่ห้อ/รุ่นแบบพิมพ์เองไว้ก่อนปิดโหมดนี้ — โชว์ค่าเดิมให้ลูกค้าเห็นว่าเป็นอะไร */}
+        {!isSuperAdmin && tire && !tire.tire_model_id && !form.tire_model_id && (
+          <p className="rounded-xl bg-surface-alt px-4 py-3 text-sm text-ink-600 ring-1 ring-inset ring-line">
+            ข้อมูลเดิม: {tireSpecLabel({ size: tire.size, brandName: tire.brand_name, modelName: tire.model_name })}
+            {' '}— เลือกรุ่นจากแคตตาล็อกด้านล่างเพื่อเปลี่ยน หรือเว้นไว้เพื่อคงค่าเดิม
+          </p>
+        )}
 
         {manual ? (
           <div className="grid gap-5 sm:grid-cols-3">
@@ -238,7 +249,9 @@ export function TireFormModal({
               label="ขนาด / ยี่ห้อ รุ่น"
               hint={
                 models.length === 0
-                  ? 'ยังไม่มีรุ่นยางที่เปิดสิทธิ์ให้บริษัทนี้ — ใช้โหมดพิมพ์เองได้'
+                  ? isSuperAdmin
+                    ? 'ยังไม่มีรุ่นยางที่เปิดสิทธิ์ให้บริษัทนี้ — ใช้โหมดพิมพ์เองได้'
+                    : 'ยังไม่มีรุ่นยางที่เปิดสิทธิ์ให้บริษัทนี้ — แจ้งผู้ดูแลระบบให้เปิดสิทธิ์'
                   : selectedModel
                     ? `ดอกยางตอนใหม่จากแคตตาล็อก: ${selectedModel.new_tread_mm ?? EMPTY.new_tread_mm} มม.`
                     : undefined

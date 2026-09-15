@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  AlertCircle, ArrowLeft, Check, ChevronRight, Gauge, MapPin, Plus, Truck, X,
+  AlertCircle, ArrowLeft, Check, ChevronRight, Gauge, MapPin, Truck, X,
 } from 'lucide-react'
 import { Badge, Button, Field, Input, Select, Textarea } from '@/components/ui'
 import { Modal } from '@/components/ui/modal'
@@ -15,9 +15,7 @@ import {
   ODOMETER_MAX, PLATE_NUMBER_MAX, PLATE_PATTERN, PLATE_PATTERN_MESSAGE, PLATE_PREFIX_MAX, SERIAL_MAX,
   sanitizeOdometer, sanitizePlateNumber, sanitizePlatePrefix, sanitizeSerial,
 } from '@/lib/utils'
-import {
-  addCompanyTireModelAction, applyServiceBatchAction, ensureServiceVehicleAction,
-} from './actions'
+import { applyServiceBatchAction, ensureServiceVehicleAction } from './actions'
 import type { AxleCategory, AxleType } from '@/lib/database.types'
 
 /* ------------------------------------------------------------------ types */
@@ -131,6 +129,10 @@ const CATEGORY_LABEL: Record<AxleCategory, string> = { head: 'หัว', traile
 
 /** ตัวเลือกดอกยางในรายการ dropdown (มม.) */
 const TREAD_OPTIONS = Array.from({ length: 21 }, (_, i) => i)
+
+/** ข้อความเมื่อแคตตาล็อกของบริษัทว่าง — ช่างเพิ่มรุ่นเองไม่ได้แล้ว ต้องให้ผู้ดูแลระบบเปิดสิทธิ์ */
+const CATALOG_EMPTY_TEXT =
+  'ยังไม่มีรุ่นยางในแคตตาล็อกของบริษัทนี้ — แจ้งผู้ดูแลระบบให้เปิดสิทธิ์รุ่นยาง'
 
 /**
  * ใส่จุลภาคคั่นหลักพันให้ตัวเลขที่กำลังคีย์ เช่น "555505" → "555,505"
@@ -259,15 +261,6 @@ export function ServiceWizard({
   /** ข้อมูลถอด-ใส่ของแต่ละล้อ: position_code -> draft */
   const [drafts, setDrafts] = React.useState<Record<string, WheelDraft>>({})
 
-  /** รุ่นยางรอตรวจสอบที่ช่างเพิ่งเพิ่มจากคำค้นหน้างาน (ยังไม่ผ่าน refresh) */
-  const [addedModels, setAddedModels] = React.useState<TireModelLite[]>([])
-
-  /** แคตตาล็อกของบริษัทนี้ = ที่ super admin กำหนดให้ + รายการรอตรวจสอบจากหน้างาน */
-  const allModels = React.useMemo(() => {
-    const seen = new Set(models.map((m) => m.id))
-    return [...models, ...addedModels.filter((m) => !seen.has(m.id))]
-  }, [models, addedModels])
-
   /** ซ่อน snackbar เองหลัง 3 วินาที — ช่างไม่ต้องกดปิด */
   React.useEffect(() => {
     if (!toast) return
@@ -354,8 +347,8 @@ export function ServiceWizard({
    * ใช้ตอนถอด และตอนใส่ยางใหม่ (ซีเรียลคีย์อิสระเสมอ)
    */
   const catalogOptions = React.useMemo<TireOption[]>(
-    () => toCatalogOptions(allModels),
-    [allModels],
+    () => toCatalogOptions(models),
+    [models],
   )
 
   /**
@@ -413,7 +406,7 @@ export function ServiceWizard({
     const stock = tires.find((t) => t.id === pick.stockTireId) ?? null
     if (stock) {
       // ยางในคลังมีข้อมูลครบอยู่แล้ว ใช้ของเดิมทั้งชุด
-      const model = allModels.find(
+      const model = models.find(
         (m) =>
           (m.size ?? '').toLowerCase() === (stock.size ?? '').toLowerCase() &&
           m.brand_name.toLowerCase() === (stock.brand_name ?? '').toLowerCase() &&
@@ -428,7 +421,7 @@ export function ServiceWizard({
       }
     }
 
-    const model = allModels.find((m) => m.id === pick.modelId) ?? null
+    const model = models.find((m) => m.id === pick.modelId) ?? null
     return {
       model,
       size: model?.size ?? '',
@@ -614,32 +607,6 @@ export function ServiceWizard({
     setIsNewVehicle(false)
     setStep('odometer')
     router.refresh()
-  }
-
-  /**
-   * เพิ่มคำค้นที่ไม่มีในรายการเป็นรุ่นรอตรวจสอบ แล้วเลือกใช้ต่อได้ทันที
-   * @param label คำค้นขนาด/ยี่ห้อ/รุ่นที่ช่างพิมพ์หน้างาน
-   * @returns รุ่นรอตรวจสอบที่เพิ่ม (null = เพิ่มไม่สำเร็จ)
-   */
-  async function addModel(label: string): Promise<TireModelLite | null> {
-    const result = await addCompanyTireModelAction({ label })
-
-    if (!result.ok) {
-      setError(result.error)
-      return null
-    }
-
-    const model: TireModelLite = {
-      id: result.data!.id,
-      brand_name: result.data!.brand_name,
-      model_name: result.data!.model_name,
-      size: result.data!.size,
-      new_tread_mm: result.data!.new_tread_mm,
-    }
-    setAddedModels((prev) => [...prev, model])
-    setError(null)
-    router.refresh()
-    return model
   }
 
   /** แตะล้อบนผัง → เลือก/ยกเลิกล้อนั้นในชุดที่จะเปลี่ยน */
@@ -1144,8 +1111,7 @@ export function ServiceWizard({
             pick={unPick}
             onChange={setUnPick}
             options={catalogOptions}
-            emptyText="ยังไม่มีรุ่นยางในแคตตาล็อกของบริษัทนี้ — เพิ่มรุ่นที่ใช้หน้างานได้เลย"
-            onAddModel={addModel}
+            emptyText={CATALOG_EMPTY_TEXT}
             withTread
             treadLabel="ดอกยางเหลือ (มม.)"
             serialError={unmountBlocked ?? undefined}
@@ -1220,16 +1186,15 @@ export function ServiceWizard({
             options={mountKind === 'used' ? mountUsedOptions : catalogOptions}
             emptyText={
               mountKind === 'used'
-                ? 'ยังไม่มียางถอดเก็บในคลัง — พิมพ์ขนาด/รุ่นเพื่อคีย์เข้าไปใหม่ได้เลย'
-                : 'ยังไม่มีรุ่นยางในแคตตาล็อกของบริษัทนี้ — เพิ่มรุ่นที่ใช้หน้างานได้เลย'
+                ? 'ยังไม่มียางถอดเก็บในคลัง — เลือกรุ่นจากแคตตาล็อกแล้วคีย์ซีเรียลเข้าไปใหม่ได้เลย'
+                : CATALOG_EMPTY_TEXT
             }
             selectionLabel={mountKind === 'used' ? 'เลือกยางถอดเก็บ' : 'เลือกรุ่นยางใหม่'}
             selectionHint={
               mountKind === 'used'
-                ? 'ยางถอดเก็บในคลังขึ้นก่อน — ถ้าเส้นที่ถืออยู่ไม่มีในรายการ เลือกรุ่นจากแคตตาล็อกหรือแตะ “ใช้คำนี้เลย” แล้วคีย์ซีเรียลเอง'
-                : 'เลือกรุ่นจากแคตตาล็อก — ถ้าไม่พบ แตะ “ใช้คำนี้เลย” ระบบเพิ่มให้เฉพาะบริษัทนี้'
+                ? 'ยางถอดเก็บในคลังขึ้นก่อน — ถ้าเส้นที่ถืออยู่ไม่มีในรายการ เลือกรุ่นจากแคตตาล็อกแล้วคีย์ซีเรียลเอง'
+                : 'เลือกรุ่นจากแคตตาล็อก — ถ้าไม่ทราบยี่ห้อ เลือก “อื่นๆ” ตามขนาดยาง'
             }
-            onAddModel={addModel}
             withTread={mountKind === 'used'}
             treadLabel="ดอกยาง (มม.)"
             serialError={mountBlocked ?? undefined}
@@ -1386,27 +1351,23 @@ function PrimaryButton({
 /**
  * ช่องเลือกยางแบบ autocomplete — พิมพ์ค้นหาแล้วแตะเลือก
  *
- * ถ้าค้นหาแคตตาล็อกไม่พบ ช่างใช้คำที่พิมพ์ได้ทันที ระบบจะสร้างรายการ
- * รอตรวจสอบให้ super admin กลับมาแก้ยี่ห้อ รุ่น และขนาดภายหลัง
+ * เลือกได้เฉพาะรายการที่ super admin เปิดสิทธิ์ให้บริษัท (หรือยางว่างในคลัง)
+ * ช่างเพิ่มรุ่นใหม่จากหน้างานไม่ได้ เพื่อกันข้อมูลแคตตาล็อกปนกับคำค้นดิบ
  */
 function TireAutocomplete({
   pick,
   onChange,
   options,
   emptyText,
-  onAddModel,
 }: {
   pick: TirePick
   onChange: (pick: TirePick) => void
   options: TireOption[]
   /** ข้อความเมื่อไม่มีตัวเลือกให้เลือกเลย */
   emptyText: string
-  /** เพิ่มคำค้นเป็นรุ่นรอตรวจสอบ (ไม่ส่งมา = เพิ่มไม่ได้ เช่น การเลือกยางเก่าในคลัง) */
-  onAddModel?: (label: string) => Promise<TireModelLite | null>
 }) {
   const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState('')
-  const [adding, setAdding] = React.useState(false)
   /** true ระหว่างนิ้ว/เมาส์กดค้างอยู่ในรายการ — กัน blur ปิดรายการก่อนคลิกทำงาน (Safari) */
   const pressingRef = React.useRef(false)
   const inputRef = React.useRef<HTMLInputElement>(null)
@@ -1445,26 +1406,6 @@ function TireAutocomplete({
     setQuery('')
     setOpen(false)
   }
-
-  /** ใช้คำค้นที่ไม่พบเลย — สร้างรายการรอตรวจสอบและเลือกให้ทันที */
-  async function addUnmatchedQuery() {
-    const label = query.trim()
-    if (!label || !onAddModel || adding) return
-    setAdding(true)
-    let created: TireModelLite | null = null
-    try {
-      created = await onAddModel(label)
-    } finally {
-      setAdding(false)
-    }
-    if (!created) return
-
-    onChange({ ...pick, modelId: created.id, stockTireId: '' })
-    setQuery('')
-    setOpen(false)
-  }
-
-  const canAddQuery = Boolean(onAddModel && query.trim() && matches.length === 0)
 
   /** ล้างรายการที่เลือก กลับไปค้นหาใหม่ */
   function clearSelection() {
@@ -1511,17 +1452,12 @@ function TireAutocomplete({
         // แตะซ้ำที่ช่องเมื่อเลือกไว้แล้ว = เปิดรายการให้เลือกใหม่ได้ทันที
         onClick={() => setOpen(true)}
         onKeyDown={(e) => {
-          if (e.key === 'Escape') {
-            setOpen(false)
-            return
-          }
-          if (e.key !== 'Enter' || !canAddQuery) return
-          e.preventDefault()
-          void addUnmatchedQuery()
+          if (e.key === 'Escape') setOpen(false)
+          // Enter ไม่ทำอะไร — ต้องแตะเลือกจากรายการเท่านั้น (เพิ่มรุ่นใหม่จากหน้างานไม่ได้แล้ว)
+          if (e.key === 'Enter') e.preventDefault()
         }}
         placeholder="พิมพ์ค้นหา เช่น 11R22.5"
         maxLength={40}
-        disabled={adding}
         enterKeyHint="done"
         autoComplete="off"
         autoCorrect="off"
@@ -1560,28 +1496,9 @@ function TireAutocomplete({
           {query.trim() !== '' && matches.length === 0 && (
             <p className="px-4 py-3 text-sm text-ink-500">
               ไม่พบยางตามคำค้น “{query.trim()}” — ลองพิมพ์เฉพาะขนาด เช่น 11R22.5
+              หรือเลือกยี่ห้อ “อื่นๆ” ตามขนาดยาง
             </p>
           )}
-
-          {/* หายางที่ใช้หน้างานไม่เจอ → ใช้คำค้นได้เลย แอดมินค่อยแก้รายละเอียด */}
-         {/*  {canAddQuery && (
-            <button
-              type="button"
-              onClick={() => void addUnmatchedQuery()}
-              disabled={adding}
-              className="flex min-h-16 w-full items-center gap-3 bg-brand-600 px-4 py-3 text-left text-white hover:bg-brand-700 disabled:cursor-wait disabled:opacity-60"
-            >
-              <Plus className="size-6 shrink-0" />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-base font-semibold">
-                  {adding ? 'กำลังเพิ่ม…' : `ไม่พบรายการ — ใช้ “${query.trim()}” เลย`}
-                </span>
-                <span className="mt-0.5 block text-xs text-brand-100">
-                  แตะตรงนี้ได้ทันที · แอดมินแก้รายละเอียดภายหลัง
-                </span>
-              </span>
-            </button>
-          )} */}
 
           {matches.map((option) => (
             <button
@@ -1620,7 +1537,6 @@ function TirePickFields({
   emptyText,
   selectionLabel = 'เลือกยาง',
   selectionHint,
-  onAddModel,
   withTread,
   treadLabel,
   serialError,
@@ -1632,8 +1548,6 @@ function TirePickFields({
   emptyText: string
   selectionLabel?: string
   selectionHint?: string
-  /** เพิ่มคำค้นเป็นรุ่นรอตรวจสอบ (ไม่ส่งมา = เพิ่มไม่ได้) */
-  onAddModel?: (label: string) => Promise<TireModelLite | null>
   /** แสดงช่องดอกยางคงเหลือ */
   withTread: boolean
   treadLabel: string
@@ -1647,21 +1561,12 @@ function TirePickFields({
 
   return (
     <>
-      <Field
-        label={selectionLabel}
-        required
-        hint={
-          selectionHint ?? (onAddModel
-            ? ''
-            : '')
-        }
-      >
+      <Field label={selectionLabel} required hint={selectionHint}>
         <TireAutocomplete
           pick={pick}
           onChange={onChange}
           options={options}
           emptyText={emptyText}
-          onAddModel={onAddModel}
         />
       </Field>
 
