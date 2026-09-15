@@ -1,12 +1,15 @@
 import { positionLabel } from '@/lib/axle-layouts'
 import { tireBrandModelLabel, tireSizeLabel, tireSpecLabel } from '@/lib/tire-display'
 import { formatNumber, formatThaiDate, todayISO } from '@/lib/utils'
-import { summarizeRemovalRows, type RemovalReportRow } from './removal-report-types'
+import { summarizeRemovalRows, type DateRange, type RemovalReportRow } from './removal-report-types'
 import type { Cell, Row, Sheet, SheetData } from 'write-excel-file/browser'
 
 interface RemovalExportInput {
   companyName: string
+  /** ข้อความตัวกรองที่ใช้ (สาเหตุ + ช่วงวันที่) สำหรับหัวรายงาน */
   filterLabel: string
+  /** ช่วงวันที่ที่กรอง — ใช้ตั้งชื่อไฟล์ (ไม่ส่งมา = ทุกช่วงเวลา) */
+  range?: DateRange
   rows: RemovalReportRow[]
 }
 
@@ -16,8 +19,18 @@ const INK = '#0F1C2E'
 const MUTED = '#5B7089'
 const LINE = '#E3EDF9'
 
-function reportFilename(extension: 'xlsx' | 'pdf') {
-  return `dream-tire-removal-report-${todayISO()}.${extension}`
+/**
+ * ชื่อไฟล์ส่งออก — ใส่ช่วงวันที่ที่กรองไว้ด้วยเพื่อให้แยกไฟล์ได้เมื่อออกหลายรอบ
+ * เช่น dream-tire-removal-report_2569-08-01_2569-09-15.xlsx
+ * @param extension นามสกุลไฟล์
+ * @param range ช่วงวันที่ที่กรอง (ว่าง = ใช้วันที่ส่งออก)
+ */
+function reportFilename(extension: 'xlsx' | 'pdf', range?: DateRange) {
+  const suffix =
+    range && (range.from || range.to)
+      ? `_${range.from || 'start'}_${range.to || todayISO()}`
+      : `-${todayISO()}`
+  return `dream-tire-removal-report${suffix}.${extension}`
 }
 
 /** สร้างไฟล์ .xlsx สองชีต: สรุป และรายการที่ผ่านตัวกรอง */
@@ -155,7 +168,7 @@ export async function exportRemovalReportExcel(input: RemovalExportInput) {
   await writeXlsxFile(
     buildRemovalReportExcelSheets(input),
     { fontFamily: 'Aptos', fontSize: 11 },
-  ).toFile(reportFilename('xlsx'))
+  ).toFile(reportFilename('xlsx', input.range))
 }
 
 function escapeHtml(value: unknown): string {
@@ -303,5 +316,5 @@ export async function exportRemovalReportPdf(input: RemovalExportInput) {
     }
   }
 
-  pdf.save(reportFilename('pdf'))
+  pdf.save(reportFilename('pdf', input.range))
 }
