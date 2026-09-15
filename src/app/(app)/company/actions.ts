@@ -15,6 +15,9 @@ const companySchema = z.object({
   contact_name: optionalText,
   alert_km: z.number().int().min(1, 'ต้องมากกว่า 0'),
   alert_tread_mm: z.number().min(0, 'ต้องไม่ติดลบ'),
+  /** รถ "เปลี่ยนยางบ่อย" = ถอดยางตั้งแต่เท่านี้ครั้ง ภายในช่วงวันด้านล่าง */
+  alert_change_count: z.number().int().min(1, 'ต้องมากกว่า 0').max(999, 'มากเกินไป'),
+  alert_change_days: z.number().int().min(1, 'ต้องมากกว่า 0').max(3650, 'ไม่เกิน 10 ปี'),
 })
 
 export type CompanyInput = z.input<typeof companySchema>
@@ -37,5 +40,6 @@ export async function updateOwnCompany(input: CompanyInput): Promise<ActionResul
   if (error) return fail(error)
   revalidatePath('/company')
   revalidatePath('/dashboard')
+  revalidatePath('/vehicles')
   return { ok: true }
 }

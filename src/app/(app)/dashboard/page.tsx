@@ -1,7 +1,8 @@
 import Link from 'next/link'
-import { AlertTriangle, CircleDot, Package, Truck, ArrowRight } from 'lucide-react'
+import { AlertTriangle, CircleDot, Package, Repeat, Truck, ArrowRight } from 'lucide-react'
 import { requireSession } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
+import { getVehicleChangeAlerts } from '@/lib/notifications'
 import { PageHeader } from '@/components/app-shell'
 import { MonthlyEventsChart, StatusDonut, type MonthPoint } from '@/components/charts'
 import {
@@ -11,7 +12,7 @@ import { TireThumb } from '@/components/tire-thumb'
 import { TireSpec } from '@/components/tire-spec'
 import { positionLabel } from '@/lib/axle-layouts'
 import {
-  TIRE_STATUS_LABEL, TIRE_STATUS_TONE, cn, formatKm, formatNumber, treadPercent,
+  TIRE_STATUS_LABEL, TIRE_STATUS_TONE, cn, formatKm, formatNumber, formatThaiDate, treadPercent,
 } from '@/lib/utils'
 import { RemovalReport } from './removal-report'
 import type { RemovalReasonOption, RemovalReportRow } from './removal-report-types'
@@ -84,6 +85,7 @@ export default async function DashboardPage() {
     { data: removalEventRows },
     { data: removalReasonRows },
     { count: vehicleCount },
+    vehicleAlerts,
   ] = await Promise.all([
     supabase
       .from('tire_overview')
@@ -109,11 +111,14 @@ export default async function DashboardPage() {
       .order('sort_order')
       .limit(100),
     supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('is_active', true),
+    company ? getVehicleChangeAlerts(supabase, company.id) : Promise.resolve([]),
   ])
 
   const tires = (tireRows ?? []) as TireOverview[]
   const alertKm = company?.alert_km ?? 10000
   const alertTread = company?.alert_tread_mm ?? 3
+  const changeCount = company?.alert_change_count ?? 3
+  const changeDays = company?.alert_change_days ?? 90
 
   const mounted = tires.filter((t) => t.status === 'mounted')
   const inStock = tires.filter((t) => t.status === 'in_stock')
@@ -283,6 +288,58 @@ export default async function DashboardPage() {
                     </tr>
                   )
                 })}
+              </tbody>
+            </Table>
+          </TableWrap>
+        )}
+      </Card>
+
+      {/* รถเปลี่ยนยางบ่อย — โชว์ทะเบียนรถให้เห็นชัด */}
+      <Card className="mt-4">
+        <CardHeader
+          title="รถที่เปลี่ยนยางบ่อย"
+          description={`ถอดยางตั้งแต่ ${formatNumber(changeCount)} ครั้งขึ้นไป ภายใน ${formatNumber(changeDays)} วันล่าสุด (ตั้งค่าได้ที่หน้าข้อมูลบริษัท)`}
+          action={
+            <Badge tone={vehicleAlerts.length ? 'rose' : 'emerald'}>
+              {formatNumber(vehicleAlerts.length)} คัน
+            </Badge>
+          }
+        />
+        {vehicleAlerts.length === 0 ? (
+          <EmptyState
+            icon={<Repeat className="size-6" />}
+            title="ยังไม่มีรถที่เปลี่ยนยางถี่ผิดปกติ"
+            description="ระบบจะแจ้งเตือนเมื่อรถคันใดถอดยางถึงเกณฑ์ที่ตั้งไว้"
+          />
+        ) : (
+          <TableWrap>
+            <Table>
+              <thead>
+                <tr>
+                  <Th>ทะเบียนรถ</Th>
+                  <Th className="hidden sm:table-cell">จังหวัด</Th>
+                  <Th className="text-right">ถอดยาง (ครั้ง)</Th>
+                  <Th className="hidden md:table-cell">ถอดล่าสุด</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {vehicleAlerts.slice(0, 10).map((v) => (
+                  <tr key={v.vehicleId} className={ALERT_ROW.danger}>
+                    <Td>
+                      <Link
+                        href={`/vehicles/${v.vehicleId}`}
+                        className="text-base font-semibold text-ink-900 hover:text-brand-600"
+                      >
+                        {v.plateNo}
+                      </Link>
+                    </Td>
+                    <Td className="hidden sm:table-cell">{v.province}</Td>
+                    <Td className="text-right text-base font-semibold text-rose-600">
+                      {formatNumber(v.changeCount)}
+                    </Td>
+                    <Td className="hidden md:table-cell">{formatThaiDate(v.lastEventDate)}</Td>
+                  </tr>
+                ))}
               </tbody>
             </Table>
           </TableWrap>

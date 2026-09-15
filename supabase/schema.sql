@@ -46,6 +46,9 @@ create table if not exists public.companies (
   alert_km      integer not null default 10000 check (alert_km > 0),
   -- ดอกยางขั้นต่ำก่อนแจ้งเตือน (มม.)
   alert_tread_mm numeric(3,1) not null default 3.0,
+  -- รถ "เปลี่ยนยางบ่อย" = ถอดยางตั้งแต่ alert_change_count ครั้ง ภายใน alert_change_days วัน
+  alert_change_count integer not null default 3 check (alert_change_count > 0),
+  alert_change_days  integer not null default 90 check (alert_change_days > 0),
   is_active     boolean not null default true,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
@@ -521,6 +524,36 @@ from public.tires t
 left join public.vehicles v     on v.id = t.vehicle_id
 left join public.tire_models tm on tm.id = t.tire_model_id
 join public.companies c         on c.id = t.company_id;
+
+-- ------------------------------------------------------------
+-- view: รถที่ถอดยางถึงเกณฑ์ "เปลี่ยนบ่อย" (ดู migrations/009)
+-- ------------------------------------------------------------
+create or replace view public.vehicle_change_alerts
+with (security_invoker = true) as
+select
+  v.id                         as vehicle_id,
+  v.company_id,
+  v.plate_no,
+  v.province,
+  v.axle_type,
+  v.is_active,
+  c.alert_change_count         as threshold,
+  c.alert_change_days          as window_days,
+  count(e.id)::integer         as change_count,
+  max(e.event_date)::date      as last_event_date
+from public.vehicles v
+join public.companies c on c.id = v.company_id
+join public.tire_events e
+  on e.vehicle_id = v.id
+ and e.event_type = 'unmount'
+ and e.event_date >= (current_date - c.alert_change_days)
+group by v.id, v.company_id, v.plate_no, v.province, v.axle_type, v.is_active,
+         c.alert_change_count, c.alert_change_days
+having count(e.id) >= c.alert_change_count;
+
+create index if not exists tire_events_vehicle_unmount_date_idx
+  on public.tire_events (vehicle_id, event_date desc)
+  where event_type = 'unmount';
 
 -- ============================================================
 -- ROW LEVEL SECURITY

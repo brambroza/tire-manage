@@ -19,6 +19,8 @@ export function CompanyForm({ company }: { company: Company }) {
     contact_name: company.contact_name ?? '',
     alert_km: company.alert_km,
     alert_tread_mm: company.alert_tread_mm,
+    alert_change_count: company.alert_change_count ?? 3,
+    alert_change_days: company.alert_change_days ?? 90,
   })
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
@@ -114,6 +116,39 @@ export function CompanyForm({ company }: { company: Company }) {
                 type="number" inputMode="decimal" step="0.1" min={0}
                 value={form.alert_tread_mm}
                 onChange={(e) => set('alert_tread_mm', Number(e.target.value))}
+              />
+            </Field>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader
+            title="รถเปลี่ยนยางบ่อย"
+            description="แจ้งเตือนทะเบียนรถที่ถอดยางถี่ผิดปกติ เพื่อตรวจสภาพรถหรือพฤติกรรมการใช้งาน"
+          />
+          <CardBody className="space-y-5">
+            <Field
+              label="จำนวนครั้งที่ถอดยาง (ครั้ง)"
+              required
+              hint="ค่าเริ่มต้น 3 ครั้ง"
+              error={fieldErrors.alert_change_count}
+            >
+              <Input
+                type="number" inputMode="numeric" min={1} max={999}
+                value={form.alert_change_count}
+                onChange={(e) => set('alert_change_count', Number(e.target.value))}
+              />
+            </Field>
+            <Field
+              label="ภายในช่วงกี่วันล่าสุด (วัน)"
+              required
+              hint="ค่าเริ่มต้น 90 วัน"
+              error={fieldErrors.alert_change_days}
+            >
+              <Input
+                type="number" inputMode="numeric" min={1} max={3650}
+                value={form.alert_change_days}
+                onChange={(e) => set('alert_change_days', Number(e.target.value))}
               />
             </Field>
           </CardBody>

@@ -24,6 +24,9 @@ export type Company = {
   logo_url: string | null
   alert_km: number
   alert_tread_mm: number
+  /** รถ "เปลี่ยนยางบ่อย" = ถอดยางตั้งแต่เท่านี้ครั้ง ภายใน alert_change_days วัน */
+  alert_change_count: number
+  alert_change_days: number
   is_active: boolean
   created_at: string
   updated_at: string
@@ -185,6 +188,22 @@ export type TireOverview = {
   image_url: string | null
 }
 
+/** view: public.vehicle_change_alerts — รถที่ถอดยางถึงเกณฑ์ "เปลี่ยนบ่อย" */
+export type VehicleChangeAlert = {
+  vehicle_id: string
+  company_id: string
+  plate_no: string
+  province: string
+  axle_type: string
+  is_active: boolean
+  /** เกณฑ์จำนวนครั้ง (companies.alert_change_count) */
+  threshold: number
+  /** ช่วงวันที่นับย้อนหลัง (companies.alert_change_days) */
+  window_days: number
+  change_count: number
+  last_event_date: string
+}
+
 type Insert<T, Optional extends keyof T> = Omit<T, Optional> & Partial<Pick<T, Optional>>
 type Timestamps = 'id' | 'created_at' | 'updated_at'
 
@@ -203,7 +222,8 @@ export interface Database {
       companies: {
         Row: Company
         Insert: Insert<Company, Timestamps | 'code' | 'tax_id' | 'phone' | 'email' | 'address'
-          | 'contact_name' | 'logo_url' | 'alert_km' | 'alert_tread_mm' | 'is_active'>
+          | 'contact_name' | 'logo_url' | 'alert_km' | 'alert_tread_mm'
+          | 'alert_change_count' | 'alert_change_days' | 'is_active'>
         Update: Partial<Company>
         Relationships: []
       }
@@ -286,6 +306,7 @@ export interface Database {
     }
     Views: {
       tire_overview: { Row: TireOverview; Relationships: [] }
+      vehicle_change_alerts: { Row: VehicleChangeAlert; Relationships: [] }
     }
     Functions: {
       mount_tire: {

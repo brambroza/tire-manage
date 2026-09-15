@@ -3,8 +3,8 @@
 import * as React from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { History, Pencil, Plus, Power, PowerOff, Truck } from 'lucide-react'
-import { Badge, Button, Card, EmptyState, Table, TableWrap, Td, Th } from '@/components/ui'
+import { History, Pencil, Plus, Power, PowerOff, Repeat, Truck } from 'lucide-react'
+import { ALERT_ROW, Badge, Button, Card, EmptyState, Table, TableWrap, Td, Th } from '@/components/ui'
 import { ConfirmDialog } from '@/components/ui/modal'
 import { SearchInput } from '@/components/search-input'
 import { VehicleHistoryModal } from '@/components/history-modal'
@@ -17,6 +17,8 @@ import type { AxleType, Vehicle } from '@/lib/database.types'
 export interface VehicleRow extends Vehicle {
   /** จำนวนยางที่ติดตั้งอยู่บนรถคันนี้ */
   mounted_count: number
+  /** จำนวนครั้งที่ถอดยางในช่วงที่ตั้งไว้ — มีค่าเฉพาะคันที่ถึงเกณฑ์ "เปลี่ยนบ่อย" */
+  frequent_change_count?: number | null
 }
 
 /** ตารางรายการรถ + ฟอร์มเพิ่ม/แก้ไข */
@@ -26,6 +28,7 @@ export function VehiclesClient({
   companyId,
   enableLinks = true,
   enableHistory = false,
+  changeAlertLabel,
 }: {
   vehicles: VehicleRow[]
   /** ประเภทเพลาจาก Supabase ใช้ทั้งชื่อ จำนวนล้อ และฟอร์มรถ */
@@ -36,6 +39,8 @@ export function VehiclesClient({
   enableLinks?: boolean
   /** เปิดปุ่มดูประวัติแบบ modal — ใช้กับหน้า super admin ที่ไม่มี route รายละเอียด */
   enableHistory?: boolean
+  /** คำอธิบายเกณฑ์ "เปลี่ยนบ่อย" สำหรับ tooltip ของป้าย */
+  changeAlertLabel?: string
 }) {
   const router = useRouter()
   const [formOpen, setFormOpen] = React.useState(false)
@@ -106,8 +111,9 @@ export function VehiclesClient({
               <tbody>
                 {vehicles.map((v) => {
                   const layout = getLayout(v.axle_type, axleTypes)
+                  const frequent = v.frequent_change_count ?? null
                   return (
-                    <tr key={v.id} className="transition-colors hover:bg-brand-50/40">
+                    <tr key={v.id} className={frequent !== null ? ALERT_ROW.danger : ALERT_ROW.none}>
                       <Td>
                         {enableLinks ? (
                           <Link
@@ -126,6 +132,12 @@ export function VehiclesClient({
                           </button>
                         ) : (
                           <span className="font-medium text-ink-900">{v.plate_no}</span>
+                        )}
+                        {frequent !== null && (
+                          <Badge tone="rose" className="ml-2 align-middle" title={changeAlertLabel}>
+                            <Repeat className="size-3" />
+                            เปลี่ยนบ่อย {frequent} ครั้ง
+                          </Badge>
                         )}
                         <p className="text-xs text-ink-400">
                           {v.province}

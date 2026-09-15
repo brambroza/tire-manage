@@ -2,11 +2,11 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { AlertTriangle, Bell, CheckCircle2, Gauge, Ruler } from 'lucide-react'
+import { AlertTriangle, Bell, CheckCircle2, Gauge, Repeat, Ruler, Truck } from 'lucide-react'
 import { TireThumb } from '@/components/tire-thumb'
 import { TireSpec } from '@/components/tire-spec'
 import { positionLabel } from '@/lib/axle-layouts'
-import { cn, formatKm, formatNumber } from '@/lib/utils'
+import { cn, formatKm, formatNumber, formatThaiDate } from '@/lib/utils'
 import type { NotificationFeed } from '@/lib/notifications'
 
 /**
@@ -35,15 +35,19 @@ export function NotificationBell({ feed }: { feed: NotificationFeed }) {
     }
   }, [open])
 
-  const { alerts, total, alertKm, alertTreadMm } = feed
-  const hasAlerts = total > 0
+  const {
+    alerts, total, alertKm, alertTreadMm, vehicleAlerts, vehicleTotal, changeCount, changeDays,
+  } = feed
+  /** ตัวเลขบนกระดิ่ง = ยางถึงเกณฑ์ + รถเปลี่ยนยางบ่อย */
+  const badgeTotal = total + vehicleTotal
+  const hasAlerts = badgeTotal > 0
 
   return (
     <div className="relative" ref={panelRef}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        aria-label={hasAlerts ? `การแจ้งเตือน ${total} รายการ` : 'การแจ้งเตือน'}
+        aria-label={hasAlerts ? `การแจ้งเตือน ${badgeTotal} รายการ` : 'การแจ้งเตือน'}
         aria-expanded={open}
         className={cn(
           'relative flex size-11 items-center justify-center rounded-xl transition-colors',
@@ -58,7 +62,7 @@ export function NotificationBell({ feed }: { feed: NotificationFeed }) {
               'bg-rose-600 px-1.5 text-[11px] font-bold text-white ring-2 ring-white',
             )}
           >
-            {total > 99 ? '99+' : total}
+            {badgeTotal > 99 ? '99+' : badgeTotal}
           </span>
         )}
       </button>
@@ -81,15 +85,60 @@ export function NotificationBell({ feed }: { feed: NotificationFeed }) {
             </div>
             {hasAlerts && (
               <span className="rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-800 ring-1 ring-inset ring-rose-300">
-                {formatNumber(total)} เส้น
+                {formatNumber(badgeTotal)} รายการ
               </span>
             )}
           </div>
 
+          {/* รถเปลี่ยนยางบ่อย — ขึ้นก่อนเพราะชี้ปัญหาที่ตัวรถ ไม่ใช่ยางเส้นเดียว */}
+          {vehicleAlerts.length > 0 && (
+            <div className="border-b border-line">
+              <p className="flex items-center gap-1.5 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-800">
+                <Repeat className="size-3.5" />
+                รถเปลี่ยนยางบ่อย · ถอดยาง ≥ {changeCount} ครั้งใน {changeDays} วัน
+              </p>
+              <ul className="divide-y divide-line">
+                {vehicleAlerts.map((v) => (
+                  <li key={v.vehicleId}>
+                    <Link
+                      href={`/vehicles/${v.vehicleId}`}
+                      onClick={() => setOpen(false)}
+                      className="flex items-center gap-3 border-l-4 border-rose-600 bg-rose-50/40 px-4 py-3 transition-colors hover:bg-rose-100/60"
+                    >
+                      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-700">
+                        <Truck className="size-5" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[15px] font-semibold text-ink-900">
+                          {v.plateNo} <span className="font-normal text-ink-400">{v.province}</span>
+                        </p>
+                        <p className="text-xs font-semibold text-rose-700">
+                          ถอดยาง {formatNumber(v.changeCount)} ครั้ง · ล่าสุด {formatThaiDate(v.lastEventDate)}
+                        </p>
+                      </div>
+                      <AlertTriangle className="size-4 shrink-0 text-rose-600" />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+              {vehicleTotal > vehicleAlerts.length && (
+                <Link
+                  href="/vehicles"
+                  onClick={() => setOpen(false)}
+                  className="block bg-surface-alt px-4 py-2 text-center text-xs font-medium text-brand-700 hover:bg-brand-50"
+                >
+                  ดูรถทั้งหมด {formatNumber(vehicleTotal)} คัน
+                </Link>
+              )}
+            </div>
+          )}
+
           {alerts.length === 0 ? (
             <div className="flex flex-col items-center px-6 py-10 text-center">
               <CheckCircle2 className="size-10 text-emerald-500" />
-              <p className="mt-3 text-[15px] font-medium text-ink-700">ไม่มีการแจ้งเตือน</p>
+              <p className="mt-3 text-[15px] font-medium text-ink-700">
+                {vehicleAlerts.length > 0 ? 'ไม่มียางที่ถึงเกณฑ์' : 'ไม่มีการแจ้งเตือน'}
+              </p>
               <p className="mt-1 text-sm text-ink-500">ยางทุกเส้นยังอยู่ในเกณฑ์ที่กำหนด</p>
             </div>
           ) : (

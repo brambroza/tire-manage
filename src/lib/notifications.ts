@@ -19,15 +19,58 @@ export interface TireAlert {
   imageUrl: string | null
 }
 
+/** รถที่ถอดยางถี่ผิดปกติ (จาก view vehicle_change_alerts) */
+export interface VehicleChangeAlertItem {
+  vehicleId: string
+  plateNo: string
+  province: string
+  changeCount: number
+  lastEventDate: string
+}
+
 export interface NotificationFeed {
   alerts: TireAlert[]
-  /** จำนวนทั้งหมด (อาจมากกว่าที่ส่งมาแสดง) */
+  /** จำนวนยางที่ถึงเกณฑ์ทั้งหมด (อาจมากกว่าที่ส่งมาแสดง) */
   total: number
   alertKm: number
   alertTreadMm: number
+  /** รถเปลี่ยนยางบ่อย (เรียงจำนวนครั้งมากไปน้อย) */
+  vehicleAlerts: VehicleChangeAlertItem[]
+  vehicleTotal: number
+  /** เกณฑ์ "บ่อย": ถอดยางตั้งแต่ changeCount ครั้ง ภายใน changeDays วัน */
+  changeCount: number
+  changeDays: number
 }
 
 const MAX_ITEMS = 8
+const MAX_VEHICLE_ITEMS = 5
+
+/**
+ * ดึงรถที่เปลี่ยนยางบ่อยของบริษัท (view คำนวณจากเกณฑ์ของบริษัทให้แล้ว)
+ * @param supabase client ฝั่ง server
+ * @param companyId บริษัทที่ต้องการ (super admin ต้องระบุ; ลูกค้า RLS กรองให้)
+ */
+export async function getVehicleChangeAlerts(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  companyId: string,
+): Promise<VehicleChangeAlertItem[]> {
+  const { data } = await supabase
+    .from('vehicle_change_alerts')
+    .select('vehicle_id, plate_no, province, change_count, last_event_date')
+    .eq('company_id', companyId)
+    .eq('is_active', true)
+    .order('change_count', { ascending: false })
+    .order('last_event_date', { ascending: false })
+    .limit(200)
+
+  return (data ?? []).map((row) => ({
+    vehicleId: row.vehicle_id,
+    plateNo: row.plate_no,
+    province: row.province,
+    changeCount: row.change_count,
+    lastEventDate: row.last_event_date,
+  }))
+}
 
 /**
  * รวบรวมการแจ้งเตือนของบริษัท: ยางที่วิ่งเกินเกณฑ์ หรือดอกยางต่ำกว่าเกณฑ์
@@ -40,16 +83,26 @@ const MAX_ITEMS = 8
 export async function getTireAlerts(company: Company | null): Promise<NotificationFeed> {
   const alertKm = company?.alert_km ?? 10000
   const alertTreadMm = company?.alert_tread_mm ?? 3
+  const changeCount = company?.alert_change_count ?? 3
+  const changeDays = company?.alert_change_days ?? 90
 
-  if (!company) return { alerts: [], total: 0, alertKm, alertTreadMm }
+  if (!company) {
+    return {
+      alerts: [], total: 0, alertKm, alertTreadMm,
+      vehicleAlerts: [], vehicleTotal: 0, changeCount, changeDays,
+    }
+  }
 
   const supabase = await createClient()
-  const { data } = await supabase
-    .from('tire_overview')
-    .select('*')
-    .eq('status', 'mounted')
-    .order('current_run_km', { ascending: false })
-    .limit(500)
+  const [{ data }, vehicleAlertRows] = await Promise.all([
+    supabase
+      .from('tire_overview')
+      .select('*')
+      .eq('status', 'mounted')
+      .order('current_run_km', { ascending: false })
+      .limit(500),
+    getVehicleChangeAlerts(supabase, company.id),
+  ])
 
   const rows = ((data ?? []) as TireOverview[]).filter(
     (t) => t.current_run_km >= alertKm || (t.tread_mm !== null && t.tread_mm <= alertTreadMm),
@@ -94,5 +147,9 @@ export async function getTireAlerts(company: Company | null): Promise<Notificati
     total: alerts.length,
     alertKm,
     alertTreadMm,
+    vehicleAlerts: vehicleAlertRows.slice(0, MAX_VEHICLE_ITEMS),
+    vehicleTotal: vehicleAlertRows.length,
+    changeCount,
+    changeDays,
   }
 }
