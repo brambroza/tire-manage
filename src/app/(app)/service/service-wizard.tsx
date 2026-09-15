@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   AlertCircle, ArrowLeft, Check, ChevronRight, Gauge, MapPin, Plus, Truck, X,
 } from 'lucide-react'
-import { Badge, Button, Field, Input, Select } from '@/components/ui'
+import { Badge, Button, Field, Input, Select, Textarea } from '@/components/ui'
 import { Modal } from '@/components/ui/modal'
 import { WheelDiagram, type WheelSlot } from '@/components/wheel-diagram'
 import { getLayout, positionLabel, positionNo, type WheelPosition } from '@/lib/axle-layouts'
@@ -99,15 +99,21 @@ interface WheelDraft {
   unPick: TirePick
   /** สาเหตุที่ถอด */
   reasonId: string
+  /** หมายเหตุการถอด (ไม่บังคับ) เช่น สภาพยาง อาการที่พบ */
+  note: string
   /** ชนิดยางที่จะใส่กลับ (null = ยังไม่ได้เลือก) */
   mountKind: 'new' | 'used' | null
   /** ยางที่ใส่เข้าล้อนี้ */
   mnPick: TirePick
 }
 
+/** หมายเหตุการถอดยาวได้ไม่เกินกี่ตัวอักษร */
+const NOTE_MAX = 200
+
 const EMPTY_DRAFT: WheelDraft = {
   unPick: EMPTY_PICK,
   reasonId: '',
+  note: '',
   mountKind: null,
   mnPick: EMPTY_PICK,
 }
@@ -324,11 +330,15 @@ export function ServiceWizard({
   const currentDraft = draftOf(position)
   const unPick = currentDraft.unPick
   const reasonId = currentDraft.reasonId
+  const unmountNote = currentDraft.note
   const mountKind = currentDraft.mountKind
   const mnPick = currentDraft.mnPick
 
   const setUnPick = (pick: TirePick) => { if (position) patchDraft(position, { unPick: pick }) }
   const setReasonId = (id: string) => { if (position) patchDraft(position, { reasonId: id }) }
+  const setUnmountNote = (note: string) => {
+    if (position) patchDraft(position, { note: note.slice(0, NOTE_MAX) })
+  }
   const setMnPick = (pick: TirePick) => { if (position) patchDraft(position, { mnPick: pick }) }
 
   /** ชื่อล้อแบบสั้น เช่น "ล้อ 3 · เพลา 2 ซ้ายนอก" */
@@ -706,7 +716,7 @@ export function ServiceWizard({
         position_code: code,
         tread_mm: Number(d.unPick.treadMm),
         reason_id: d.reasonId,
-        note: null,
+        note: d.note.trim() || null,
         manual: unIsKnown
           ? null
           : {
@@ -1152,6 +1162,16 @@ export function ServiceWizard({
             </Select>
           </Field>
 
+          <Field label="หมายเหตุการถอด" hint={`ไม่บังคับ · ${unmountNote.length}/${NOTE_MAX} ตัวอักษร`}>
+            <Textarea
+              value={unmountNote}
+              onChange={(e) => setUnmountNote(e.target.value)}
+              maxLength={NOTE_MAX}
+              placeholder="เช่น ยางบวมด้านข้าง, ดอกยางสึกไม่เท่ากัน"
+              className="min-h-20"
+            />
+          </Field>
+
           <PrimaryButton
             disabled={!canSubmitUnmount}
             onClick={() => { setError(null); setStep('mount-kind') }}
@@ -1283,6 +1303,9 @@ export function ServiceWizard({
                 <p className="mt-1 text-sm text-ink-600">
                   ถอด {pickLabel(d.unPick)} · ซีรีย์ {d.unPick.serialNo || '-'}
                 </p>
+                {d.note.trim() !== '' && (
+                  <p className="mt-0.5 text-sm text-ink-500">หมายเหตุ: {d.note.trim()}</p>
+                )}
                 <p className="mt-0.5 text-sm text-ink-600">
                   ใส่ {pickLabel(d.mnPick)} · ซีรีย์ {d.mnPick.serialNo || '-'}
                   {d.mountKind === 'new' ? ' (ยางใหม่)' : d.mountKind === 'used' ? ' (ยางเก่า)' : ''}

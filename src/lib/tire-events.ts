@@ -65,6 +65,10 @@ export interface LastRemoval {
   event_date: string
   /** วันที่ใส่ยางครั้งนั้น (คู่กับ event_date ที่ถอด) — null ถ้าหา mount event คู่กันไม่เจอ */
   mounted_at: string | null
+  /** สาเหตุที่ถอด (จาก removal_reasons) — null ถ้าไม่ได้ระบุ */
+  reason: string | null
+  /** หมายเหตุที่ช่างบันทึกตอนถอด — null ถ้าไม่ได้กรอก */
+  note: string | null
 }
 
 /** จำนวน tire_id ต่อ 1 query — กัน URL ยาวเกินลิมิตของ PostgREST/proxy */
@@ -96,7 +100,10 @@ export async function fetchLastRemovals(
     chunks.map((ids) =>
       supabase
         .from('tire_events')
-        .select('tire_id, event_type, position_code, odometer, distance_km, event_date, vehicles(plate_no, province)')
+        .select(
+          'tire_id, event_type, position_code, odometer, distance_km, event_date, note, ' +
+            'vehicles(plate_no, province), removal_reasons(name)',
+        )
         .in('event_type', ['mount', 'unmount'])
         .in('tire_id', ids)
         .order('event_date', { ascending: false })
@@ -115,7 +122,9 @@ export async function fetchLastRemovals(
       odometer: number
       distance_km: number | null
       event_date: string
+      note: string | null
       vehicles: { plate_no: string; province: string } | null
+      removal_reasons: { name: string } | null
     }>) {
       // แถวเรียงใหม่สุดมาก่อน (ต่อ tire): แถวแรกที่เจอต้องเป็น unmount ล่าสุด
       if (!result[row.tire_id]) {
@@ -128,6 +137,8 @@ export async function fetchLastRemovals(
           distance_km: row.distance_km,
           event_date: row.event_date,
           mounted_at: null,
+          reason: row.removal_reasons?.name ?? null,
+          note: row.note,
         }
         pendingMountMatch.add(row.tire_id)
         continue

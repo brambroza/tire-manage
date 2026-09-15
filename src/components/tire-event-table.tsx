@@ -23,6 +23,24 @@ function EventBadge({ type }: { type: string }) {
 }
 
 /**
+ * สาเหตุที่ถอด + หมายเหตุที่ช่างบันทึก (ถ้ามี) — ใช้ในคอลัมน์เดียวกันทั้งสองมุมมอง
+ * @param reason ชื่อสาเหตุจาก removal_reasons
+ * @param note หมายเหตุจาก tire_events.note
+ */
+function ReasonNote({ reason, note }: { reason?: string | null; note?: string | null }) {
+  return (
+    <>
+      <span>{reason ?? '-'}</span>
+      {note && (
+        <p className="max-w-64 whitespace-normal text-xs text-ink-500" title={note}>
+          {note}
+        </p>
+      )}
+    </>
+  )
+}
+
+/**
  * ประวัติของยาง 1 เส้น — เรียงล่าสุดขึ้นก่อน
  * @param events รายการ event ที่ query มาแล้ว
  * @param axleTypes นิยามเพลาจากฐานข้อมูล ใช้แปลรหัสตำแหน่งเป็นชื่อไทย
@@ -49,7 +67,7 @@ export function TireEventTable({
             <Th className="text-right">เลขไมล์</Th>
             <Th className="text-right">ระยะรอบนี้</Th>
             <Th>ดอกยาง</Th>
-            <Th>สาเหตุ</Th>
+            <Th>สาเหตุ / หมายเหตุ</Th>
             <Th>ผู้บันทึก</Th>
           </tr>
         </thead>
@@ -67,7 +85,7 @@ export function TireEventTable({
               <Td className="text-right">{formatKm(e.odometer)}</Td>
               <Td className="text-right">{e.distance_km !== null ? formatKm(e.distance_km) : '-'}</Td>
               <Td>{e.tread_mm !== null ? `${e.tread_mm} มม.` : '-'}</Td>
-              <Td>{e.removal_reasons?.name ?? '-'}</Td>
+              <Td><ReasonNote reason={e.removal_reasons?.name} note={e.note} /></Td>
               <Td className="text-ink-500">{e.profiles?.full_name ?? '-'}</Td>
             </tr>
           ))}
@@ -107,7 +125,7 @@ export function VehicleEventTable({
             <Th>ตำแหน่ง</Th>
             <Th className="text-right">เลขไมล์</Th>
             <Th className="text-right">ระยะรอบนี้</Th>
-            <Th>สาเหตุ</Th>
+            <Th>สาเหตุ / หมายเหตุ</Th>
             <Th>ผู้บันทึก</Th>
           </tr>
         </thead>
@@ -120,7 +138,7 @@ export function VehicleEventTable({
               <Td>{positionLabel(h.position_code, axleType, axleTypes)}</Td>
               <Td className="text-right">{formatKm(h.odometer)}</Td>
               <Td className="text-right">{h.distance_km !== null ? formatKm(h.distance_km) : '-'}</Td>
-              <Td>{h.removal_reasons?.name ?? '-'}</Td>
+              <Td><ReasonNote reason={h.removal_reasons?.name} note={h.note} /></Td>
               <Td className="text-ink-500">{h.profiles?.full_name ?? '-'}</Td>
             </tr>
           ))}

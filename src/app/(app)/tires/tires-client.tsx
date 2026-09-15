@@ -214,16 +214,25 @@ export function TiresClient({
                         ) : removal ? (
                           <>
                             <span className="text-ink-400">คลังสินค้า</span>
-                            <p className="text-xs text-ink-500">
+                            {/* บังคับ 3 บรรทัดคงที่: ที่มา / เลขไมล์-วันที่ / สาเหตุที่ถอด */}
+                            <p className="truncate text-xs text-ink-500">
                               ถอดจาก{' '}
                               <span className="font-medium text-ink-700">
                                 {removal.plate_no ?? 'รถที่ถูกลบแล้ว'}
                               </span>
                               {removal.position_code && ` · ${positionLabel(removal.position_code)}`}
                             </p>
-                            <p className="text-xs text-ink-400">
+                            <p className="truncate text-xs text-ink-400">
                               ที่ {formatKm(removal.odometer)} · {formatThaiDate(removal.event_date)}
                             </p>
+                            <p className="truncate text-xs text-ink-400">
+                              สาเหตุ: {removal.reason ?? '-'}
+                            </p>
+                            {removal.note && (
+                              <p className="max-w-56 truncate text-xs text-ink-400" title={removal.note}>
+                                หมายเหตุ: {removal.note}
+                              </p>
+                            )}
                             {/* จอแคบไม่มีคอลัมน์ "ระยะรอบนี้" — ยุบมาไว้ตรงนี้ */}
                             {removal.distance_km !== null && (
                               <p className="text-xs text-ink-400 xl:hidden">
