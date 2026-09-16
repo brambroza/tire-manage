@@ -3,27 +3,13 @@ import { notFound } from 'next/navigation'
 import { AlertTriangle, CircleDot, Gauge, Truck, Users } from 'lucide-react'
 import { requireSession } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
-import {
-  Badge, Card, CardBody, CardHeader, EmptyState, StatTile, Table, TableWrap, Td, Th,
-} from '@/components/ui'
-import { TireSpec } from '@/components/tire-spec'
-import { positionLabel } from '@/lib/axle-layouts'
-import {
-  TIRE_STATUS_LABEL, TIRE_STATUS_TONE, formatKm, formatNumber, formatThaiDate,
-} from '@/lib/utils'
+import { Card, CardBody, CardHeader, EmptyState, StatTile } from '@/components/ui'
+import { formatNumber } from '@/lib/utils'
 import type { Company, TireOverview } from '@/lib/database.types'
+import { RecentEventsTable, TopTiresTable, type EventRow } from './company-overview-tables'
 
-interface EventRow {
-  id: string
-  event_type: string
-  event_date: string
-  position_code: string | null
-  distance_km: number | null
-  tires: { serial_no: string } | null
-  vehicles: { plate_no: string; axle_type: string } | null
-  removal_reasons: { name: string } | null
-  profiles: { full_name: string } | null
-}
+/** จำนวนประวัติถอด-ใส่ยางสูงสุดที่ดึงมาแสดงในแท็บภาพรวม */
+const EVENT_FETCH_LIMIT = 500
 
 /** แท็บภาพรวมการใช้งานของลูกค้ารายนั้น */
 export default async function CompanyOverviewPage({
@@ -67,7 +53,7 @@ export default async function CompanyOverviewPage({
       .eq('company_id', id)
       .order('event_date', { ascending: false })
       .order('created_at', { ascending: false })
-      .limit(15),
+      .limit(EVENT_FETCH_LIMIT),
   ])
 
   const tires = (tireData ?? []) as TireOverview[]
@@ -131,7 +117,7 @@ export default async function CompanyOverviewPage({
         <Card className="xl:col-span-2">
           <CardHeader
             title="ความเคลื่อนไหวล่าสุด"
-            description="ประวัติการถอด-ใส่ยาง 15 รายการล่าสุดของลูกค้ารายนี้"
+            description={`ประวัติการถอด-ใส่ยางล่าสุดของลูกค้ารายนี้ (สูงสุด ${formatNumber(EVENT_FETCH_LIMIT)} รายการ)`}
           />
           {events.length === 0 ? (
             <EmptyState
@@ -140,93 +126,20 @@ export default async function CompanyOverviewPage({
               description="ข้อมูลจะปรากฏเมื่อช่างของลูกค้าเริ่มบันทึกงาน"
             />
           ) : (
-            <TableWrap>
-              <Table className="min-w-[720px]">
-                <thead>
-                  <tr>
-                    <Th>วันที่</Th>
-                    <Th>รายการ</Th>
-                    <Th>เลขยาง</Th>
-                    <Th>รถ / ตำแหน่ง</Th>
-                    <Th className="text-right">ระยะรอบนี้</Th>
-                    <Th>สาเหตุ</Th>
-                    <Th>ผู้บันทึก</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {events.map((e) => (
-                    <tr key={e.id} className="transition-colors hover:bg-brand-50/40">
-                      <Td className="whitespace-nowrap">{formatThaiDate(e.event_date)}</Td>
-                      <Td>
-                        <Badge tone={e.event_type === 'mount' ? 'brand' : 'amber'}>
-                          {e.event_type === 'mount' ? 'ใส่ยาง' : 'ถอดยาง'}
-                        </Badge>
-                      </Td>
-                      <Td className="font-medium text-ink-900">{e.tires?.serial_no ?? '-'}</Td>
-                      <Td>
-                        {e.vehicles?.plate_no ?? '-'}
-                        <p className="text-xs text-ink-400">
-                          {positionLabel(e.position_code, e.vehicles?.axle_type)}
-                        </p>
-                      </Td>
-                      <Td className="text-right">
-                        {e.distance_km !== null ? formatKm(e.distance_km) : '-'}
-                      </Td>
-                      <Td>{e.removal_reasons?.name ?? '-'}</Td>
-                      <Td className="text-ink-500">{e.profiles?.full_name ?? '-'}</Td>
-                    </tr>
-                  ))}
-                </tbody>
-              </Table>
-            </TableWrap>
+            <RecentEventsTable events={events} />
           )}
         </Card>
       </div>
 
       <Card className="mt-4">
         <CardHeader
-          title="ยางที่มีระยะสะสมสูงสุด"
+          title="ยางเรียงตามระยะสะสม"
           description="ดูและแก้ไขได้ทั้งหมดที่แท็บ “คลังยาง”"
         />
         {tires.length === 0 ? (
           <EmptyState icon={<CircleDot className="size-6" />} title="ลูกค้ารายนี้ยังไม่มียางในระบบ" />
         ) : (
-          <TableWrap>
-            <Table className="min-w-[820px]">
-              <thead>
-                <tr>
-                  <Th>เลขยาง</Th>
-                  <Th>ขนาด / ยี่ห้อ รุ่น</Th>
-                  <Th>สถานะ</Th>
-                  <Th>อยู่ที่</Th>
-                  <Th>ดอกยาง</Th>
-                  <Th className="text-right">ระยะรอบนี้</Th>
-                  <Th className="text-right">ระยะสะสม</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {tires.slice(0, 15).map((t) => (
-                  <tr key={t.id} className="transition-colors hover:bg-brand-50/40">
-                    <Td className="font-medium text-ink-900">{t.serial_no}</Td>
-                    <Td>
-                      <TireSpec size={t.size} brandName={t.brand_name} modelName={t.model_name} />
-                    </Td>
-                    <Td><Badge tone={TIRE_STATUS_TONE[t.status]}>{TIRE_STATUS_LABEL[t.status]}</Badge></Td>
-                    <Td>
-                      {t.status === 'mounted'
-                        ? `${t.plate_no} · ${positionLabel(t.position_code)}`
-                        : 'คลังสินค้า'}
-                    </Td>
-                    <Td>{t.tread_mm !== null ? `${t.tread_mm} มม.` : '-'}</Td>
-                    <Td className="text-right">
-                      {t.status === 'mounted' ? formatKm(t.current_run_km) : '-'}
-                    </Td>
-                    <Td className="text-right font-medium">{formatKm(t.lifetime_km)}</Td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
-          </TableWrap>
+          <TopTiresTable tires={tires} />
         )}
       </Card>
     </>

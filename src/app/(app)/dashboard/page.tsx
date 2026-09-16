@@ -1,20 +1,23 @@
 import Link from 'next/link'
-import { AlertTriangle, CircleDot, Package, Repeat, Truck, ArrowRight } from 'lucide-react'
+import {
+  AlertTriangle, ArrowRight, Ban, Check, CircleDot, Package, Repeat, Truck,
+} from 'lucide-react'
 import { requireSession } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { getVehicleChangeAlerts } from '@/lib/notifications'
 import { PageHeader } from '@/components/app-shell'
-import { MonthlyEventsChart, StatusDonut, type MonthPoint } from '@/components/charts'
+import type { MonthPoint } from '@/components/charts'
 import {
-  ALERT_ROW, Badge, Card, CardBody, CardHeader, EmptyState, StatTile, Table, TableWrap, Td, Th, alertLevel,
+  ALERT_ROW, Card, CardBody, CardHeader, EmptyState, Table, TableWrap, Td, Th, alertLevel,
 } from '@/components/ui'
 import { TireThumb } from '@/components/tire-thumb'
 import { TireSpec } from '@/components/tire-spec'
 import { positionLabel } from '@/lib/axle-layouts'
-import {
-  TIRE_STATUS_LABEL, TIRE_STATUS_TONE, cn, formatKm, formatNumber, formatThaiDate, treadPercent,
-} from '@/lib/utils'
+import { cn, formatKm, formatNumber, formatThaiDate, treadPercent } from '@/lib/utils'
+import { DashboardMonthlyChart, DashboardStatusDonut } from './dashboard-charts'
+import { KpiCard, StatusChip, TD_LG, TH_LG, TodayCard } from './dashboard-ui'
 import { RemovalReport } from './removal-report'
+import { TopMileageTable, type TopMileageRow } from './top-mileage-table'
 import type { RemovalReasonOption, RemovalReportRow } from './removal-report-types'
 import type { TireOverview } from '@/lib/database.types'
 
@@ -39,6 +42,14 @@ interface RemovalEventRow {
   vehicles: { plate_no: string; province: string; axle_type: string } | null
   removal_reasons: { name: string } | null
 }
+
+/** คำอธิบายสีที่ใช้ทั้งหน้า */
+const COLOR_LEGEND: Array<{ className: string; label: string }> = [
+  { className: 'bg-emerald-600', label: 'เขียว = ปกติ / ใช้งานอยู่' },
+  { className: 'bg-sky-600', label: 'ฟ้า = อยู่ในคลัง' },
+  { className: 'bg-orange-600', label: 'ส้ม = วิ่งเกินระยะ ควรตรวจ' },
+  { className: 'bg-rose-600', label: 'แดง = ดอกยางต่ำ / ต้องจัดการ' },
+]
 
 /** สร้างชุดข้อมูล 6 เดือนล่าสุดสำหรับกราฟ */
 function buildMonthlySeries(
@@ -124,10 +135,16 @@ export default async function DashboardPage() {
   const inStock = tires.filter((t) => t.status === 'in_stock')
   const scrapped = tires.filter((t) => t.status === 'scrapped')
 
-  // ยางที่ถึงเกณฑ์แจ้งเตือน: วิ่งเกิน alert_km ในรอบปัจจุบัน หรือดอกยางต่ำกว่าเกณฑ์
+  // ยางที่ถึงเกณฑ์แจ้งเตือน: ดอกยางต่ำมาก่อน (อันตราย) แล้วค่อยเรียงตามระยะรอบนี้
   const alerts = mounted
-    .filter((t) => t.current_run_km >= alertKm || (t.tread_mm !== null && t.tread_mm <= alertTread))
-    .sort((a, b) => b.current_run_km - a.current_run_km)
+    .map((t) => ({ tire: t, level: alertLevel(true, t.current_run_km, alertKm, t.tread_mm, alertTread) }))
+    .filter((a) => a.level !== 'none')
+    .sort((a, b) => {
+      if (a.level !== b.level) return a.level === 'danger' ? -1 : 1
+      return b.tire.current_run_km - a.tire.current_run_km
+    })
+  const dangerCount = alerts.filter((a) => a.level === 'danger').length
+  const warnCount = alerts.length - dangerCount
 
   const totalKm = tires.reduce((sum, t) => sum + t.lifetime_km, 0)
 
@@ -152,6 +169,20 @@ export default async function DashboardPage() {
     }))
   const removalReasons = (removalReasonRows ?? []) as RemovalReasonOption[]
 
+  // ส่งเฉพาะฟิลด์ที่ตารางใช้ ให้ payload ฝั่ง client ไม่บวมตามจำนวนยาง
+  const topMileageRows: TopMileageRow[] = tires.map((t) => ({
+    id: t.id,
+    serialNo: t.serial_no,
+    imageUrl: t.image_url,
+    brandName: t.brand_name,
+    modelName: t.model_name,
+    size: t.size,
+    status: t.status,
+    plateNo: t.plate_no,
+    positionCode: t.position_code,
+    lifetimeKm: t.lifetime_km,
+  }))
+
   return (
     <>
       <PageHeader
@@ -160,59 +191,86 @@ export default async function DashboardPage() {
         action={
           <Link
             href="/tires"
-            className="tap-target inline-flex items-center gap-2 rounded-xl border border-line bg-white px-4 text-[15px] font-medium text-ink-700 hover:bg-brand-50"
+            className="inline-flex min-h-13 items-center gap-2 rounded-xl border-2 border-brand-600 bg-white px-5 text-base font-semibold text-brand-700 hover:bg-brand-50"
           >
             ดูคลังยางทั้งหมด
-            <ArrowRight className="size-4" />
+            <ArrowRight className="size-5" />
           </Link>
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatTile
-          label="ยางทั้งหมด" value={formatNumber(tires.length)} unit="เส้น"
-          icon={<CircleDot className="size-4.5" />}
-        />
-        <StatTile
-          label="ใช้งานอยู่บนรถ" value={formatNumber(mounted.length)} unit="เส้น" tone="emerald"
-          icon={<Truck className="size-4.5" />}
-        />
-        <StatTile
-          label="อยู่ในคลัง" value={formatNumber(inStock.length)} unit="เส้น" tone="sky"
-          icon={<Package className="size-4.5" />}
-        />
-        <StatTile
-          label={`ถึงเกณฑ์เตือน (${formatNumber(alertKm)} กม.)`}
-          value={
-            <span className={alerts.length > 0 ? 'text-rose-600' : undefined}>
-              {formatNumber(alerts.length)}
-            </span>
-          }
+      {/* คำอธิบายสี */}
+{/*       <ul className="mb-5 flex flex-wrap gap-x-6 gap-y-2 text-[15px] text-ink-700" aria-label="ความหมายของสี">
+        {COLOR_LEGEND.map((c) => (
+          <li key={c.label} className="inline-flex items-center gap-2">
+            <span className={cn('size-3.5 rounded', c.className)} aria-hidden />
+            {c.label}
+          </li>
+        ))}
+      </ul> */}
+
+      {/* ต้องทำวันนี้ */}
+      <section className="grid gap-4 md:grid-cols-2" aria-label="สิ่งที่ต้องทำวันนี้">
+        <TodayCard
+          href="#alerts"
+          count={alerts.length}
           unit="เส้น"
-          tone={alerts.length > 0 ? 'rose' : 'emerald'}
-          icon={<AlertTriangle className="size-4.5" />}
+          title="ยางต้องตรวจ"
+          okTitle="ยางทุกเส้นยังไม่ถึงเกณฑ์เตือน"
+          detail={
+            alerts.length > 0
+              ? `ดอกยางต่ำ ${formatNumber(dangerCount)} เส้น · วิ่งเกิน ${formatNumber(alertKm)} กม. ${formatNumber(warnCount)} เส้น`
+              : `เกณฑ์: วิ่งเกิน ${formatNumber(alertKm)} กม. หรือดอกยางเหลือไม่เกิน ${alertTread} มม.`
+          }
+          icon={<AlertTriangle />}
         />
-      </div>
+        <TodayCard
+          href="#vehicles"
+          count={vehicleAlerts.length}
+          unit="คัน"
+          title="เปลี่ยนยางบ่อยผิดปกติ"
+          okTitle="ไม่มีรถที่เปลี่ยนยางถี่ผิดปกติ"
+          detail={`ถอดยางตั้งแต่ ${formatNumber(changeCount)} ครั้งขึ้นไป ใน ${formatNumber(changeDays)} วัน`}
+          icon={<Repeat />}
+        />
+      </section>
+
+      {/* ตัวเลขสรุป */}
+      <section className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" aria-label="ตัวเลขสรุป">
+        <KpiCard label="ยางทั้งหมด" value={formatNumber(tires.length)} unit="เส้น" icon={<CircleDot />} />
+        <KpiCard label="ใช้งานอยู่บนรถ" value={formatNumber(mounted.length)} unit="เส้น" tone="good" icon={<Truck />} />
+        <KpiCard label="อยู่ในคลัง" value={formatNumber(inStock.length)} unit="เส้น" tone="info" icon={<Package />} />
+        <KpiCard
+          label="ถึงเกณฑ์เตือน"
+          value={formatNumber(alerts.length)}
+          unit="เส้น"
+          tone={alerts.length > 0 ? 'bad' : 'good'}
+          icon={<AlertTriangle />}
+        />
+      </section>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader
-            title="การถอด-ใส่ยาง 6 เดือนล่าสุด"
-            description={`ระยะสะสมทั้งหมด ${formatKm(totalKm)} · รถที่ใช้งาน ${formatNumber(vehicleCount ?? 0)} คัน`}
+            title={<span className="text-lg">การถอด-ใส่ยาง 6 เดือนล่าสุด</span>}
+            description={<span className="text-[15px] text-ink-700">ระยะสะสมทั้งหมด {formatKm(totalKm)} · รถที่ใช้งาน {formatNumber(vehicleCount ?? 0)} คัน</span>}
           />
           <CardBody>
-            <MonthlyEventsChart data={buildMonthlySeries(chartEventRows ?? [])} />
+            <DashboardMonthlyChart data={buildMonthlySeries(chartEventRows ?? [])} />
           </CardBody>
         </Card>
 
         <Card>
-          <CardHeader title="สถานะยาง" description="สัดส่วนยางทั้งหมดในระบบ" />
+          <CardHeader
+            title={<span className="text-lg">สถานะยาง</span>}
+            description={<span className="text-[15px] text-ink-700">สัดส่วนยางทั้งหมด {formatNumber(tires.length)} เส้น</span>}
+          />
           <CardBody>
-            <StatusDonut
+            <DashboardStatusDonut
               data={[
-                { name: 'ใช้งานอยู่', value: mounted.length },
-                { name: 'อยู่ในคลัง', value: inStock.length },
-                { name: 'ตัดจำหน่าย', value: scrapped.length },
+                { key: 'mounted', name: 'ใช้งานอยู่', value: mounted.length },
+                { key: 'inStock', name: 'อยู่ในคลัง', value: inStock.length },
+                { key: 'scrapped', name: 'ตัดจำหน่าย', value: scrapped.length },
               ]}
             />
           </CardBody>
@@ -220,11 +278,15 @@ export default async function DashboardPage() {
       </div>
 
       {/* แจ้งเตือน */}
-      <Card className="mt-4">
+      <Card className="mt-4 scroll-mt-24" id="alerts">
         <CardHeader
-          title="ยางที่ถึงเกณฑ์แจ้งเตือน"
-          description={`วิ่งเกิน ${formatNumber(alertKm)} กม. ในรอบปัจจุบัน หรือดอกยางเหลือ ≤ ${alertTread} มม.`}
-          action={<Badge tone={alerts.length ? 'rose' : 'emerald'}>{formatNumber(alerts.length)} เส้น</Badge>}
+          title={<span className="text-lg">ยางที่ถึงเกณฑ์แจ้งเตือน</span>}
+          description={<span className="text-[15px] text-ink-700">วิ่งเกิน {formatNumber(alertKm)} กม. ในรอบปัจจุบัน หรือดอกยางเหลือไม่เกิน {alertTread} มม.</span>}
+          action={
+            <StatusChip tone={alerts.length ? 'bad' : 'good'} icon={alerts.length ? <AlertTriangle /> : <Check strokeWidth={3} />} className="rounded-full px-3.5 py-1.5 text-base">
+              {formatNumber(alerts.length)} เส้น
+            </StatusChip>
+          }
         />
         {alerts.length === 0 ? (
           <EmptyState
@@ -237,53 +299,50 @@ export default async function DashboardPage() {
             <Table>
               <thead>
                 <tr>
-                  <Th className="w-16">รูป</Th>
-                  <Th>เลขยาง</Th>
-                  <Th>ทะเบียนรถ</Th>
-                  <Th className="hidden md:table-cell">ตำแหน่ง</Th>
-                  <Th className="text-right">ระยะรอบนี้</Th>
-                  <Th className="hidden text-right lg:table-cell">ระยะสะสม</Th>
-                  <Th className="hidden sm:table-cell">ดอกยางเหลือ</Th>
+                  <Th className={TH_LG}>สถานะ</Th>
+                  <Th className={TH_LG}>เลขยาง</Th>
+                  <Th className={TH_LG}>ทะเบียนรถ</Th>
+                  <Th className={cn(TH_LG, 'hidden md:table-cell')}>ตำแหน่ง</Th>
+                  <Th className={cn(TH_LG, 'text-right')}>ระยะรอบนี้</Th>
+                  <Th className={cn(TH_LG, 'hidden text-right lg:table-cell')}>ระยะสะสม</Th>
+                  <Th className={cn(TH_LG, 'hidden sm:table-cell')}>ดอกยางเหลือ</Th>
                 </tr>
               </thead>
               <tbody>
-                {alerts.slice(0, 10).map((t) => {
+                {alerts.slice(0, 10).map(({ tire: t, level }) => {
                   const pct = treadPercent(t.tread_mm, t.new_tread_mm)
-                  const level = alertLevel(true, t.current_run_km, alertKm, t.tread_mm, alertTread)
+                  const isDanger = level === 'danger'
                   return (
                     <tr key={t.id} className={ALERT_ROW[level]}>
-                      <Td>
-                        <TireThumb
-                          src={t.image_url}
-                          alt={[t.brand_name, t.model_name].filter(Boolean).join(' ')}
-                        />
+                      <Td className={TD_LG}>
+                        {isDanger
+                          ? <StatusChip tone="bad" icon={<Ban />}>ดอกยางต่ำ</StatusChip>
+                          : <StatusChip tone="warn" icon={<AlertTriangle />}>วิ่งเกินระยะ</StatusChip>}
                       </Td>
-                      <Td className="font-medium text-ink-900">
-                        <Link href={`/tires/${t.id}`} className="hover:text-brand-600">{t.serial_no}</Link>
-                        <TireSpec
-                          size={t.size}
-                          brandName={t.brand_name}
-                          modelName={t.model_name}
-                          className="mt-1"
-                        />
+                      <Td className={TD_LG}>
+                        <div className="flex items-center gap-3">
+                          <TireThumb
+                            src={t.image_url}
+                            alt={[t.brand_name, t.model_name].filter(Boolean).join(' ')}
+                            size="md"
+                            className="hidden sm:flex"
+                          />
+                          <span className="min-w-0">
+                            <Link href={`/tires/${t.id}`} className="text-base font-bold text-brand-700 underline underline-offset-4 hover:text-brand-800">
+                              {t.serial_no}
+                            </Link>
+                            <TireSpec size={t.size} brandName={t.brand_name} modelName={t.model_name} className="mt-0.5" />
+                          </span>
+                        </div>
                       </Td>
-                      <Td className="font-semibold text-ink-900">{t.plate_no ?? '-'}</Td>
-                      <Td className="hidden md:table-cell">{positionLabel(t.position_code)}</Td>
-                      <Td
-                        className={cn(
-                          'text-right font-semibold',
-                          t.current_run_km >= alertKm ? 'text-rose-600' : 'text-ink-700',
-                        )}
-                      >
+                      <Td className={cn(TD_LG, 'text-lg font-bold text-ink-900')}>{t.plate_no ?? '-'}</Td>
+                      <Td className={cn(TD_LG, 'hidden md:table-cell')}>{positionLabel(t.position_code)}</Td>
+                      <Td className={cn(TD_LG, 'text-right font-semibold', !isDanger && 'text-lg font-bold text-orange-700')}>
                         {formatKm(t.current_run_km)}
                       </Td>
-                      <Td className="hidden text-right lg:table-cell">{formatKm(t.lifetime_km)}</Td>
-                      <Td className="hidden sm:table-cell">
-                        {t.tread_mm !== null
-                          ? <Badge tone={t.tread_mm <= alertTread ? 'rose' : 'slate'}>
-                              {t.tread_mm} มม.{pct !== null ? ` (${pct}%)` : ''}
-                            </Badge>
-                          : '-'}
+                      <Td className={cn(TD_LG, 'hidden text-right lg:table-cell')}>{formatKm(t.lifetime_km)}</Td>
+                      <Td className={cn(TD_LG, 'hidden sm:table-cell', isDanger && 'text-lg font-bold text-rose-700')}>
+                        {t.tread_mm !== null ? `${t.tread_mm} มม.${pct !== null ? ` (${pct}%)` : ''}` : '-'}
                       </Td>
                     </tr>
                   )
@@ -292,17 +351,23 @@ export default async function DashboardPage() {
             </Table>
           </TableWrap>
         )}
+        {alerts.length > 10 && (
+          <p className="border-t border-line px-5 py-3 text-[15px] text-ink-700">
+            แสดง 10 จาก {formatNumber(alerts.length)} เส้น · ดูทั้งหมดได้ที่หน้า{' '}
+            <Link href="/tires" className="font-semibold text-brand-700 underline underline-offset-4">คลังยาง</Link>
+          </p>
+        )}
       </Card>
 
       {/* รถเปลี่ยนยางบ่อย — โชว์ทะเบียนรถให้เห็นชัด */}
-      <Card className="mt-4">
+      <Card className="mt-4 scroll-mt-24" id="vehicles">
         <CardHeader
-          title="รถที่เปลี่ยนยางบ่อย"
-          description={`ถอดยางตั้งแต่ ${formatNumber(changeCount)} ครั้งขึ้นไป ภายใน ${formatNumber(changeDays)} วันล่าสุด (ตั้งค่าได้ที่หน้าข้อมูลบริษัท)`}
+          title={<span className="text-lg">รถที่เปลี่ยนยางบ่อย</span>}
+          description={<span className="text-[15px] text-ink-700">ถอดยางตั้งแต่ {formatNumber(changeCount)} ครั้งขึ้นไป ภายใน {formatNumber(changeDays)} วันล่าสุด (ตั้งค่าได้ที่หน้าข้อมูลบริษัท)</span>}
           action={
-            <Badge tone={vehicleAlerts.length ? 'rose' : 'emerald'}>
+            <StatusChip tone={vehicleAlerts.length ? 'bad' : 'good'} icon={vehicleAlerts.length ? <Repeat /> : <Check strokeWidth={3} />} className="rounded-full px-3.5 py-1.5 text-base">
               {formatNumber(vehicleAlerts.length)} คัน
-            </Badge>
+            </StatusChip>
           }
         />
         {vehicleAlerts.length === 0 ? (
@@ -316,28 +381,35 @@ export default async function DashboardPage() {
             <Table>
               <thead>
                 <tr>
-                  <Th>ทะเบียนรถ</Th>
-                  <Th className="hidden sm:table-cell">จังหวัด</Th>
-                  <Th className="text-right">ถอดยาง (ครั้ง)</Th>
-                  <Th className="hidden md:table-cell">ถอดล่าสุด</Th>
+                  <Th className={TH_LG}>ทะเบียนรถ</Th>
+                  <Th className={cn(TH_LG, 'hidden sm:table-cell')}>จังหวัด</Th>
+                  <Th className={cn(TH_LG, 'text-right')}>ถอดยาง (ครั้ง)</Th>
+                  <Th className={cn(TH_LG, 'hidden md:table-cell')}>ถอดล่าสุด</Th>
+                  <Th className={cn(TH_LG, 'hidden sm:table-cell')}><span className="sr-only">ดูรายละเอียด</span></Th>
                 </tr>
               </thead>
               <tbody>
                 {vehicleAlerts.slice(0, 10).map((v) => (
                   <tr key={v.vehicleId} className={ALERT_ROW.danger}>
-                    <Td>
-                      <Link
-                        href={`/vehicles/${v.vehicleId}`}
-                        className="text-base font-semibold text-ink-900 hover:text-brand-600"
-                      >
+                    <Td className={TD_LG}>
+                      <Link href={`/vehicles/${v.vehicleId}`} className="text-xl font-bold text-ink-900 hover:text-brand-700">
                         {v.plateNo}
                       </Link>
                     </Td>
-                    <Td className="hidden sm:table-cell">{v.province}</Td>
-                    <Td className="text-right text-base font-semibold text-rose-600">
-                      {formatNumber(v.changeCount)}
+                    <Td className={cn(TD_LG, 'hidden sm:table-cell')}>{v.province}</Td>
+                    <Td className={cn(TD_LG, 'text-right')}>
+                      <span className="text-2xl font-bold text-rose-700">{formatNumber(v.changeCount)}</span>
+                      <span className="ml-1.5 text-ink-700">ครั้ง</span>
                     </Td>
-                    <Td className="hidden md:table-cell">{formatThaiDate(v.lastEventDate)}</Td>
+                    <Td className={cn(TD_LG, 'hidden md:table-cell')}>{formatThaiDate(v.lastEventDate)}</Td>
+                    <Td className={cn(TD_LG, 'hidden sm:table-cell text-right')}>
+                      <Link
+                        href={`/vehicles/${v.vehicleId}`}
+                        className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border-2 border-brand-600 bg-white px-3.5 text-[15px] font-semibold text-brand-700 hover:bg-brand-50"
+                      >
+                        ดูประวัติรถ <ArrowRight className="size-4" />
+                      </Link>
+                    </Td>
                   </tr>
                 ))}
               </tbody>
@@ -352,65 +424,8 @@ export default async function DashboardPage() {
         reasons={removalReasons}
       />
 
-      {/* ยางที่วิ่งมากที่สุด */}
-      <Card className="mt-4">
-        <CardHeader title="ยางที่มีระยะสะสมสูงสุด" description="เรียงตามระยะทางสะสมตลอดอายุยาง" />
-        {tires.length === 0 ? (
-          <EmptyState
-            icon={<CircleDot className="size-6" />}
-            title="ยังไม่มียางในระบบ"
-            description="เพิ่มยางเข้าคลังได้ที่เมนู “คลังยาง”"
-          />
-        ) : (
-          <TableWrap>
-            <Table>
-              <thead>
-                <tr>
-                  <Th className="w-16">รูป</Th>
-                  <Th>เลขยาง</Th>
-                  <Th className="hidden lg:table-cell">ขนาด / ยี่ห้อ รุ่น</Th>
-                  <Th>สถานะ</Th>
-                  <Th className="hidden sm:table-cell">ตำแหน่งปัจจุบัน</Th>
-                  <Th className="text-right">ระยะสะสม</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {tires.slice(0, 10).map((t) => (
-                  <tr key={t.id} className="transition-colors hover:bg-brand-50/40">
-                    <Td>
-                      <TireThumb
-                        src={t.image_url}
-                        alt={[ t.model_name ,t.brand_name].filter(Boolean).join(' ')}
-                      />
-                    </Td>
-                    <Td className="font-medium text-ink-900">
-                      <Link href={`/tires/${t.id}`} className="hover:text-brand-600">{t.serial_no}</Link>
-                      <TireSpec
-                        size={t.size}
-                        brandName={t.brand_name}
-                        modelName={t.model_name}
-                        className="mt-1 lg:hidden"
-                      />
-                    </Td>
-                    <Td className="hidden lg:table-cell">
-                      <TireSpec size={t.size} brandName={t.brand_name} modelName={t.model_name} />
-                    </Td>
-                    <Td>
-                      <Badge tone={TIRE_STATUS_TONE[t.status]}>{TIRE_STATUS_LABEL[t.status]}</Badge>
-                    </Td>
-                    <Td className="hidden sm:table-cell">
-                      {t.status === 'mounted'
-                        ? `${t.plate_no} · ${positionLabel(t.position_code)}`
-                        : 'คลังสินค้า'}
-                    </Td>
-                    <Td className="text-right font-medium">{formatKm(t.lifetime_km)}</Td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
-          </TableWrap>
-        )}
-      </Card>
+      <TopMileageTable rows={topMileageRows} />
+
     </>
   )
 }

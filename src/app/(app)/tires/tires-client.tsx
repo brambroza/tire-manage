@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { CircleDot, History, Pencil, Plus, Trash2, Undo2 } from 'lucide-react'
 import { ALERT_ROW, Badge, Button, Card, EmptyState, Table, TableWrap, Td, Th, alertLevel } from '@/components/ui'
 import { ConfirmDialog } from '@/components/ui/modal'
+import { Pagination, SMALL_PAGE_SIZE_OPTIONS, usePagination } from '@/components/ui/pagination'
 import { SearchInput } from '@/components/search-input'
 import { TireThumb } from '@/components/tire-thumb'
 import { TireSpec } from '@/components/tire-spec'
@@ -73,6 +74,8 @@ export function TiresClient({
   const [history, setHistory] = React.useState<TireOverview | null>(null)
   const [busy, setBusy] = React.useState(false)
   const [message, setMessage] = React.useState<string | null>(null)
+  /** แบ่งหน้าฝั่ง client — เริ่มต้น 10 เส้น/หน้า, กลับหน้าแรกเองเมื่อค้นหา/เปลี่ยนตัวกรอง */
+  const pagination = usePagination(tires)
 
   function setFilter(value: string) {
     const next = new URLSearchParams(params.toString())
@@ -151,7 +154,7 @@ export function TiresClient({
                 </tr>
               </thead>
               <tbody>
-                {tires.map((t) => {
+                {pagination.pageItems.map((t) => {
                   const pct = treadPercent(t.tread_mm, t.new_tread_mm)
                   const alert = t.status === 'mounted' && t.current_run_km >= t.alert_km
                   const level = alertLevel(
@@ -221,31 +224,26 @@ export function TiresClient({
                         ) : removal ? (
                           <>
                             <span className="text-ink-400">คลังสินค้า</span>
-                            {/* บังคับ 3 บรรทัดคงที่: ที่มา / เลขไมล์-วันที่ / สาเหตุที่ถอด */}
-                            <p className="truncate text-xs text-ink-500">
-                              ถอดจาก{' '}
-                              <span className="font-medium text-ink-700">
-                                {removal.plate_no ?? 'รถที่ถูกลบแล้ว'}
-                              </span>
-                              {removal.position_code && ` · ${positionLabel(removal.position_code)}`}
-                            </p>
-                            <p className="truncate text-xs text-ink-400">
-                              ที่ {formatKm(removal.odometer)} · {formatThaiDate(removal.event_date)}
-                            </p>
-                            <p className="truncate text-xs text-ink-400">
-                              สาเหตุ: {removal.reason ?? '-'}
-                            </p>
-                            {removal.note && (
-                              <p className="max-w-56 truncate text-xs text-ink-400" title={removal.note}>
-                                หมายเหตุ: {removal.note}
+                            {/* บังคับ 3 บรรทัดคงที่: ที่มา / วันที่-เลขไมล์ / สาเหตุที่ถอด */}
+                            <div className="mt-0.5 max-w-56 space-y-0.5 text-xs text-ink-400">
+                              <p className="truncate text-ink-700">
+                                <span className="font-medium">{removal.plate_no ?? 'รถที่ถูกลบแล้ว'}</span>
+                                {removal.position_code && (
+                                  <span className="text-ink-400"> · {positionLabel(removal.position_code)}</span>
+                                )}
                               </p>
-                            )}
-                            {/* จอแคบไม่มีคอลัมน์ "ระยะรอบนี้" — ยุบมาไว้ตรงนี้ */}
-                            {removal.distance_km !== null && (
-                              <p className="text-xs text-ink-400 xl:hidden">
-                                ใช้ไป {formatKm(removal.distance_km)}
+                              <p className="truncate">
+                                {formatThaiDate(removal.event_date)} · {formatKm(removal.odometer)}
+                                {/* จอแคบไม่มีคอลัมน์ "ระยะรอบล่าสุด" — ยุบมาไว้ตรงนี้ */}
+                                {removal.distance_km !== null && (
+                                  <span className="xl:hidden"> · ใช้ไป {formatKm(removal.distance_km)}</span>
+                                )}
                               </p>
-                            )}
+                              <p className="font-medium" title={removal.note ?? undefined}>
+                                {removal.reason ?? '-'}
+                                {removal.note && ` · ${removal.note}`}
+                              </p>
+                            </div>
                           </>
                         ) : (
                           <span className="text-ink-400">คลังสินค้า</span>
@@ -306,6 +304,7 @@ export function TiresClient({
                 })}
               </tbody>
             </Table>
+            <Pagination state={pagination} itemLabel="เส้น" sizeOptions={SMALL_PAGE_SIZE_OPTIONS} />
           </TableWrap>
         )}
       </Card>

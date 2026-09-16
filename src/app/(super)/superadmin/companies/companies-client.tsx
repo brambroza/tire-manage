@@ -8,6 +8,7 @@ import {
   Badge, Button, Card, EmptyState, Field, Input, Table, TableWrap, Td, Textarea, Th,
 } from '@/components/ui'
 import { ConfirmDialog, Modal } from '@/components/ui/modal'
+import { Pagination, usePagination } from '@/components/ui/pagination'
 import { formatNumber } from '@/lib/utils'
 import { createCompany, setCompanyActive, updateCompany, type SuperCompanyInput } from '../actions'
 import type { Company } from '@/lib/database.types'
@@ -40,6 +41,7 @@ export function CompaniesClient({ companies }: { companies: CompanyRow[] }) {
   const [error, setError] = React.useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [confirm, setConfirm] = React.useState<CompanyRow | null>(null)
+  const pagination = usePagination(companies)
 
   function openCreate() {
     setEditing(null)
@@ -130,7 +132,7 @@ export function CompaniesClient({ companies }: { companies: CompanyRow[] }) {
                 </tr>
               </thead>
               <tbody>
-                {companies.map((c) => (
+                {pagination.pageItems.map((c) => (
                   <tr key={c.id} className="transition-colors hover:bg-brand-50/40">
                     <Td>
                       <Link
@@ -189,6 +191,7 @@ export function CompaniesClient({ companies }: { companies: CompanyRow[] }) {
                 ))}
               </tbody>
             </Table>
+            <Pagination state={pagination} itemLabel="บริษัท" />
           </TableWrap>
         )}
       </Card>

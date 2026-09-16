@@ -8,6 +8,7 @@ import {
 import { positionLabel } from '@/lib/axle-layouts'
 import { TireSpec } from '@/components/tire-spec'
 import { cn, formatKm, formatNumber, formatThaiDate, todayISO } from '@/lib/utils'
+import { StatusChip, TD_LG, TH_LG } from './dashboard-ui'
 import {
   ALL_REASONS,
   UNSPECIFIED_REASON,
@@ -60,14 +61,14 @@ function SummaryItem({
   icon: React.ReactNode
 }) {
   return (
-    <div className="rounded-xl bg-brand-50/70 p-4 ring-1 ring-inset ring-brand-100">
-      <div className="flex items-center justify-between gap-3 text-sm text-ink-500">
+    <div className="rounded-xl border border-line bg-surface-alt p-4">
+      <div className="flex items-center justify-between gap-3 text-[15px] font-semibold text-ink-700">
         <span>{label}</span>
-        <span className="text-brand-600">{icon}</span>
+        <span className="text-brand-700 [&>svg]:size-5">{icon}</span>
       </div>
       <p className="mt-2 flex items-baseline gap-1.5">
-        <span className="text-2xl font-semibold tracking-tight text-ink-900">{value}</span>
-        {unit ? <span className="text-xs text-ink-400">{unit}</span> : null}
+        <span className="text-3xl font-bold tracking-tight text-ink-900">{value}</span>
+        {unit ? <span className="text-[15px] text-ink-500">{unit}</span> : null}
       </p>
     </div>
   )
@@ -134,8 +135,8 @@ export function RemovalReport({
   return (
     <Card className="mt-4">
       <CardHeader
-        title="สรุปสาเหตุการถอดและเปลี่ยนยาง"
-        description={`วิเคราะห์จากประวัติ ${formatNumber(rows.length)} รายการล่าสุดในระบบ`}
+        title={<span className="text-lg">สรุปสาเหตุการถอดและเปลี่ยนยาง</span>}
+        description={<span className="text-[15px] text-ink-700">วิเคราะห์จากประวัติ {formatNumber(rows.length)} รายการล่าสุดในระบบ</span>}
       />
 
       <CardBody className="space-y-5">
@@ -174,17 +175,17 @@ export function RemovalReport({
             </div>
           </Field>
 
-          <div className="flex flex-wrap gap-1.5 rounded-xl bg-brand-50 p-1 self-start xl:self-auto">
+          <div className="flex flex-wrap gap-2 self-start xl:self-auto">
             {RANGE_PRESETS.map((preset) => (
               <button
                 key={preset.key}
                 type="button"
                 onClick={() => setRange(preset.range())}
                 className={cn(
-                  'tap-target rounded-lg px-3 text-sm font-medium transition-colors',
+                  'min-h-12 rounded-xl border-2 px-4 text-base font-semibold transition-colors',
                   activePreset === preset.key
-                    ? 'bg-white text-brand-700 shadow-sm'
-                    : 'text-ink-500 hover:text-ink-700',
+                    ? 'border-brand-600 bg-brand-600 text-white'
+                    : 'border-line bg-white text-ink-900 hover:border-brand-300 hover:bg-brand-50',
                 )}
               >
                 {preset.label}
@@ -224,8 +225,8 @@ export function RemovalReport({
           </p>
         ) : null}
 
-        <p className="inline-flex items-center gap-1.5 text-sm text-ink-500">
-          <CalendarDays className="size-4 text-brand-600" />
+        <p className="inline-flex items-center gap-1.5 text-[15px] text-ink-700">
+          <CalendarDays className="size-4.5 text-brand-700" />
           กำลังแสดง: {reasonLabel} · {rangeLabel} · {formatNumber(filteredRows.length)} รายการ
         </p>
 
@@ -259,23 +260,25 @@ export function RemovalReport({
         {summary.reasons.length > 0 ? (
           <div>
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-ink-800">สัดส่วนตามสาเหตุ</h3>
+              <h3 className="text-base font-bold text-ink-900">สัดส่วนตามสาเหตุ</h3>
               {summary.topReason ? (
-                <Badge tone="brand">มากที่สุด: {summary.topReason.name} · {formatNumber(summary.topReason.count)} ครั้ง</Badge>
+                <StatusChip tone="brand" icon={<TrendingUp />}>
+                  มากที่สุด: {summary.topReason.name} · {formatNumber(summary.topReason.count)} ครั้ง
+                </StatusChip>
               ) : null}
             </div>
             <div className="grid gap-x-6 gap-y-3 md:grid-cols-2">
               {summary.reasons.map((reason) => (
                 <div key={reason.key}>
-                  <div className="mb-1.5 flex items-center justify-between gap-3 text-sm">
-                    <span className="truncate text-ink-700">{reason.name}</span>
-                    <span className="shrink-0 text-ink-500">
-                      {formatNumber(reason.count)} ครั้ง · {formatNumber(reason.percentage, 1)}%
+                  <div className="mb-1.5 flex items-center justify-between gap-3 text-base">
+                    <span className="truncate font-semibold text-ink-900">{reason.name}</span>
+                    <span className="shrink-0 font-bold text-ink-900">
+                      {formatNumber(reason.count)} <span className="font-normal text-ink-500">ครั้ง ({formatNumber(reason.percentage, 0)}%)</span>
                     </span>
                   </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-brand-50">
+                  <div className="h-4 overflow-hidden rounded-md border border-line bg-surface-alt">
                     <div
-                      className="h-full rounded-full bg-brand-500"
+                      className="h-full rounded-md bg-brand-600"
                       style={{ width: `${Math.max(reason.percentage, 2)}%` }}
                     />
                   </div>
@@ -294,27 +297,27 @@ export function RemovalReport({
         />
       ) : (
         <>
-          <div className="border-y border-line bg-brand-50/30 px-5 py-3 text-sm text-ink-500">
+          <div className="border-y border-line bg-surface-alt px-5 py-3 text-[15px] text-ink-700">
             แสดง 10 รายการล่าสุดจาก {formatNumber(filteredRows.length)} รายการ · ไฟล์ส่งออกจะมีข้อมูลตามตัวกรองทั้งหมด
           </div>
           <TableWrap>
             <Table>
               <thead>
                 <tr>
-                  <Th>วันที่</Th>
-                  <Th>เลขยาง</Th>
-                  <Th className="hidden sm:table-cell">ถอดจากรถ</Th>
-                  <Th className="hidden md:table-cell">ตำแหน่ง</Th>
-                  <Th className="text-right">ระยะรอบนี้</Th>
-                  <Th>สาเหตุ</Th>
+                  <Th className={TH_LG}>วันที่</Th>
+                  <Th className={TH_LG}>เลขยาง</Th>
+                  <Th className={cn(TH_LG, 'hidden sm:table-cell')}>ถอดจากรถ</Th>
+                  <Th className={cn(TH_LG, 'hidden md:table-cell')}>ตำแหน่ง</Th>
+                  <Th className={cn(TH_LG, 'text-right')}>ระยะรอบนี้</Th>
+                  <Th className={TH_LG}>สาเหตุ</Th>
                 </tr>
               </thead>
               <tbody>
                 {filteredRows.slice(0, 10).map((row) => (
-                  <tr key={row.id} className="transition-colors hover:bg-brand-50/40">
-                    <Td className="whitespace-nowrap">{formatThaiDate(row.eventDate)}</Td>
-                    <Td>
-                      <span className="font-medium text-ink-900">{row.serialNo}</span>
+                  <tr key={row.id} className="transition-colors odd:bg-surface-alt/60 hover:bg-brand-50/60">
+                    <Td className={cn(TD_LG, 'whitespace-nowrap')}>{formatThaiDate(row.eventDate)}</Td>
+                    <Td className={TD_LG}>
+                      <span className="text-base font-bold text-ink-900">{row.serialNo}</span>
                       <TireSpec
                         size={row.size}
                         brandName={row.brandName}
@@ -322,10 +325,10 @@ export function RemovalReport({
                         className="mt-1"
                       />
                     </Td>
-                    <Td className="hidden sm:table-cell">{row.plateNo ?? '-'}</Td>
-                    <Td className="hidden md:table-cell">{positionLabel(row.positionCode, row.axleType)}</Td>
-                    <Td className="text-right">{formatKm(row.distanceKm)}</Td>
-                    <Td><Badge tone="slate">{row.reasonName ?? 'ไม่ระบุสาเหตุ'}</Badge></Td>
+                    <Td className={cn(TD_LG, 'hidden sm:table-cell text-lg font-bold text-ink-900')}>{row.plateNo ?? '-'}</Td>
+                    <Td className={cn(TD_LG, 'hidden md:table-cell')}>{positionLabel(row.positionCode, row.axleType)}</Td>
+                    <Td className={cn(TD_LG, 'text-right font-semibold')}>{formatKm(row.distanceKm)}</Td>
+                    <Td className={TD_LG}><Badge tone="slate" className="px-3 py-1.5 text-sm">{row.reasonName ?? 'ไม่ระบุสาเหตุ'}</Badge></Td>
                   </tr>
                 ))}
               </tbody>

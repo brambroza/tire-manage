@@ -8,6 +8,7 @@ import {
   Table, TableWrap, Td, Th,
 } from '@/components/ui'
 import { Modal } from '@/components/ui/modal'
+import { Pagination, usePagination } from '@/components/ui/pagination'
 import { createCompanyUser, type CompanyAdminInput } from '../../actions'
 import type { Profile } from '@/lib/database.types'
 
@@ -26,6 +27,7 @@ export function CompanyUsersClient({
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
+  const pagination = usePagination(users)
   const [form, setForm] = React.useState<CompanyAdminInput>({
     company_id: companyId,
     email: '',
@@ -88,7 +90,7 @@ export function CompanyUsersClient({
                 </tr>
               </thead>
               <tbody>
-                {users.map((u) => (
+                {pagination.pageItems.map((u) => (
                   <tr key={u.id} className="transition-colors hover:bg-brand-50/40">
                     <Td className="font-medium text-ink-900">{u.full_name}</Td>
                     <Td><Badge tone={u.role === 'admin' ? 'brand' : 'sky'}>{ROLE_LABEL[u.role]}</Badge></Td>
@@ -102,6 +104,7 @@ export function CompanyUsersClient({
                 ))}
               </tbody>
             </Table>
+            <Pagination state={pagination} itemLabel="บัญชี" />
           </TableWrap>
         )}
       </Card>
