@@ -49,6 +49,13 @@ create table if not exists public.companies (
   -- รถ "เปลี่ยนยางบ่อย" = ถอดยางตั้งแต่ alert_change_count ครั้ง ภายใน alert_change_days วัน
   alert_change_count integer not null default 3 check (alert_change_count > 0),
   alert_change_days  integer not null default 90 check (alert_change_days > 0),
+  -- ระยะสะสมตลอดอายุยางที่จะแจ้งเตือน (กม.) — คนละตัวกับ alert_km ที่เป็นระยะของรอบปัจจุบัน
+  -- null = ปิดการเตือนข้อนี้ (ค่าเริ่มต้น กันยางเก่าเด้งพร้อมกันทั้งระบบตอนเปิดใช้)
+  alert_lifetime_km integer check (alert_lifetime_km > 0),
+  -- ค่าเฉลี่ยที่รถวิ่งต่อเดือน (กม.) ใช้เป็นค่ากลางเมื่อรถคันนั้นไม่ได้กรอกไว้
+  avg_km_per_month  integer check (avg_km_per_month > 0),
+  -- หยุดประมาณการหลังไม่มีเลขไมล์จริงกี่วัน กันค่าประมาณบวกไปจนเชื่อไม่ได้
+  estimate_max_days integer not null default 90 check (estimate_max_days > 0),
   is_active     boolean not null default true,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
@@ -180,6 +187,11 @@ create table if not exists public.vehicles (
   axle_type       text not null
                   references public.axle_types(code) on update cascade on delete restrict,
   current_mileage integer not null default 0 check (current_mileage >= 0),
+  -- ค่าเฉลี่ยที่รถคันนี้วิ่งต่อเดือน (กม.) — null = ใช้ค่ากลางของบริษัท
+  avg_km_per_month integer check (avg_km_per_month > 0),
+  -- เวลาที่ current_mileage ถูกอัปเดตจากเลขไมล์จริงครั้งล่าสุด (จุดตั้งต้นของการประมาณการ)
+  -- ใช้ updated_at ไม่ได้ เพราะ trg_touch_vehicles แตะทุกครั้งที่แก้แถว
+  mileage_updated_at timestamptz not null default now(),
   note            text,
   is_active       boolean not null default true,
   created_at      timestamptz not null default now(),
@@ -353,8 +365,12 @@ begin
      p_odometer, p_tread_mm, p_note, p_event_date, auth.uid())
   returning id into v_event;
 
+  -- ประทับเวลาเฉพาะเมื่อเลขไมล์เดินหน้าจริง — รายการย้อนหลังที่เลขต่ำกว่า
+  -- ต้องไม่รีเซ็ตนาฬิกาประมาณการ (Postgres ประเมิน SET ทุกช่องจากค่าเดิมของแถว)
   update public.vehicles
-     set current_mileage = greatest(current_mileage, p_odometer)
+     set current_mileage    = greatest(current_mileage, p_odometer),
+         mileage_updated_at = case when p_odometer > current_mileage then now()
+                                   else mileage_updated_at end
    where id = p_vehicle_id;
 
   return v_event;
@@ -414,7 +430,9 @@ begin
   where id = p_tire_id;
 
   update public.vehicles
-     set current_mileage = greatest(current_mileage, p_odometer)
+     set current_mileage    = greatest(current_mileage, p_odometer),
+         mileage_updated_at = case when p_odometer > current_mileage then now()
+                                   else mileage_updated_at end
    where id = t.vehicle_id;
 
   return v_event;
@@ -489,43 +507,141 @@ comment on function public.apply_tire_ops(uuid, date, jsonb) is
   'บันทึกงานถอด/ใส่ยางหลายรายการของรถคันเดียวในทรานแซกชันเดียว (all-or-nothing)';
 
 -- ============================================================
--- VIEW : ยางพร้อมระยะวิ่งปัจจุบัน + สถานะแจ้งเตือน
+-- VIEW : ยางพร้อมระยะวิ่ง + ค่าประมาณ + สถานะแจ้งเตือน
+--
+-- !! ห้ามสลับลำดับหรือเปลี่ยนชนิดของคอลัมน์เดิม !!
+-- create or replace view อนุญาตให้ "ต่อท้าย" คอลัมน์ใหม่เท่านั้น
+-- ถ้าจัดเรียงคอลัมน์เดิมใหม่จะ fail ด้วย cannot change name of view column
+--
+-- คอลัมน์ estimated_* เป็นค่าคำนวณสด ไม่เคยถูกเขียนลงตาราง
+-- เพื่อไม่ให้ค่าเดาปนเข้า tire_events.distance_km / tires.total_distance_km
 -- ============================================================
 create or replace view public.tire_overview
 with (security_invoker = true) as
+with base as (
+  select
+    t.id, t.company_id, t.serial_no, t.brand_name, t.model_name, t.size, t.dot, t.status,
+    t.tread_mm, t.new_tread_mm, t.total_distance_km, t.mounted_odometer, t.mounted_at,
+    t.position_code,
+    v.id              as vehicle_id,
+    v.plate_no,
+    v.province,
+    v.current_mileage,
+    -- ระยะวิ่งของรอบติดตั้งปัจจุบัน (วัดจริง)
+    case when t.status = 'mounted'
+         then greatest(v.current_mileage - t.mounted_odometer, 0)
+         else 0 end   as current_run_km,
+    c.alert_km,
+    c.alert_tread_mm,
+    tm.image_url,
+    c.alert_lifetime_km,
+    c.estimate_max_days,
+    v.mileage_updated_at,
+    -- ค่าเฉลี่ยที่มีผลกับรถคันนี้: ของคันนี้ก่อน ถ้าไม่มีใช้ค่ากลางของบริษัท
+    coalesce(v.avg_km_per_month, c.avg_km_per_month) as avg_km_per_month,
+    -- greatest(..., 0) กันกรณีเวลาเครื่องเพี้ยนจนวันที่อยู่ในอนาคต
+    case when v.mileage_updated_at is null then null
+         else greatest(current_date - v.mileage_updated_at::date, 0) end as days_since_mileage
+  from public.tires t
+  left join public.vehicles v     on v.id = t.vehicle_id
+  left join public.tire_models tm on tm.id = t.tire_model_id
+  join public.companies c         on c.id = t.company_id
+), est as (
+  select b.*,
+    -- กม. ที่ประมาณว่าวิ่งเพิ่มหลังเลขไมล์จริงครั้งล่าสุด
+    -- least(..., estimate_max_days) = เพดาน ไม่มีเลขไมล์นานเกินไปก็หยุดเดา
+    -- 30.44 = 365.25 / 12 (ไม่ใช่ 30 — ต่างกัน ~1.5%)
+    case
+      when b.status <> 'mounted' then 0
+      when b.avg_km_per_month is null or b.days_since_mileage is null then 0
+      else floor(least(b.days_since_mileage, b.estimate_max_days)::numeric
+                 * b.avg_km_per_month / 30.44)::integer
+    end as estimated_extra_km
+  from base b
+), run as (
+  select e.*,
+    case when e.status = 'mounted'
+         then greatest(e.current_mileage + e.estimated_extra_km - e.mounted_odometer, 0)
+         else 0 end as estimated_run_km
+  from est e
+)
 select
-  t.id,
-  t.company_id,
-  t.serial_no,
-  t.brand_name,
-  t.model_name,
-  t.size,
-  t.dot,
-  t.status,
-  t.tread_mm,
-  t.new_tread_mm,
-  t.total_distance_km,
-  t.mounted_odometer,
-  t.mounted_at,
-  t.position_code,
-  v.id            as vehicle_id,
-  v.plate_no,
-  v.province,
-  v.current_mileage,
-  -- ระยะวิ่งของรอบติดตั้งปัจจุบัน
-  case when t.status = 'mounted'
-       then greatest(v.current_mileage - t.mounted_odometer, 0)
-       else 0 end as current_run_km,
-  -- ระยะสะสมทั้งหมด (รวมรอบปัจจุบัน)
-  t.total_distance_km + case when t.status = 'mounted'
-       then greatest(v.current_mileage - t.mounted_odometer, 0) else 0 end as lifetime_km,
-  c.alert_km,
-  c.alert_tread_mm,
-  tm.image_url
-from public.tires t
-left join public.vehicles v     on v.id = t.vehicle_id
-left join public.tire_models tm on tm.id = t.tire_model_id
-join public.companies c         on c.id = t.company_id;
+  -- ---------- คอลัมน์เดิม ห้ามสลับลำดับ ----------
+  r.id,
+  r.company_id,
+  r.serial_no,
+  r.brand_name,
+  r.model_name,
+  r.size,
+  r.dot,
+  r.status,
+  r.tread_mm,
+  r.new_tread_mm,
+  r.total_distance_km,
+  r.mounted_odometer,
+  r.mounted_at,
+  r.position_code,
+  r.vehicle_id,
+  r.plate_no,
+  r.province,
+  r.current_mileage,
+  r.current_run_km,
+  -- ระยะสะสมทั้งหมด (รวมรอบปัจจุบัน) จากเลขไมล์ที่วัดจริง
+  r.total_distance_km + r.current_run_km as lifetime_km,
+  r.alert_km,
+  r.alert_tread_mm,
+  r.image_url,
+  -- ---------- คอลัมน์ใหม่ ต่อท้ายเท่านั้น ----------
+  r.avg_km_per_month,
+  r.mileage_updated_at,
+  r.days_since_mileage,
+  r.estimate_max_days,
+  r.estimated_extra_km,
+  r.estimated_run_km,
+  -- ระยะสะสมแบบรวมค่าประมาณ — ตัวเลขที่ใช้ตัดสินเกณฑ์ alert_lifetime_km
+  r.total_distance_km + r.estimated_run_km as estimated_lifetime_km,
+  -- ตัวเลขนี้มีค่าประมาณปนอยู่หรือไม่ — UI ต้องติดป้าย "ประมาณการ" เมื่อเป็น true
+  r.estimated_extra_km > 0 as is_estimated,
+  -- ชนเพดานแล้ว = เลขไมล์เก่าเกินกว่าจะประมาณต่อ ต้องให้คนไปยืนยัน
+  coalesce(r.days_since_mileage >= r.estimate_max_days, false) as is_mileage_stale,
+  r.alert_lifetime_km,
+  -- อีกกี่วันถึงเกณฑ์ระยะสะสม (0 = ถึงแล้ว, null = ไม่มีเกณฑ์/ไม่มีค่าเฉลี่ย/ถูกตัดจำหน่าย)
+  case
+    when r.alert_lifetime_km is null then null
+    when r.status = 'scrapped' then null
+    when r.total_distance_km + r.estimated_run_km >= r.alert_lifetime_km then 0
+    when r.status <> 'mounted' then null
+    when coalesce(r.avg_km_per_month, 0) <= 0 then null
+    else ceil((r.alert_lifetime_km - (r.total_distance_km + r.estimated_run_km))::numeric
+              / (r.avg_km_per_month::numeric / 30.44))::integer
+  end as days_to_lifetime_alert
+from run r;
+
+-- ------------------------------------------------------------
+-- view: ค่าเฉลี่ยที่สังเกตได้จริงจากประวัติถอด-ใส่ยาง 180 วันล่าสุด
+-- ใช้เป็น hint ใต้ช่องกรอกในฟอร์มรถ ไม่ได้นำไปใช้อัตโนมัติ
+-- ------------------------------------------------------------
+create or replace view public.vehicle_observed_monthly_km
+with (security_invoker = true) as
+select
+  v.id         as vehicle_id,
+  v.company_id,
+  round((max(e.odometer) - min(e.odometer))::numeric
+        / nullif(max(e.event_date) - min(e.event_date), 0) * 30.44)::integer as observed_km_per_month,
+  count(*)::integer as sample_events,
+  min(e.event_date) as first_date,
+  max(e.event_date) as last_date
+from public.vehicles v
+join public.tire_events e
+  on e.vehicle_id = v.id
+ and e.event_date >= current_date - 180
+group by v.id, v.company_id
+-- ต้องมีอย่างน้อย 2 รายการและห่างกัน 30 วัน ไม่งั้นตัวเลขเป็นสัญญาณรบกวน
+having count(*) >= 2
+   and (max(e.event_date) - min(e.event_date)) >= 30;
+
+create index if not exists tire_events_vehicle_date_idx
+  on public.tire_events (vehicle_id, event_date);
 
 -- ------------------------------------------------------------
 -- view: รถที่ถอดยางถึงเกณฑ์ "เปลี่ยนบ่อย" (ดู migrations/009)

@@ -53,6 +53,8 @@ export const HISTORY_LIMIT = 100
 
 /** ข้อมูลการถอดครั้งล่าสุดของยาง 1 เส้น — ใช้บอกที่มาของยางที่อยู่ในคลัง */
 export interface LastRemoval {
+  /** id รถที่ถอดออกมา สำหรับลิงก์ไปหน้ารถ (null = รถถูกลบไปแล้ว) */
+  vehicle_id: string | null
   /** ทะเบียนรถที่ถอดออกมา (null = รถถูกลบไปแล้ว) */
   plate_no: string | null
   province: string | null
@@ -101,7 +103,7 @@ export async function fetchLastRemovals(
       supabase
         .from('tire_events')
         .select(
-          'tire_id, event_type, position_code, odometer, distance_km, event_date, note, ' +
+          'tire_id, event_type, vehicle_id, position_code, odometer, distance_km, event_date, note, ' +
             'vehicles(plate_no, province), removal_reasons(name)',
         )
         .in('event_type', ['mount', 'unmount'])
@@ -118,6 +120,7 @@ export async function fetchLastRemovals(
     for (const row of (data ?? []) as unknown as Array<{
       tire_id: string
       event_type: string
+      vehicle_id: string | null
       position_code: string | null
       odometer: number
       distance_km: number | null
@@ -130,6 +133,7 @@ export async function fetchLastRemovals(
       if (!result[row.tire_id]) {
         if (row.event_type !== 'unmount') continue
         result[row.tire_id] = {
+          vehicle_id: row.vehicles ? row.vehicle_id : null,
           plate_no: row.vehicles?.plate_no ?? null,
           province: row.vehicles?.province ?? null,
           position_code: row.position_code,

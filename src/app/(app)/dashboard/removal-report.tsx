@@ -1,53 +1,25 @@
 'use client'
 
 import * as React from 'react'
-import { CalendarDays, CircleDot, FileSpreadsheet, FileText, Filter, Route, TrendingUp } from 'lucide-react'
+import { CalendarDays, CircleDot, Filter, Route, TrendingUp } from 'lucide-react'
+import { ExportButtons } from '@/components/export-buttons'
 import {
-  Badge, Button, Card, CardBody, CardHeader, EmptyState, Field, Input, Select, Table, TableWrap, Td, Th,
+  Badge, Card, CardBody, CardHeader, EmptyState, Field, Select, Table, TableWrap, Td, Th,
 } from '@/components/ui'
 import { positionLabel } from '@/lib/axle-layouts'
 import { TireSpec } from '@/components/tire-spec'
-import { cn, formatKm, formatNumber, formatThaiDate, todayISO } from '@/lib/utils'
+import { cn, formatKm, formatNumber, formatThaiDate } from '@/lib/utils'
 import { StatusChip, TD_LG, TH_LG } from './dashboard-ui'
 import {
   ALL_REASONS,
   UNSPECIFIED_REASON,
   dateRangeLabel,
-  isWithinDateRange,
   removalReasonKey,
   summarizeRemovalRows,
   type DateRange,
   type RemovalReasonOption,
   type RemovalReportRow,
 } from './removal-report-types'
-
-/**
- * วันที่ย้อนหลังจากวันนี้ตามจำนวนเดือน (YYYY-MM-DD) — ใช้กับปุ่มลัดช่วงเวลา
- * @param months จำนวนเดือนที่ย้อนกลับ (0 = วันที่ 1 ของเดือนนี้)
- */
-function monthsAgoISO(months: number): string {
-  const d = new Date()
-  d.setHours(0, 0, 0, 0)
-  if (months === 0) {
-    d.setDate(1)
-  } else {
-    d.setMonth(d.getMonth() - months)
-  }
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
-const EMPTY_RANGE: DateRange = { from: '', to: '' }
-
-/** ปุ่มลัดช่วงเวลา: เดือนนี้ / 3 เดือน / 6 เดือน / ทั้งหมด */
-const RANGE_PRESETS: Array<{ key: string; label: string; range: () => DateRange }> = [
-  { key: 'month', label: 'เดือนนี้', range: () => ({ from: monthsAgoISO(0), to: todayISO() }) },
-  { key: '3m', label: '3 เดือน', range: () => ({ from: monthsAgoISO(3), to: todayISO() }) },
-  { key: '6m', label: '6 เดือน', range: () => ({ from: monthsAgoISO(6), to: todayISO() }) },
-  { key: 'all', label: 'ทั้งหมด', range: () => EMPTY_RANGE },
-]
 
 function SummaryItem({
   label,
@@ -74,29 +46,30 @@ function SummaryItem({
   )
 }
 
-/** รายงานสาเหตุการถอด/เปลี่ยนยาง พร้อมตัวกรองและไฟล์ส่งออก */
+/**
+ * รายงานสาเหตุการถอด/เปลี่ยนยาง พร้อมตัวกรองสาเหตุและไฟล์ส่งออก
+ * ช่วงวันที่ใช้ตัวกรองระดับหน้า dashboard (server กรอง rows มาให้แล้ว) — รับมาเพื่อแสดงหัวรายงานและตั้งชื่อไฟล์
+ * @param range ช่วงวันที่ที่หน้ากรองอยู่ (ว่างทั้งคู่ = ทั้งหมด)
+ */
 export function RemovalReport({
   companyName,
   rows,
   reasons,
+  range,
 }: {
   companyName: string
   rows: RemovalReportRow[]
   reasons: RemovalReasonOption[]
+  range: DateRange
 }) {
   const [reasonId, setReasonId] = React.useState(ALL_REASONS)
-  const [range, setRange] = React.useState<DateRange>(EMPTY_RANGE)
   const [exporting, setExporting] = React.useState<'excel' | 'pdf' | null>(null)
   const [exportError, setExportError] = React.useState<string | null>(null)
 
   const filteredRows = React.useMemo(
     () =>
-      rows.filter(
-        (row) =>
-          (reasonId === ALL_REASONS || removalReasonKey(row) === reasonId) &&
-          isWithinDateRange(row.eventDate, range),
-      ),
-    [reasonId, range, rows],
+      rows.filter((row) => reasonId === ALL_REASONS || removalReasonKey(row) === reasonId),
+    [reasonId, rows],
   )
   const summary = React.useMemo(() => summarizeRemovalRows(filteredRows), [filteredRows])
   const reasonLabel = reasonId === ALL_REASONS
@@ -107,13 +80,6 @@ export function RemovalReport({
   const rangeLabel = dateRangeLabel(range, (iso) => formatThaiDate(iso))
   const filterLabel = `${reasonLabel} · ${rangeLabel}`
   const hasUnspecifiedReason = rows.some((row) => row.reasonId === null)
-  const rangeInvalid = range.from !== '' && range.to !== '' && range.from > range.to
-
-  /** preset ที่ตรงกับช่วงปัจจุบัน (ใช้ไฮไลต์ปุ่มลัด) */
-  const activePreset = RANGE_PRESETS.find((p) => {
-    const r = p.range()
-    return r.from === range.from && r.to === range.to
-  })?.key
 
   async function handleExport(format: 'excel' | 'pdf') {
     setExporting(format)
@@ -136,7 +102,7 @@ export function RemovalReport({
     <Card className="mt-4">
       <CardHeader
         title={<span className="text-lg">สรุปสาเหตุการถอดและเปลี่ยนยาง</span>}
-        description={<span className="text-[15px] text-ink-700">วิเคราะห์จากประวัติ {formatNumber(rows.length)} รายการล่าสุดในระบบ</span>}
+        description={<span className="text-[15px] text-ink-700">วิเคราะห์จากประวัติ {formatNumber(rows.length)} รายการ · {rangeLabel} (เปลี่ยนช่วงได้ที่ตัวกรองด้านบน)</span>}
       />
 
       <CardBody className="space-y-5">
@@ -151,72 +117,12 @@ export function RemovalReport({
             </Select>
           </Field>
 
-          <Field
-            label="ช่วงวันที่ถอด"
-            className="w-full xl:max-w-md"
-            error={rangeInvalid ? 'วันเริ่มต้นต้องไม่เกินวันสิ้นสุด' : undefined}
-          >
-            <div className="flex items-center gap-2">
-              <Input
-                type="date"
-                value={range.from}
-                max={range.to || undefined}
-                onChange={(event) => setRange((r) => ({ ...r, from: event.target.value }))}
-                aria-label="วันเริ่มต้น"
-              />
-              <span className="text-ink-400">–</span>
-              <Input
-                type="date"
-                value={range.to}
-                min={range.from || undefined}
-                onChange={(event) => setRange((r) => ({ ...r, to: event.target.value }))}
-                aria-label="วันสิ้นสุด"
-              />
-            </div>
-          </Field>
-
-          <div className="flex flex-wrap gap-2 self-start xl:self-auto">
-            {RANGE_PRESETS.map((preset) => (
-              <button
-                key={preset.key}
-                type="button"
-                onClick={() => setRange(preset.range())}
-                className={cn(
-                  'min-h-12 rounded-xl border-2 px-4 text-base font-semibold transition-colors',
-                  activePreset === preset.key
-                    ? 'border-brand-600 bg-brand-600 text-white'
-                    : 'border-line bg-white text-ink-900 hover:border-brand-300 hover:bg-brand-50',
-                )}
-              >
-                {preset.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex flex-wrap gap-2 xl:ml-auto">
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              loading={exporting === 'excel'}
-              disabled={filteredRows.length === 0 || exporting !== null}
-              onClick={() => handleExport('excel')}
-            >
-              <FileSpreadsheet className="size-4" />
-              Export Excel
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              loading={exporting === 'pdf'}
-              disabled={filteredRows.length === 0 || exporting !== null}
-              onClick={() => handleExport('pdf')}
-            >
-              <FileText className="size-4" />
-              Export PDF
-            </Button>
-          </div>
+          <ExportButtons
+            exporting={exporting}
+            disabled={filteredRows.length === 0}
+            onExport={handleExport}
+            className="xl:ml-auto"
+          />
         </div>
 
         {exportError ? (
@@ -293,7 +199,7 @@ export function RemovalReport({
         <EmptyState
           icon={<Filter className="size-6" />}
           title="ไม่พบประวัติที่ตรงกับตัวกรอง"
-          description="ลองเลือกสาเหตุอื่น หรือขยายช่วงวันที่"
+          description="ลองเลือกสาเหตุอื่น หรือขยายช่วงวันที่ที่ตัวกรองด้านบนของหน้า"
         />
       ) : (
         <>

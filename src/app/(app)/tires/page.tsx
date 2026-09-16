@@ -4,6 +4,7 @@ import { PageHeader } from '@/components/app-shell'
 import { TiresClient } from './tires-client'
 import type { ModelOption } from './tire-form'
 import { fetchLastRemovals } from '@/lib/tire-events'
+import { computeTireStats, filterTiresByDate, parseTireDateFilter } from './tire-filters'
 import type { Tire, TireOverview } from '@/lib/database.types'
 
 export const metadata = { title: 'คลังยาง · Dream Tire' }
@@ -21,10 +22,10 @@ interface ModelRow {
 export default async function TiresPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string }>
+  searchParams: Promise<{ q?: string; status?: string; date_field?: string; from?: string; to?: string }>
 }) {
-  const { profile } = await requireSession(['admin', 'technician'])
-  const { q, status } = await searchParams
+  const { profile, company } = await requireSession(['admin', 'technician'])
+  const { q, status, date_field, from, to } = await searchParams
   const supabase = await createClient()
 
   const [{ data: overviewData }, { data: rawData }, { data: modelData }] = await Promise.all([
@@ -38,6 +39,8 @@ export default async function TiresPage({
   ])
 
   let tires = (overviewData ?? []) as TireOverview[]
+  // ตัวเลขสรุปทั้งบริษัท คำนวณก่อนกรอง เพื่อให้การ์ด KPI ตรงกับหน้า dashboard
+  const stats = computeTireStats(tires)
 
   // ยางที่ไม่ได้อยู่บนรถ ต้องรู้ว่าถอดมาจากทะเบียนไหน ที่เลขไมล์เท่าไร
   // ดึงก่อนกรอง เพื่อให้ค้นด้วยทะเบียนเจอยางที่ถอดออกจากรถคันนั้นแล้วด้วย
@@ -71,6 +74,9 @@ export default async function TiresPage({
   const rawTires: Record<string, Tire> = {}
   for (const t of (rawData ?? []) as Tire[]) rawTires[t.id] = t
 
+  // กรองช่วงวันที่ (between) — วันที่รับเข้าระบบอยู่ในตาราง tires ไม่ใช่ view จึงกรองหลังรวมข้อมูลดิบ
+  tires = filterTiresByDate(tires, rawTires, parseTireDateFilter({ date_field, from, to }))
+
   const models: ModelOption[] = ((modelData ?? []) as unknown as ModelRow[]).map((m) => ({
     id: m.id,
     brand: m.tire_brands?.name ?? '',
@@ -85,7 +91,7 @@ export default async function TiresPage({
     <>
       <PageHeader
         title="คลังยาง"
-        subtitle=""
+        subtitle={company?.name ?? undefined}
       />
       {/* ลูกค้าเพิ่มยางเข้าคลังเองไม่ได้ (canAdd ปิด) — เฉพาะ super admin ทำแทนได้จากหน้าจัดการบริษัท */}
       <TiresClient
@@ -94,6 +100,8 @@ export default async function TiresPage({
         models={models}
         lastRemovals={lastRemovals}
         canManage={profile.role === 'admin'}
+        companyName={company?.name ?? 'Dream Tire'}
+        stats={stats}
       />
     </>
   )

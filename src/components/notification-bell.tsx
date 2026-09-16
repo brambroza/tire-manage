@@ -3,10 +3,11 @@
 import * as React from 'react'
 import Link from 'next/link'
 import { AlertTriangle, Bell, CheckCircle2, Gauge, Repeat, Ruler, Truck } from 'lucide-react'
+// Gauge ใช้ทั้งหัวข้อ "ยางครบระยะสะสม" และไอคอนระยะของแต่ละแถว
 import { TireThumb } from '@/components/tire-thumb'
 import { TireSpec } from '@/components/tire-spec'
 import { positionLabel } from '@/lib/axle-layouts'
-import { cn, formatKm, formatNumber, formatThaiDate } from '@/lib/utils'
+import { cn, formatKm, formatKmApprox, formatNumber, formatThaiDate } from '@/lib/utils'
 import type { NotificationFeed } from '@/lib/notifications'
 
 /**
@@ -37,9 +38,10 @@ export function NotificationBell({ feed }: { feed: NotificationFeed }) {
 
   const {
     alerts, total, alertKm, alertTreadMm, vehicleAlerts, vehicleTotal, changeCount, changeDays,
+    lifetimeAlerts, lifetimeTotal, alertLifetimeKm,
   } = feed
-  /** ตัวเลขบนกระดิ่ง = ยางถึงเกณฑ์ + รถเปลี่ยนยางบ่อย */
-  const badgeTotal = total + vehicleTotal
+  /** ตัวเลขบนกระดิ่ง = ยางถึงเกณฑ์ + รถเปลี่ยนยางบ่อย + ยางครบระยะสะสม */
+  const badgeTotal = total + vehicleTotal + lifetimeTotal
   const hasAlerts = badgeTotal > 0
 
   return (
@@ -89,6 +91,65 @@ export function NotificationBell({ feed }: { feed: NotificationFeed }) {
               </span>
             )}
           </div>
+
+          {/* ยางครบระยะสะสม — ขึ้นบนสุดเพราะหมายถึงต้องสั่งยางมาเปลี่ยน */}
+          {alertLifetimeKm !== null && lifetimeAlerts.length > 0 && (
+            <div className="border-b border-line">
+              <p className="flex items-center gap-1.5 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-800">
+                <Gauge className="size-3.5" />
+                ยางครบระยะสะสม · วิ่งครบ {formatNumber(alertLifetimeKm)} กม.
+              </p>
+              <ul className="divide-y divide-line">
+                {lifetimeAlerts.map((a) => (
+                  <li key={a.tireId}>
+                    <Link
+                      href={`/tires/${a.tireId}`}
+                      onClick={() => setOpen(false)}
+                      className="flex items-start gap-3 border-l-4 border-rose-600 bg-rose-50/40 px-4 py-3 transition-colors hover:bg-rose-100/60"
+                    >
+                      <TireThumb
+                        src={a.imageUrl}
+                        alt={[a.brandName, a.modelName].filter(Boolean).join(' ')}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[15px] font-medium text-ink-900">{a.serialNo}</p>
+                        <TireSpec
+                          size={a.size}
+                          brandName={a.brandName}
+                          modelName={a.modelName}
+                          className="mt-1"
+                          sizeClassName="text-sm"
+                        />
+                        <p className="truncate text-sm text-ink-700">
+                          <span className="font-semibold text-ink-900">{a.plateNo ?? 'อยู่ในคลัง'}</span>
+                          {a.plateNo && ` · ${positionLabel(a.positionCode, a.vehicleAxleType)}`}
+                        </p>
+                        <p className="text-sm font-semibold text-rose-700">
+                          {formatKmApprox(a.lifetimeKm, a.isEstimated)}
+                          {/* ลูกค้าถามเองว่าตัวเลขมาจากไหน — ต้องบอกทุกครั้งที่เป็นค่าประมาณ */}
+                          {a.isMileageStale ? (
+                            <span className="ml-1.5 font-normal text-amber-700">· ต้องยืนยันเลขไมล์</span>
+                          ) : a.isEstimated ? (
+                            <span className="ml-1.5 font-normal text-ink-400">· ประมาณการ</span>
+                          ) : null}
+                        </p>
+                      </div>
+                      <AlertTriangle className="size-4 shrink-0 text-rose-600" />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+              {lifetimeTotal > lifetimeAlerts.length && (
+                <Link
+                  href="/dashboard#lifetime-alerts"
+                  onClick={() => setOpen(false)}
+                  className="block bg-surface-alt px-4 py-2 text-center text-xs font-medium text-brand-700 hover:bg-brand-50"
+                >
+                  ดูทั้งหมด {formatNumber(lifetimeTotal)} เส้น
+                </Link>
+              )}
+            </div>
+          )}
 
           {/* รถเปลี่ยนยางบ่อย — ขึ้นก่อนเพราะชี้ปัญหาที่ตัวรถ ไม่ใช่ยางเส้นเดียว */}
           {vehicleAlerts.length > 0 && (

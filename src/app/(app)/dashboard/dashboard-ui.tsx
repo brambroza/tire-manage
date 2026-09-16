@@ -1,7 +1,8 @@
 import Link from 'next/link'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, Check, Package, Repeat, X } from 'lucide-react'
 import { Card } from '@/components/ui'
 import { cn } from '@/lib/utils'
+import type { TireStatus } from '@/lib/database.types'
 
 /**
  * โทนสีความหมายเดียวทั้งหน้า dashboard
@@ -43,6 +44,14 @@ const TONE_SOLID: Record<DashTone, string> = {
   warn: 'bg-orange-600 text-white',
   bad: 'bg-rose-600 text-white',
   scrap: 'bg-rose-700 text-white',
+}
+
+/** โทนสี + ไอคอนของสถานะยาง — ใช้ชุดเดียวกันทั้ง dashboard และหน้าคลังยาง ให้สีตรงกับโดนัทและ legend */
+export const TIRE_STATUS_CHIP: Record<TireStatus, { tone: DashTone; icon: React.ReactNode }> = {
+  mounted: { tone: 'good', icon: <Check strokeWidth={3} /> },
+  in_stock: { tone: 'info', icon: <Package /> },
+  scrapped: { tone: 'scrap', icon: <X strokeWidth={3} /> },
+  retreading: { tone: 'warn', icon: <Repeat /> },
 }
 
 /** class สำหรับหัวตาราง — ใหญ่ขึ้น ไม่ uppercase สีเข้ม (override Th โดยไม่แก้ shared component) */

@@ -11,7 +11,7 @@ import { TireEventTable } from '@/components/tire-event-table'
 import { positionLabel } from '@/lib/axle-layouts'
 import { TIRE_EVENT_SELECT, type TireEventRow } from '@/lib/tire-events'
 import {
-  TIRE_STATUS_LABEL, TIRE_STATUS_TONE, formatBaht, formatNumber, treadPercent,
+  TIRE_STATUS_LABEL, TIRE_STATUS_TONE, formatBaht, formatKm, formatNumber, treadPercent,
 } from '@/lib/utils'
 import type { AxleType, Tire, TireOverview } from '@/lib/database.types'
 
@@ -40,6 +40,11 @@ export default async function TireDetailPage({ params }: { params: Promise<{ id:
   const events = (eventData ?? []) as unknown as TireEventRow[]
   const axleTypes = (axleTypeData ?? []) as AxleType[]
   const pct = treadPercent(t.tread_mm, t.new_tread_mm)
+  /** ครบระยะสะสมตลอดอายุยาง — คนละเกณฑ์กับ alert_km ที่นับเฉพาะรอบปัจจุบัน */
+  const lifetimeReached =
+    t.alert_lifetime_km !== null &&
+    t.status !== 'scrapped' &&
+    t.estimated_lifetime_km >= t.alert_lifetime_km
   const costPerKm = tire.purchase_price && t.lifetime_km > 0
     ? tire.purchase_price / t.lifetime_km
     : null
@@ -66,8 +71,13 @@ export default async function TireDetailPage({ params }: { params: Promise<{ id:
       />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {/* ระยะสะสมใช้ค่าที่รวมการประมาณ ให้ตรงกับตัวเลขที่ใช้แจ้งเตือน
+            "~" บอกว่ามีค่าประมาณปนอยู่ ห้ามแสดงปนกับค่าที่วัดจริงโดยไม่บอก */}
         <StatTile
-          label="ระยะสะสมตลอดอายุยาง" value={formatNumber(t.lifetime_km)} unit="กม."
+          label="ระยะสะสมตลอดอายุยาง"
+          value={`${t.is_estimated ? '~' : ''}${formatNumber(t.estimated_lifetime_km)}`}
+          unit={t.alert_lifetime_km !== null ? `/ ${formatNumber(t.alert_lifetime_km)} กม.` : 'กม.'}
+          tone={lifetimeReached ? 'rose' : 'brand'}
           icon={<Gauge className="size-4.5" />}
         />
         <StatTile
@@ -132,6 +142,27 @@ export default async function TireDetailPage({ params }: { params: Promise<{ id:
                 )
               }
             />
+            {/* อธิบายที่มาของตัวเลขเมื่อมีค่าประมาณปนอยู่ — ลูกค้าถามเรื่องนี้มาเอง */}
+            {t.is_estimated && (
+              <div className="col-span-2 rounded-xl bg-surface-alt px-3.5 py-2.5">
+                <p className="text-xs font-medium text-ink-500">ที่มาของระยะสะสม</p>
+                <p className="mt-0.5 text-sm text-ink-700">
+                  วัดจริง {formatKm(t.current_mileage)}
+                  {t.days_since_mileage !== null && ` เมื่อ ${formatNumber(t.days_since_mileage)} วันก่อน`}
+                  {t.avg_km_per_month !== null &&
+                    ` แล้วประมาณเพิ่มจากค่าเฉลี่ย ${formatNumber(t.avg_km_per_month)} กม./เดือน`}
+                  {' '}(+{formatNumber(t.estimated_extra_km)} กม.)
+                </p>
+                {t.is_mileage_stale && (
+                  <p className="mt-1 text-sm font-medium text-amber-700">
+                    เลขไมล์เก่ากว่า {formatNumber(t.estimate_max_days)} วัน ระบบหยุดประมาณแล้ว —{' '}
+                    <Link href={`/mileage?vehicle=${t.vehicle_id ?? ''}`} className="underline underline-offset-2">
+                      บันทึกเลขไมล์ล่าสุด
+                    </Link>
+                  </p>
+                )}
+              </div>
+            )}
             {tire.note && (
               <div className="col-span-2">
                 <p className="text-xs text-ink-400">หมายเหตุ</p>

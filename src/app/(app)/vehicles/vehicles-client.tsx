@@ -2,11 +2,12 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { History, Pencil, Plus, Power, PowerOff, Repeat, Truck } from 'lucide-react'
 import { ALERT_ROW, Badge, Button, Card, EmptyState, Table, TableWrap, Td, Th } from '@/components/ui'
 import { ConfirmDialog } from '@/components/ui/modal'
 import { SearchInput } from '@/components/search-input'
+import { ExportButtons } from '@/components/export-buttons'
 import { VehicleHistoryModal } from '@/components/history-modal'
 import { getLayout } from '@/lib/axle-layouts'
 import { formatKm } from '@/lib/utils'
@@ -29,6 +30,7 @@ export function VehiclesClient({
   enableLinks = true,
   enableHistory = false,
   changeAlertLabel,
+  companyName = 'Dream Tire',
 }: {
   vehicles: VehicleRow[]
   /** ประเภทเพลาจาก Supabase ใช้ทั้งชื่อ จำนวนล้อ และฟอร์มรถ */
@@ -41,8 +43,11 @@ export function VehiclesClient({
   enableHistory?: boolean
   /** คำอธิบายเกณฑ์ "เปลี่ยนบ่อย" สำหรับ tooltip ของป้าย */
   changeAlertLabel?: string
+  /** ชื่อบริษัทสำหรับหัวรายงานที่ส่งออก */
+  companyName?: string
 }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [formOpen, setFormOpen] = React.useState(false)
   const [editing, setEditing] = React.useState<Vehicle | null>(null)
   const [confirm, setConfirm] = React.useState<VehicleRow | null>(null)
@@ -50,6 +55,25 @@ export function VehiclesClient({
   const [history, setHistory] = React.useState<VehicleRow | null>(null)
   const [busy, setBusy] = React.useState(false)
   const [message, setMessage] = React.useState<string | null>(null)
+  /** รูปแบบไฟล์ที่กำลังสร้างอยู่ (null = ว่าง) */
+  const [exporting, setExporting] = React.useState<'excel' | 'pdf' | null>(null)
+
+  /** ส่งออกรายการรถที่แสดงอยู่ (ตามคำค้นหาปัจจุบัน) เป็น Excel หรือ PDF */
+  async function handleExport(format: 'excel' | 'pdf') {
+    setExporting(format)
+    setMessage(null)
+    try {
+      const exporter = await import('./vehicles-export')
+      const input = { companyName, searchTerm: searchParams.get('q') ?? '', vehicles, axleTypes }
+      if (format === 'excel') await exporter.exportVehiclesExcel(input)
+      else await exporter.exportVehiclesPdf(input)
+    } catch (error) {
+      console.error(error)
+      setMessage('สร้างไฟล์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง')
+    } finally {
+      setExporting(null)
+    }
+  }
 
   function openCreate() {
     setEditing(null)
@@ -74,10 +98,17 @@ export function VehiclesClient({
     <>
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
         <SearchInput placeholder="ค้นหาทะเบียนรถ, ยี่ห้อ, รุ่น..." className="sm:max-w-md" />
-        <Button onClick={openCreate} className="sm:ml-auto">
-          <Plus className="size-4.5" />
-          เพิ่มรถใหม่
-        </Button>
+        <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+          <ExportButtons
+            exporting={exporting}
+            disabled={vehicles.length === 0}
+            onExport={handleExport}
+          />
+          <Button onClick={openCreate}>
+            <Plus className="size-4.5" />
+            เพิ่มรถใหม่
+          </Button>
+        </div>
       </div>
 
       {message && (

@@ -27,6 +27,12 @@ export type Company = {
   /** รถ "เปลี่ยนยางบ่อย" = ถอดยางตั้งแต่เท่านี้ครั้ง ภายใน alert_change_days วัน */
   alert_change_count: number
   alert_change_days: number
+  /** ระยะสะสมตลอดอายุยางที่จะเตือน (กม.) — null = ปิดการเตือนข้อนี้ */
+  alert_lifetime_km: number | null
+  /** ค่าเฉลี่ยกลางของฟลีต (กม./เดือน) — null = ไม่ประมาณการ */
+  avg_km_per_month: number | null
+  /** หยุดประมาณการหลังไม่มีเลขไมล์จริงกี่วัน */
+  estimate_max_days: number
   is_active: boolean
   created_at: string
   updated_at: string
@@ -114,6 +120,10 @@ export type Vehicle = {
   model: string | null
   axle_type: string
   current_mileage: number
+  /** ค่าเฉลี่ยที่รถคันนี้วิ่งต่อเดือน (กม.) — null = ใช้ค่ากลางของบริษัท */
+  avg_km_per_month: number | null
+  /** เวลาที่ current_mileage ถูกอัปเดตจากเลขไมล์จริงครั้งล่าสุด */
+  mileage_updated_at: string
   note: string | null
   is_active: boolean
   created_at: string
@@ -186,6 +196,34 @@ export type TireOverview = {
   alert_tread_mm: number
   /** รูปยางจากรุ่นที่ผูกอยู่ (ถ้ามี) */
   image_url: string | null
+  /** ค่าเฉลี่ยที่มีผลกับรถคันนี้ (ของคันนี้ก่อน ไม่มีจึงใช้ค่ากลางบริษัท) */
+  avg_km_per_month: number | null
+  /** เวลาที่เลขไมล์จริงถูกอัปเดตล่าสุด — null เมื่อยางไม่ได้อยู่บนรถ */
+  mileage_updated_at: string | null
+  days_since_mileage: number | null
+  estimate_max_days: number
+  /** กม. ที่ประมาณว่าวิ่งเพิ่มหลังเลขไมล์จริงครั้งล่าสุด (0 = ไม่มีการประมาณ) */
+  estimated_extra_km: number
+  estimated_run_km: number
+  /** ระยะสะสมรวมค่าประมาณ — ตัวเลขที่ใช้ตัดสินเกณฑ์ alert_lifetime_km */
+  estimated_lifetime_km: number
+  /** true = ตัวเลขมีค่าประมาณปนอยู่ ต้องแสดงป้าย "ประมาณการ" */
+  is_estimated: boolean
+  /** true = เลขไมล์เก่าเกินเพดาน หยุดประมาณแล้ว ต้องให้คนยืนยัน */
+  is_mileage_stale: boolean
+  alert_lifetime_km: number | null
+  /** อีกกี่วันถึงเกณฑ์ระยะสะสม (0 = ถึงแล้ว, null = คำนวณไม่ได้) */
+  days_to_lifetime_alert: number | null
+}
+
+/** view: public.vehicle_observed_monthly_km — ค่าเฉลี่ยที่คำนวณจากประวัติ ใช้แนะนำตอนกรอกฟอร์ม */
+export type VehicleObservedMonthlyKm = {
+  vehicle_id: string
+  company_id: string
+  observed_km_per_month: number
+  sample_events: number
+  first_date: string
+  last_date: string
 }
 
 /** view: public.vehicle_change_alerts — รถที่ถอดยางถึงเกณฑ์ "เปลี่ยนบ่อย" */
@@ -223,7 +261,8 @@ export interface Database {
         Row: Company
         Insert: Insert<Company, Timestamps | 'code' | 'tax_id' | 'phone' | 'email' | 'address'
           | 'contact_name' | 'logo_url' | 'alert_km' | 'alert_tread_mm'
-          | 'alert_change_count' | 'alert_change_days' | 'is_active'>
+          | 'alert_change_count' | 'alert_change_days' | 'alert_lifetime_km'
+          | 'avg_km_per_month' | 'estimate_max_days' | 'is_active'>
         Update: Partial<Company>
         Relationships: []
       }
@@ -273,7 +312,8 @@ export interface Database {
       vehicles: {
         Row: Vehicle
         Insert: Insert<Vehicle, Timestamps | 'brand' | 'model'
-          | 'current_mileage' | 'note' | 'is_active'>
+          | 'current_mileage' | 'avg_km_per_month' | 'mileage_updated_at'
+          | 'note' | 'is_active'>
         Update: Partial<Vehicle>
         Relationships: [FK<'company_id', 'companies'>, FK<'axle_type', 'axle_types', 'code'>]
       }
@@ -307,6 +347,7 @@ export interface Database {
     Views: {
       tire_overview: { Row: TireOverview; Relationships: [] }
       vehicle_change_alerts: { Row: VehicleChangeAlert; Relationships: [] }
+      vehicle_observed_monthly_km: { Row: VehicleObservedMonthlyKm; Relationships: [] }
     }
     Functions: {
       mount_tire: {

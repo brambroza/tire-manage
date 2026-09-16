@@ -1,14 +1,14 @@
 'use client'
 
 import Link from 'next/link'
-import { Check, CircleDot, Package, Repeat, X } from 'lucide-react'
+import { CircleDot } from 'lucide-react'
 import { Card, CardHeader, EmptyState, Table, TableWrap, Td, Th } from '@/components/ui'
 import { Pagination, SMALL_PAGE_SIZE_OPTIONS, usePagination } from '@/components/ui/pagination'
 import { TireThumb } from '@/components/tire-thumb'
 import { TireSpec } from '@/components/tire-spec'
 import { positionLabel } from '@/lib/axle-layouts'
 import { TIRE_STATUS_LABEL, cn, formatKm } from '@/lib/utils'
-import { StatusChip, TD_LG, TH_LG, type DashTone } from './dashboard-ui'
+import { StatusChip, TD_LG, TH_LG, TIRE_STATUS_CHIP } from './dashboard-ui'
 import type { TireStatus } from '@/lib/database.types'
 
 /** ข้อมูลยางเท่าที่ตารางระยะสะสมต้องใช้ — ส่งจาก server component มาให้ client */
@@ -23,14 +23,6 @@ export interface TopMileageRow {
   plateNo: string | null
   positionCode: string | null
   lifetimeKm: number
-}
-
-/** โทนสี + ไอคอนของสถานะยาง — สีเดียวกับโดนัทและ legend ด้านบน */
-const STATUS_CHIP: Record<TireStatus, { tone: DashTone; icon: React.ReactNode }> = {
-  mounted: { tone: 'good', icon: <Check strokeWidth={3} /> },
-  in_stock: { tone: 'info', icon: <Package /> },
-  scrapped: { tone: 'scrap', icon: <X strokeWidth={3} /> },
-  retreading: { tone: 'warn', icon: <Repeat /> },
 }
 
 /**
@@ -68,7 +60,7 @@ export function TopMileageTable({ rows }: { rows: TopMileageRow[] }) {
               </thead>
               <tbody>
                 {pagination.pageItems.map((t) => {
-                  const chip = STATUS_CHIP[t.status]
+                  const chip = TIRE_STATUS_CHIP[t.status]
                   return (
                     <tr key={t.id} className="transition-colors odd:bg-surface-alt/60 hover:bg-brand-50/60">
                       <Td className={TD_LG}>

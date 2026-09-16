@@ -27,7 +27,7 @@ export default async function CompanyVehiclesPage({
     )
   }
 
-  const [{ data: vehicleData }, { data: mountedTires }, { data: axleTypeData }] = await Promise.all([
+  const [{ data: vehicleData }, { data: mountedTires }, { data: axleTypeData }, { data: companyData }] = await Promise.all([
     query,
     supabase.from('tires').select('vehicle_id').eq('company_id', id).eq('status', 'mounted'),
     // super admin เห็นเพลาทุกแบบ แต่หน้านี้ทำงานแทนลูกค้า จึงจำกัดตามสิทธิ์ของบริษัทนั้น
@@ -37,6 +37,7 @@ export default async function CompanyVehiclesPage({
       .eq('company_axle_types.company_id', id)
       .order('sort_order')
       .order('name'),
+    supabase.from('companies').select('name').eq('id', id).maybeSingle(),
   ])
 
   const mountedCount = new Map<string, number>()
@@ -64,6 +65,7 @@ export default async function CompanyVehiclesPage({
         companyId={id}
         enableLinks={false}
         enableHistory
+        companyName={companyData?.name ?? 'Dream Tire'}
       />
     </>
   )

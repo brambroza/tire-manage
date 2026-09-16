@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { requireSession } from '@/lib/auth'
 import { resolveCompanyScope } from '@/lib/company-scope'
 import { createClient } from '@/lib/supabase/server'
-import { ActionResult, fail, optionalText, zodFail } from '@/lib/action-result'
+import { ActionResult, fail, optionalNumber, optionalText, zodFail } from '@/lib/action-result'
 import { HISTORY_LIMIT, VEHICLE_EVENT_SELECT, type VehicleEventRow } from '@/lib/tire-events'
 import { ODOMETER_MAX, ODOMETER_MAX_MESSAGE, PLATE_PATTERN, PLATE_PATTERN_MESSAGE } from '@/lib/utils'
 
@@ -20,6 +20,11 @@ const vehicleSchema = z.object({
     .int()
     .min(0, 'เลขไมล์ต้องไม่ติดลบ')
     .max(ODOMETER_MAX, ODOMETER_MAX_MESSAGE),
+  /** ค่าเฉลี่ยที่รถคันนี้วิ่งต่อเดือน — เว้นว่าง = ใช้ค่ากลางของบริษัท */
+  avg_km_per_month: optionalNumber.refine(
+    (v) => v === null || (Number.isInteger(v) && v > 0 && v <= ODOMETER_MAX),
+    'ต้องเป็นจำนวนเต็มบวก ไม่เกิน 999,999',
+  ),
   note: optionalText,
 })
 
@@ -273,9 +278,14 @@ export async function updateMileage(
     }
   }
 
+  // ประทับเวลาด้วยเสมอ — แม้เลขเท่าเดิม ("วันนี้รถไม่ได้วิ่ง" ก็เป็นข้อมูลจริง)
+  // ค่านี้เป็นจุดตั้งต้นของการประมาณระยะ ต้องขยับทุกครั้งที่มีคนยืนยันเลขไมล์
   const { data, error } = await supabase
     .from('vehicles')
-    .update({ current_mileage: parsed.data.mileage })
+    .update({
+      current_mileage: parsed.data.mileage,
+      mileage_updated_at: new Date().toISOString(),
+    })
     .eq('id', id)
     .select('company_id')
     .maybeSingle()
@@ -325,4 +335,37 @@ export async function getVehicleHistoryAction(
 
   if (error) return fail(error)
   return { ok: true, data: (data ?? []) as unknown as VehicleEventRow[] }
+}
+
+/**
+ * ค่าเฉลี่ย กม./เดือน ที่คำนวณได้จากประวัติถอด-ใส่ยางของรถคันนี้
+ *
+ * ใช้เป็นคำแนะนำใต้ช่องกรอกในฟอร์ม ไม่ได้นำไปใช้อัตโนมัติ — ค่านี้เป็นการตัดสินใจ
+ * ของลูกค้า แต่ทำให้ตัวเลขเริ่มต้นไม่ใช่การเดาลอย ๆ
+ *
+ * @param vehicleId รถที่ต้องการดู
+ * @returns null ถ้าประวัติน้อยเกินกว่าจะคำนวณได้อย่างมีความหมาย
+ */
+export async function getObservedMonthlyKm(
+  vehicleId: string,
+): Promise<ActionResult<{ kmPerMonth: number; sampleEvents: number; lastDate: string } | null>> {
+  await requireSession(['admin', 'super_admin'])
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('vehicle_observed_monthly_km')
+    .select('observed_km_per_month, sample_events, last_date')
+    .eq('vehicle_id', vehicleId)
+    .maybeSingle()
+
+  if (error) return fail(error)
+  if (!data) return { ok: true, data: null }
+  return {
+    ok: true,
+    data: {
+      kmPerMonth: data.observed_km_per_month,
+      sampleEvents: data.sample_events,
+      lastDate: data.last_date,
+    },
+  }
 }

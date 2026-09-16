@@ -58,6 +58,7 @@ export default async function VehiclesPage({
         vehicles={vehicles}
         axleTypes={(axleTypeData ?? []) as AxleType[]}
         changeAlertLabel={`≥ ${company?.alert_change_count ?? 3} ครั้งใน ${company?.alert_change_days ?? 90} วัน`}
+        companyName={company?.name ?? 'Dream Tire'}
       />
     </>
   )

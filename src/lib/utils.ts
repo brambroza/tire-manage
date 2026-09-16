@@ -22,6 +22,43 @@ export function formatKm(n: number | null | undefined): string {
   return n === null || n === undefined ? '-' : `${formatNumber(n)} กม.`
 }
 
+/**
+ * จัดรูปแบบระยะทางที่อาจมีค่าประมาณปนอยู่ เช่น "~128,560 กม."
+ *
+ * ลูกค้าถามมาเองว่าตัวเลขแจ้งเตือนคำนวณจากอะไร ถ้าแสดงค่าที่เดาปนกับค่าที่วัดจริง
+ * โดยไม่บอก จะเสียความเชื่อถือมากกว่าไม่มีฟีเจอร์ — ทุกที่ที่โชว์ค่าประมาณต้องใช้ตัวนี้
+ *
+ * @param n ระยะทาง (กม.)
+ * @param estimated true = ตัวเลขมีค่าประมาณปนอยู่ ให้เติม "~" นำหน้า
+ */
+export function formatKmApprox(n: number | null | undefined, estimated: boolean): string {
+  if (n === null || n === undefined) return '-'
+  return `${estimated ? '~' : ''}${formatNumber(n)} กม.`
+}
+
+/** จำนวนวันเฉลี่ยต่อเดือน (365.25 / 12) — ต้องตรงกับค่าที่ใช้ใน view tire_overview */
+export const DAYS_PER_MONTH = 30.44
+
+/**
+ * ระยะที่ประมาณว่ารถวิ่งเพิ่มหลังบันทึกเลขไมล์จริงครั้งล่าสุด
+ *
+ * ต้องให้ผลตรงกับสูตรใน view `tire_overview` เสมอ — ที่นี่มีไว้เพื่อแสดงตัวอย่าง
+ * ในฟอร์มตั้งค่าเท่านั้น ตัวเลขที่ใช้แจ้งเตือนจริงมาจาก SQL
+ *
+ * @param daysSince จำนวนวันตั้งแต่บันทึกเลขไมล์จริงครั้งล่าสุด
+ * @param avgKmPerMonth ค่าเฉลี่ยที่รถวิ่งต่อเดือน (null = ไม่ประมาณ)
+ * @param maxDays เพดาน หยุดประมาณเมื่อเลขไมล์เก่ากว่านี้
+ */
+export function estimateExtraKm(
+  daysSince: number | null,
+  avgKmPerMonth: number | null,
+  maxDays: number,
+): number {
+  if (daysSince === null || avgKmPerMonth === null || avgKmPerMonth <= 0) return 0
+  const days = Math.min(Math.max(daysSince, 0), maxDays)
+  return Math.floor((days * avgKmPerMonth) / DAYS_PER_MONTH)
+}
+
 /** จัดรูปแบบเงินบาท */
 export function formatBaht(n: number | null | undefined): string {
   return n === null || n === undefined ? '-' : `${formatNumber(n, 2)} บาท`

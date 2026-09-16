@@ -8,10 +8,14 @@ import { Button, Field, Input, Select, Textarea } from '@/components/ui'
 import { getLayout } from '@/lib/axle-layouts'
 import { PROVINCES } from '@/lib/provinces'
 import {
-  ODOMETER_MAX, PLATE_NUMBER_MAX, PLATE_PREFIX_MAX, sanitizePlateNumber, sanitizePlatePrefix,
+  ODOMETER_MAX, PLATE_NUMBER_MAX, PLATE_PREFIX_MAX,
+  formatNumber, formatThaiDate, sanitizePlateNumber, sanitizePlatePrefix,
 } from '@/lib/utils'
-import { createVehicle, updateVehicle, type VehicleInput } from './actions'
+import { createVehicle, getObservedMonthlyKm, updateVehicle, type VehicleInput } from './actions'
 import type { AxleType, Vehicle } from '@/lib/database.types'
+
+/** ค่าเฉลี่ยที่คำนวณได้จากประวัติถอด-ใส่ยาง ใช้แนะนำตอนกรอกฟอร์ม */
+type ObservedAverage = { kmPerMonth: number; sampleEvents: number; lastDate: string }
 
 const EMPTY: VehicleInput = {
   plate_no: '',
@@ -20,6 +24,7 @@ const EMPTY: VehicleInput = {
   model: '',
   axle_type: '10W',
   current_mileage: 0,
+  avg_km_per_month: '',
   note: '',
 }
 
@@ -74,6 +79,9 @@ export function VehicleFormModal({
     axleTypes[0]?.code ??
     EMPTY.axle_type
 
+  // ค่าเฉลี่ยที่คำนวณได้จากประวัติถอด-ใส่ยาง ใช้แนะนำเท่านั้น ไม่เติมให้อัตโนมัติ
+  const [observed, setObserved] = React.useState<ObservedAverage | null>(null)
+
   // รีเซ็ตค่าในฟอร์มเมื่อเปิด modal ใหม่ (ปรับ state ระหว่าง render ตามแนวทางของ React)
   const formKey = open ? vehicle?.id ?? 'new' : null
   const [activeKey, setActiveKey] = React.useState<string | null>(null)
@@ -91,11 +99,25 @@ export function VehicleFormModal({
             model: vehicle.model ?? '',
             axle_type: vehicle.axle_type,
             current_mileage: vehicle.current_mileage,
+            avg_km_per_month: vehicle.avg_km_per_month ?? '',
             note: vehicle.note ?? '',
           }
         : { ...EMPTY, axle_type: defaultAxleType },
     )
+    setObserved(null)
   }
+
+  const editingVehicleId = open ? vehicle?.id ?? null : null
+  React.useEffect(() => {
+    if (!editingVehicleId) return
+    let cancelled = false
+    void getObservedMonthlyKm(editingVehicleId).then((result) => {
+      if (!cancelled && result.ok) setObserved(result.data ?? null)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [editingVehicleId])
 
   const set = <K extends keyof VehicleInput>(key: K, value: VehicleInput[K]) =>
     setForm((f) => ({ ...f, [key]: value }))
@@ -263,6 +285,39 @@ export function VehicleFormModal({
             />
           </Field>
         </div>
+
+        <Field
+          label="ค่าเฉลี่ยที่วิ่งต่อเดือน (กม.)"
+          hint="ใช้ประมาณระยะที่วิ่งไปหลังบันทึกเลขไมล์ครั้งล่าสุด · เว้นว่าง = ใช้ค่ากลางของบริษัท"
+          error={fieldErrors.avg_km_per_month}
+        >
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={ODOMETER_MAX}
+            placeholder="ใช้ค่ากลางของบริษัท"
+            value={form.avg_km_per_month ?? ''}
+            onChange={(e) => set('avg_km_per_month', e.target.value)}
+          />
+          {observed && (
+            <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-500">
+              <span>
+                จากประวัติ ~{formatNumber(observed.kmPerMonth)} กม./เดือน
+                <span className="text-ink-400">
+                  {' '}({formatNumber(observed.sampleEvents)} รายการ ถึง {formatThaiDate(observed.lastDate)})
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={() => set('avg_km_per_month', String(observed.kmPerMonth))}
+                className="font-medium text-brand-700 underline underline-offset-2 hover:text-brand-800"
+              >
+                ใช้ค่านี้
+              </button>
+            </p>
+          )}
+        </Field>
 
         <Field label="หมายเหตุ" error={fieldErrors.note}>
           <Textarea

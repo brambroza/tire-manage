@@ -1,12 +1,13 @@
 import Link from 'next/link'
 import {
-  AlertTriangle, ArrowRight, Ban, Check, CircleDot, Package, Repeat, Truck,
+  AlertTriangle, ArrowRight, Ban, Check, CircleDot, Gauge, Package, Repeat, Truck,
 } from 'lucide-react'
 import { requireSession } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
-import { getVehicleChangeAlerts } from '@/lib/notifications'
+import {
+  LIFETIME_SOON_DAYS, getLifetimeAlerts, getLifetimeSoonAlerts, getVehicleChangeAlerts,
+} from '@/lib/notifications'
 import { PageHeader } from '@/components/app-shell'
-import type { MonthPoint } from '@/components/charts'
 import {
   ALERT_ROW, Card, CardBody, CardHeader, EmptyState, Table, TableWrap, Td, Th, alertLevel,
 } from '@/components/ui'
@@ -18,10 +19,20 @@ import { DashboardMonthlyChart, DashboardStatusDonut } from './dashboard-charts'
 import { KpiCard, StatusChip, TD_LG, TH_LG, TodayCard } from './dashboard-ui'
 import { RemovalReport } from './removal-report'
 import { TopMileageTable, type TopMileageRow } from './top-mileage-table'
+import { LifetimeAlertCard } from './lifetime-alert-card'
+import { DashboardDateFilter } from './dashboard-date-filter'
+import { buildEventSeries, isRangeInvalid, parseDashboardRange } from './dashboard-filters'
+import { dateRangeLabel } from './removal-report-types'
 import type { RemovalReasonOption, RemovalReportRow } from './removal-report-types'
 import type { TireOverview } from '@/lib/database.types'
 
 export const metadata = { title: 'ภาพรวม · Dream Tire' }
+
+/** จำนวนแถวสูงสุดต่อกลุ่มในการ์ด "ยางครบระยะสะสม" */
+const DASHBOARD_LIFETIME_ITEMS = 10
+
+/** เพดานจำนวน event ที่ดึงมาทำกราฟ — กันหน้าโหลดช้าเมื่อเลือก "ทั้งหมด" กับบริษัทที่มีประวัติมาก */
+const CHART_EVENT_LIMIT = 20000
 
 /** แถวประวัติการถอดยางที่ join ข้อมูลยาง/รถ/สาเหตุมาด้วย */
 interface RemovalEventRow {
@@ -51,44 +62,26 @@ const COLOR_LEGEND: Array<{ className: string; label: string }> = [
   { className: 'bg-rose-600', label: 'แดง = ดอกยางต่ำ / ต้องจัดการ' },
 ]
 
-/** สร้างชุดข้อมูล 6 เดือนล่าสุดสำหรับกราฟ */
-function buildMonthlySeries(
-  events: Array<{ event_type: string; event_date: string }>,
-): MonthPoint[] {
-  const months: MonthPoint[] = []
-  const index = new Map<string, MonthPoint>()
-  const now = new Date()
-
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    const key = `${d.getFullYear()}-${d.getMonth()}`
-    const point: MonthPoint = {
-      month: d.toLocaleDateString('th-TH', { month: 'short' }),
-      mount: 0,
-      unmount: 0,
-    }
-    months.push(point)
-    index.set(key, point)
-  }
-
-  for (const e of events) {
-    const d = new Date(e.event_date)
-    const point = index.get(`${d.getFullYear()}-${d.getMonth()}`)
-    if (!point) continue
-    if (e.event_type === 'mount') point.mount++
-    else point.unmount++
-  }
-
-  return months
-}
-
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ from?: string; to?: string }>
+}) {
   const { company } = await requireSession(['admin'])
   const supabase = await createClient()
-  const firstChartMonth = new Date()
-  firstChartMonth.setDate(1)
-  firstChartMonth.setHours(0, 0, 0, 0)
-  firstChartMonth.setMonth(firstChartMonth.getMonth() - 5)
+
+  // ช่วงวันที่ของหน้า (?from=&to=) — ว่าง = ทั้งหมด; ช่วงกลับด้านถือว่าไม่กรอง ให้ฟอร์มโชว์ error แทน
+  const rawRange = parseDashboardRange(await searchParams)
+  const range = isRangeInvalid(rawRange) ? { from: '', to: '' } : rawRange
+  const hasRange = Boolean(range.from || range.to)
+
+  /** เติมเงื่อนไขช่วงวันที่ให้ query ของ tire_events (ด้านที่ว่างไม่จำกัด) */
+  function withRange<T extends { gte(c: string, v: string): T; lte(c: string, v: string): T }>(query: T): T {
+    let q = query
+    if (range.from) q = q.gte('event_date', range.from)
+    if (range.to) q = q.lte('event_date', range.to)
+    return q
+  }
 
   const [
     { data: tireRows },
@@ -97,22 +90,28 @@ export default async function DashboardPage() {
     { data: removalReasonRows },
     { count: vehicleCount },
     vehicleAlerts,
+    lifetimeReached,
+    lifetimeSoon,
   ] = await Promise.all([
     supabase
       .from('tire_overview')
       .select('*')
       .order('lifetime_km', { ascending: false })
       .limit(2000),
-    supabase
-      .from('tire_events')
-      .select('event_type, event_date')
-      .gte('event_date', firstChartMonth.toISOString().slice(0, 10)),
-    supabase
-      .from('tire_events')
-      .select('id, event_date, position_code, odometer, tread_mm, distance_km, reason_id, note, ' +
-        'tires(serial_no, brand_name, model_name, size), vehicles(plate_no, province, axle_type), ' +
-        'removal_reasons(name)')
-      .eq('event_type', 'unmount')
+    // กราฟถอด-ใส่: ดึงเฉพาะสองคอลัมน์ตามช่วงที่เลือก (ไม่เลือก = ทั้งหมด)
+    withRange(
+      supabase
+        .from('tire_events')
+        .select('event_type, event_date'),
+    ).limit(CHART_EVENT_LIMIT),
+    withRange(
+      supabase
+        .from('tire_events')
+        .select('id, event_date, position_code, odometer, tread_mm, distance_km, reason_id, note, ' +
+          'tires(serial_no, brand_name, model_name, size), vehicles(plate_no, province, axle_type), ' +
+          'removal_reasons(name)')
+        .eq('event_type', 'unmount'),
+    )
       .order('event_date', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(2000),
@@ -123,6 +122,14 @@ export default async function DashboardPage() {
       .limit(100),
     supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('is_active', true),
     company ? getVehicleChangeAlerts(supabase, company.id) : Promise.resolve([]),
+    // ยางครบระยะสะสม — กรองใน SQL เพราะถ้าดึงมาแล้วค่อยกรอง
+    // ยางที่ถึงเกณฑ์แต่อยู่นอก limit จะหายเงียบ
+    company
+      ? getLifetimeAlerts(supabase, company, DASHBOARD_LIFETIME_ITEMS)
+      : Promise.resolve({ items: [], total: 0 }),
+    company
+      ? getLifetimeSoonAlerts(supabase, company, LIFETIME_SOON_DAYS, DASHBOARD_LIFETIME_ITEMS)
+      : Promise.resolve([]),
   ])
 
   const tires = (tireRows ?? []) as TireOverview[]
@@ -130,6 +137,8 @@ export default async function DashboardPage() {
   const alertTread = company?.alert_tread_mm ?? 3
   const changeCount = company?.alert_change_count ?? 3
   const changeDays = company?.alert_change_days ?? 90
+  /** null = บริษัทยังไม่ได้เปิดใช้การเตือนระยะสะสม */
+  const alertLifetimeKm = company?.alert_lifetime_km ?? null
 
   const mounted = tires.filter((t) => t.status === 'mounted')
   const inStock = tires.filter((t) => t.status === 'in_stock')
@@ -147,6 +156,13 @@ export default async function DashboardPage() {
   const warnCount = alerts.length - dangerCount
 
   const totalKm = tires.reduce((sum, t) => sum + t.lifetime_km, 0)
+
+  const chartEvents = chartEventRows ?? []
+  const chartSeries = buildEventSeries(chartEvents, range)
+  const mountCount = chartEvents.filter((e) => e.event_type === 'mount').length
+  const unmountCount = chartEvents.length - mountCount
+  const rangeLabel = dateRangeLabel(range, (iso) => formatThaiDate(iso))
+  const chartTitle = hasRange ? `การถอด-ใส่ยาง ${rangeLabel}` : 'การถอด-ใส่ยางทั้งหมด'
 
   const removalRows: RemovalReportRow[] = ((removalEventRows ?? []) as unknown as RemovalEventRow[])
     .map((event) => ({
@@ -199,6 +215,9 @@ export default async function DashboardPage() {
         }
       />
 
+      {/* กรองช่วงวันที่ (between) — มีผลกับกราฟถอด-ใส่ และรายงานสาเหตุการถอด; ตัวเลขสถานะปัจจุบันไม่เปลี่ยน */}
+      <DashboardDateFilter />
+
       {/* คำอธิบายสี */}
 {/*       <ul className="mb-5 flex flex-wrap gap-x-6 gap-y-2 text-[15px] text-ink-700" aria-label="ความหมายของสี">
         {COLOR_LEGEND.map((c) => (
@@ -241,22 +260,36 @@ export default async function DashboardPage() {
         <KpiCard label="ใช้งานอยู่บนรถ" value={formatNumber(mounted.length)} unit="เส้น" tone="good" icon={<Truck />} />
         <KpiCard label="อยู่ในคลัง" value={formatNumber(inStock.length)} unit="เส้น" tone="info" icon={<Package />} />
         <KpiCard
-          label="ถึงเกณฑ์เตือน"
+          label="ถึงเกณฑ์เตือนเปลี่ยนยาง"
           value={formatNumber(alerts.length)}
           unit="เส้น"
           tone={alerts.length > 0 ? 'bad' : 'good'}
           icon={<AlertTriangle />}
         />
+        {alertLifetimeKm !== null && (
+          <KpiCard
+            label="ครบระยะสะสม"
+            value={formatNumber(lifetimeReached.total)}
+            unit="เส้น"
+            tone={lifetimeReached.total > 0 ? 'bad' : 'good'}
+            icon={<Gauge />}
+          />
+        )}
       </section>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader
-            title={<span className="text-lg">การถอด-ใส่ยาง 6 เดือนล่าสุด</span>}
-            description={<span className="text-[15px] text-ink-700">ระยะสะสมทั้งหมด {formatKm(totalKm)} · รถที่ใช้งาน {formatNumber(vehicleCount ?? 0)} คัน</span>}
+            title={<span className="text-lg">{chartTitle}</span>}
+            description={
+              <span className="text-[15px] text-ink-700">
+                ใส่ยาง {formatNumber(mountCount)} ครั้ง · ถอดยาง {formatNumber(unmountCount)} ครั้ง
+                {' · '}ระยะสะสมทั้งหมด {formatKm(totalKm)} · รถที่ใช้งาน {formatNumber(vehicleCount ?? 0)} คัน
+              </span>
+            }
           />
           <CardBody>
-            <DashboardMonthlyChart data={buildMonthlySeries(chartEventRows ?? [])} />
+            <DashboardMonthlyChart data={chartSeries} />
           </CardBody>
         </Card>
 
@@ -359,6 +392,17 @@ export default async function DashboardPage() {
         )}
       </Card>
 
+      {/* ยางครบระยะสะสมตลอดอายุ — ซ่อนทั้งการ์ดถ้าบริษัทยังไม่ได้เปิดใช้เกณฑ์นี้ */}
+      {alertLifetimeKm !== null && (
+        <LifetimeAlertCard
+          reached={lifetimeReached.items}
+          soon={lifetimeSoon}
+          threshold={alertLifetimeKm}
+          soonDays={LIFETIME_SOON_DAYS}
+          reachedTotal={lifetimeReached.total}
+        />
+      )}
+
       {/* รถเปลี่ยนยางบ่อย — โชว์ทะเบียนรถให้เห็นชัด */}
       <Card className="mt-4 scroll-mt-24" id="vehicles">
         <CardHeader
@@ -422,6 +466,7 @@ export default async function DashboardPage() {
         companyName={company?.name ?? 'Dream Tire'}
         rows={removalRows}
         reasons={removalReasons}
+        range={range}
       />
 
       <TopMileageTable rows={topMileageRows} />
