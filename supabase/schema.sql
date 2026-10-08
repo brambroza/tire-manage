@@ -56,6 +56,12 @@ create table if not exists public.companies (
   avg_km_per_month  integer check (avg_km_per_month > 0),
   -- หยุดประมาณการหลังไม่มีเลขไมล์จริงกี่วัน กันค่าประมาณบวกไปจนเชื่อไม่ได้
   estimate_max_days integer not null default 90 check (estimate_max_days > 0),
+  -- แพ็กเกจการใช้งาน (super admin กำหนด) — premium เปิดฟีเจอร์เสริม เช่น นำเข้าซีรีย์ยาง
+  plan          text not null default 'standard' check (plan in ('standard', 'premium')),
+  -- วันสุดท้ายที่ premium มีผล — null = ไม่มีกำหนด
+  plan_expires_at date,
+  -- รายชื่อสาขา/หน่วยงาน (แอดมินบริษัทตั้งเอง) ใช้เป็นตัวเลือกช่อง vehicles.branch
+  branches      text[] not null default '{}',
   is_active     boolean not null default true,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
@@ -192,12 +198,15 @@ create table if not exists public.vehicles (
   -- เวลาที่ current_mileage ถูกอัปเดตจากเลขไมล์จริงครั้งล่าสุด (จุดตั้งต้นของการประมาณการ)
   -- ใช้ updated_at ไม่ได้ เพราะ trg_touch_vehicles แตะทุกครั้งที่แก้แถว
   mileage_updated_at timestamptz not null default now(),
+  -- สาขา/หน่วยงานที่รถสังกัด — null = ไม่ระบุสาขา (ใช้แยกกลุ่มในรายงาน)
+  branch          text,
   note            text,
   is_active       boolean not null default true,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now(),
   unique (company_id, plate_no, province)
 );
+create index if not exists vehicles_company_branch_idx on public.vehicles(company_id, branch);
 create index if not exists vehicles_company_idx on public.vehicles(company_id);
 create index if not exists vehicles_axle_type_idx on public.vehicles(axle_type);
 create index if not exists vehicles_plate_trgm on public.vehicles using gin (plate_no gin_trgm_ops);
@@ -268,6 +277,7 @@ create table if not exists public.tire_events (
 create index if not exists tire_events_tire_idx    on public.tire_events(tire_id, created_at desc);
 create index if not exists tire_events_company_idx on public.tire_events(company_id, event_date desc);
 create index if not exists tire_events_vehicle_idx on public.tire_events(vehicle_id);
+create index if not exists tire_events_vehicle_date_idx on public.tire_events(vehicle_id, event_date desc);
 
 -- ------------------------------------------------------------
 -- updated_at trigger
@@ -311,6 +321,23 @@ create or replace function public.is_company_admin()
 returns boolean language sql stable security definer set search_path = public as $$
   select coalesce((select role = 'admin' from public.profiles where id = auth.uid()), false);
 $$;
+
+-- แอดมินบริษัทแก้ข้อมูลบริษัทตัวเองได้ แต่ห้ามเปลี่ยนแพ็กเกจเอง (RLS คุมเป็นแถว ไม่คุมคอลัมน์)
+create or replace function public.guard_company_plan()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if (new.plan is distinct from old.plan or new.plan_expires_at is distinct from old.plan_expires_at)
+     and not public.is_super_admin() then
+    raise exception 'เฉพาะผู้ดูแลระบบ (Dreammaker) เท่านั้นที่เปลี่ยนแพ็กเกจได้'
+      using errcode = '42501';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists trg_guard_company_plan on public.companies;
+create trigger trg_guard_company_plan
+  before update on public.companies
+  for each row execute function public.guard_company_plan();
 
 -- ============================================================
 -- BUSINESS RPC — ถอด/ใส่ยาง (atomic, ป้องกัน race condition)

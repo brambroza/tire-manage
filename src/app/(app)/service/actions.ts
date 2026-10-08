@@ -5,15 +5,16 @@ import { z } from 'zod'
 import { requireSession } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { ActionResult, fail, optionalNumber, optionalText, zodFail } from '@/lib/action-result'
-import { createTire, ensureBrandModel } from '../tires/actions'
+import { ensureBrandModelFor, insertStockTire } from '@/lib/tire-stock'
+import { isOtherBrand } from '@/lib/tire-import'
 import {
-  ODOMETER_MAX, ODOMETER_MAX_MESSAGE, PLATE_PATTERN, PLATE_PATTERN_MESSAGE,
+  ODOMETER_DIGITS, ODOMETER_MAX, ODOMETER_MAX_MESSAGE, PLATE_PATTERN, PLATE_PATTERN_MESSAGE,
   SERIAL_MAX, SERIAL_PATTERN, SERIAL_PATTERN_MESSAGE,
 } from '@/lib/utils'
 
-/** เลขไมล์: จำนวนเต็ม 0 ถึง 999,999 (6 หลัก) */
+/** เลขไมล์: จำนวนเต็ม 0 ถึง ODOMETER_MAX (ไม่เกิน ODOMETER_DIGITS หลัก) */
 const odometerSchema = z
-  .number()
+  .number({ message: `กรุณากรอกเลขไมล์เป็นตัวเลขไม่เกิน ${ODOMETER_DIGITS} หลัก` })
   .int()
   .min(0, 'กรุณากรอกเลขไมล์')
   .max(ODOMETER_MAX, ODOMETER_MAX_MESSAGE)
@@ -127,10 +128,11 @@ export type ManualUnmountInput = z.input<typeof manualUnmountSchema>
  * @param input ข้อมูลยางที่คีย์เอง + รายละเอียดการถอด
  */
 export async function unmountManualTireAction(input: ManualUnmountInput): Promise<ActionResult> {
-  await requireSession(['admin', 'technician'])
+  const { profile } = await requireSession(['admin', 'technician'])
   const parsed = manualUnmountSchema.safeParse(input)
   if (!parsed.success) return zodFail(parsed.error)
   const data = parsed.data
+  const supabase = await createClient()
 
   const mountedOdometer = data.mounted_odometer ?? data.odometer
   if (mountedOdometer > data.odometer) {
@@ -144,12 +146,13 @@ export async function unmountManualTireAction(input: ManualUnmountInput): Promis
   // ยังไม่มีรุ่นในแคตตาล็อกแต่ช่างพิมพ์ยี่ห้อมา → สร้างยี่ห้อ/รุ่นให้อัตโนมัติ
   let modelId = data.tire_model_id
   if (!modelId && data.brand_name) {
-    const ensured = await ensureBrandModel(data.brand_name, data.model_name, data.size)
+    const ensured = await ensureBrandModelFor(supabase, profile.company_id!, data.brand_name, data.model_name, data.size)
     if (!ensured.ok) return ensured
     modelId = ensured.data?.modelId ?? null
   }
 
-  const created = await createTire({
+  // ยางที่ช่างคีย์หน้างานสร้างได้ทุกแพ็กเกจ (ด่าน Premium มีเฉพาะฟอร์มคลังยาง)
+  const created = await insertStockTire(supabase, profile.company_id!, {
     serial_no: data.serial_no,
     tire_model_id: modelId,
     brand_name: data.brand_name,
@@ -163,7 +166,6 @@ export async function unmountManualTireAction(input: ManualUnmountInput): Promis
   if (!created.ok) return created
 
   const tireId = created.data!.id
-  const supabase = await createClient()
 
   // ใส่ย้อนหลังเพื่อผูกยางเข้าตำแหน่งเดิมก่อน แล้วจึงถอดออกตามจริง
   const { error: mountError } = await supabase.rpc('mount_tire', {
@@ -223,6 +225,8 @@ const manualTireSchema = z.object({
   new_tread_mm: optionalNumber,
   /** เลขไมล์ตอนที่ยางเส้นนี้ถูกใส่ (ถ้าทราบ) ใช้คำนวณระยะวิ่งย้อนหลัง */
   mounted_odometer: optionalNumber,
+  /** หมายเหตุที่เก็บกับยางเส้นใหม่ (tires.note) เช่น ยี่ห้อ/รุ่นจริงของยาง "อื่นๆ" */
+  note: optionalText,
 })
 
 const batchItemSchema = z.object({
@@ -275,12 +279,14 @@ interface TireOp {
 export async function applyServiceBatchAction(
   input: ServiceBatchInput,
 ): Promise<ActionResult<{ count: number }>> {
-  await requireSession(['admin', 'technician'])
+  const { profile } = await requireSession(['admin', 'technician'])
   const parsed = batchSchema.safeParse(input)
   if (!parsed.success) return zodFail(parsed.error)
 
   const { vehicle_id, odometer, event_date, items } = parsed.data
   const supabase = await createClient()
+  /** บริษัทของผู้บันทึก — ยางที่ช่างคีย์หน้างานสร้างได้ทุกแพ็กเกจ */
+  const companyId = profile.company_id!
 
   const preMounts: TireOp[] = []
   const unmounts: TireOp[] = []
@@ -363,7 +369,7 @@ export async function applyServiceBatchAction(
       // ยังไม่มีรุ่นในแคตตาล็อกแต่ช่างพิมพ์ยี่ห้อมา → สร้างยี่ห้อ/รุ่นให้อัตโนมัติ
       let modelId = manual.tire_model_id
       if (!modelId && manual.brand_name) {
-        const ensured = await ensureBrandModel(manual.brand_name, manual.model_name, manual.size)
+        const ensured = await ensureBrandModelFor(supabase, companyId, manual.brand_name, manual.model_name, manual.size)
         if (!ensured.ok) {
           await rollbackCreatedTires()
           return ensured
@@ -371,7 +377,7 @@ export async function applyServiceBatchAction(
         modelId = ensured.data?.modelId ?? null
       }
 
-      const created = await createTire({
+      const created = await insertStockTire(supabase, companyId, {
         serial_no: manual.serial_no,
         tire_model_id: modelId,
         brand_name: manual.brand_name,
@@ -462,7 +468,7 @@ export async function applyServiceBatchAction(
 
       let modelId = manual.tire_model_id
       if (!modelId && manual.brand_name) {
-        const ensured = await ensureBrandModel(manual.brand_name, manual.model_name, manual.size)
+        const ensured = await ensureBrandModelFor(supabase, companyId, manual.brand_name, manual.model_name, manual.size)
         if (!ensured.ok) {
           await rollbackCreatedTires()
           return ensured
@@ -470,7 +476,7 @@ export async function applyServiceBatchAction(
         modelId = ensured.data?.modelId ?? null
       }
 
-      const created = await createTire({
+      const created = await insertStockTire(supabase, companyId, {
         serial_no: manual.serial_no,
         tire_model_id: modelId,
         brand_name: manual.brand_name,
@@ -479,7 +485,9 @@ export async function applyServiceBatchAction(
         dot: manual.dot,
         new_tread_mm: manual.new_tread_mm,
         tread_mm: item.tread_mm,
-        note: item.note,
+        // หมายเหตุของยางเส้นใหม่ (ยี่ห้อ/รุ่นจริงของยาง "อื่นๆ") — ถ้าไม่ส่งแยกมา ใช้หมายเหตุของรายการใส่
+        // ยาง "อื่นๆ" บังคับตัวพิมพ์ใหญ่ฝั่ง server ด้วย กันข้อมูลจาก client ที่ไม่ผ่านฟอร์ม
+        note: isOtherBrand(manual.brand_name) ? (manual.note ?? item.note)?.toUpperCase() ?? null : manual.note ?? item.note,
       })
       if (!created.ok) {
         await rollbackCreatedTires()

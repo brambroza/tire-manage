@@ -10,7 +10,7 @@ import {
 import { Modal } from '@/components/ui/modal'
 import { TireThumb } from '@/components/tire-thumb'
 import { TireSpec } from '@/components/tire-spec'
-import { cn } from '@/lib/utils'
+import { cn, toUpperText } from '@/lib/utils'
 import { tireSizeLabel } from '@/lib/tire-display'
 import {
   createBrand, createModel, deleteTireImage, setBrandActive, setModelActive, updateModel,
@@ -343,7 +343,14 @@ export function CatalogClient({
             </div>
           )}
           <Field label="ชื่อยี่ห้อ" required hint="ระบบจะบันทึกเป็นตัวพิมพ์ใหญ่">
-            <Input value={brandName} onChange={(e) => setBrandName(e.target.value)} placeholder="MICHELIN" autoFocus />
+            <Input
+              value={brandName}
+              onChange={(e) => setBrandName(toUpperText(e.target.value))}
+              placeholder="MICHELIN"
+              autoCapitalize="characters"
+              className="uppercase"
+              autoFocus
+            />
           </Field>
         </form>
       </Modal>

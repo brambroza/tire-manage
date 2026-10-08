@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, Truck, CircleDot, Users, Building2, Wrench, Gauge,
+  LayoutDashboard, Truck, CircleDot, Users, Building2, Wrench, Gauge, BarChart3,
 } from 'lucide-react'
 import { AppShell, type NavItem } from '@/components/app-shell'
 import { NotificationBell } from '@/components/notification-bell'
@@ -11,6 +11,7 @@ const ICON = 'size-5'
 
 const ADMIN_NAV: NavItem[] = [
   { href: '/dashboard',   label: 'ภาพรวม',            icon: <LayoutDashboard className={ICON} />, exact: true },
+  { href: '/reports/fleet', label: 'รายงานรถ',          icon: <BarChart3 className={ICON} /> },
   { href: '/vehicles',    label: 'จัดการรถ',           icon: <Truck className={ICON} /> },
   { href: '/tires',       label: 'คลังยาง',            icon: <CircleDot className={ICON} /> },
   { href: '/service',     label: 'บันทึกถอด-ใส่ยาง',   icon: <Wrench className={ICON} /> },

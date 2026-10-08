@@ -7,7 +7,8 @@ import { Modal } from '@/components/ui/modal'
 import { Button, Field, Input, Select, Textarea } from '@/components/ui'
 import { TireThumb } from '@/components/tire-thumb'
 import { tireSpecLabel } from '@/lib/tire-display'
-import { cn, SERIAL_MAX, sanitizeSerial } from '@/lib/utils'
+import { cn, SERIAL_MAX, sanitizeSerial, toUpperText } from '@/lib/utils'
+import { isOtherBrand } from '@/lib/tire-import'
 import { createTire, ensureBrandModel, updateTire, type TireInput } from './actions'
 import type { Tire } from '@/lib/database.types'
 
@@ -45,6 +46,7 @@ export function TireFormModal({
   models,
   onCreated,
   companyId,
+  allowOwnCatalog = false,
 }: {
   open: boolean
   onClose: () => void
@@ -53,6 +55,8 @@ export function TireFormModal({
   onCreated?: (tireId: string) => void
   /** ระบุเมื่อ super admin เพิ่มยางแทนลูกค้า */
   companyId?: string
+  /** แอดมินบริษัท Premium พิมพ์ยี่ห้อ/รุ่นเองได้ (สร้างเป็นรายการของบริษัทตัวเอง) */
+  allowOwnCatalog?: boolean
 }) {
   const router = useRouter()
   const [form, setForm] = React.useState<TireInput>(EMPTY)
@@ -61,6 +65,8 @@ export function TireFormModal({
   const [error, setError] = React.useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const isSuperAdmin = companyId !== undefined
+  /** พิมพ์ยี่ห้อ/รุ่นเองได้ — super admin (เข้าแคตตาล็อกกลาง) หรือลูกค้า Premium (เฉพาะของบริษัทตัวเอง) */
+  const canCustom = isSuperAdmin || allowOwnCatalog
 
   // รีเซ็ตค่าในฟอร์มเมื่อเปิด modal ใหม่ (ปรับ state ระหว่าง render ตามแนวทางของ React)
   const formKey = open ? tire?.id ?? 'new' : null
@@ -70,7 +76,7 @@ export function TireFormModal({
     setError(null)
     setFieldErrors({})
     // โหมดพิมพ์เองเปิดให้เฉพาะ super admin — ลูกค้าเลือกได้จากแคตตาล็อกที่เปิดสิทธิ์เท่านั้น
-    setManual(isSuperAdmin && Boolean(tire && !tire.tire_model_id))
+    setManual(canCustom && Boolean(tire && !tire.tire_model_id))
     setForm(
       tire
         ? {
@@ -93,6 +99,8 @@ export function TireFormModal({
     setForm((f) => ({ ...f, [key]: value }))
 
   const selectedModel = models.find((m) => m.id === form.tire_model_id) ?? null
+  /** เลือกยี่ห้อ "อื่นๆ" อยู่ (จากแคตตาล็อกหรือพิมพ์เอง) — หมายเหตุต้องเป็นตัวพิมพ์ใหญ่ */
+  const otherBrandSelected = isOtherBrand(selectedModel?.brand ?? form.brand_name ?? '')
 
   function pickModel(id: string) {
     const m = models.find((x) => x.id === id)
@@ -189,8 +197,8 @@ export function TireFormModal({
           />
         </Field>
 
-        {/* สลับโหมดเลือกจากแคตตาล็อก / พิมพ์เอง — เฉพาะ super admin เพื่อกันลูกค้าสร้างยี่ห้อ/รุ่นลงฐานข้อมูลเอง */}
-        {isSuperAdmin && (
+        {/* สลับโหมดเลือกจากแคตตาล็อก / พิมพ์เอง — super admin หรือลูกค้า Premium (รายการที่สร้างเป็นของบริษัทนั้นเท่านั้น) */}
+        {canCustom && (
           <div className="inline-flex rounded-xl bg-brand-50 p-1">
             {[
               { key: false, label: 'เลือกจากแคตตาล็อก' },
@@ -212,7 +220,7 @@ export function TireFormModal({
         )}
 
         {/* ยางเดิมที่บันทึกยี่ห้อ/รุ่นแบบพิมพ์เองไว้ก่อนปิดโหมดนี้ — โชว์ค่าเดิมให้ลูกค้าเห็นว่าเป็นอะไร */}
-        {!isSuperAdmin && tire && !tire.tire_model_id && !form.tire_model_id && (
+        {!canCustom && tire && !tire.tire_model_id && !form.tire_model_id && (
           <p className="rounded-xl bg-surface-alt px-4 py-3 text-sm text-ink-600 ring-1 ring-inset ring-line">
             ข้อมูลเดิม: {tireSpecLabel({ size: tire.size, brandName: tire.brand_name, modelName: tire.model_name })}
             {' '}— เลือกรุ่นจากแคตตาล็อกด้านล่างเพื่อเปลี่ยน หรือเว้นไว้เพื่อคงค่าเดิม
@@ -221,6 +229,12 @@ export function TireFormModal({
 
         {manual ? (
           <div className="grid gap-5 sm:grid-cols-3">
+            {!isSuperAdmin && (
+              <p className="sm:col-span-3 rounded-xl bg-surface-alt px-4 py-3 text-sm text-ink-600 ring-1 ring-inset ring-line">
+                ยี่ห้อ/รุ่นที่พิมพ์เองจะถูกเก็บเป็นรายการของบริษัทคุณเท่านั้น ลูกค้ารายอื่นมองไม่เห็น
+                และจะขึ้นให้เลือกในหน้าช่างและไฟล์นำเข้าครั้งถัดไป
+              </p>
+            )}
             <Field label="ขนาด">
               <Input
                 value={form.size ?? ''}
@@ -231,8 +245,11 @@ export function TireFormModal({
             <Field label="ยี่ห้อ" required error={fieldErrors.brand_name}>
               <Input
                 value={form.brand_name ?? ''}
-                onChange={(e) => set('brand_name', e.target.value)}
+                // ยี่ห้อเก็บเป็นตัวพิมพ์ใหญ่เสมอ — บังคับตั้งแต่ตอนพิมพ์ให้เห็นผลทันที
+                onChange={(e) => set('brand_name', toUpperText(e.target.value))}
                 placeholder="MICHELIN"
+                autoCapitalize="characters"
+                className="uppercase"
               />
             </Field>
             <Field label="รุ่น">
@@ -249,7 +266,7 @@ export function TireFormModal({
               label="ขนาด / ยี่ห้อ รุ่น"
               hint={
                 models.length === 0
-                  ? isSuperAdmin
+                  ? canCustom
                     ? 'ยังไม่มีรุ่นยางที่เปิดสิทธิ์ให้บริษัทนี้ — ใช้โหมดพิมพ์เองได้'
                     : 'ยังไม่มีรุ่นยางที่เปิดสิทธิ์ให้บริษัทนี้ — แจ้งผู้ดูแลระบบให้เปิดสิทธิ์'
                   : selectedModel
@@ -277,11 +294,11 @@ export function TireFormModal({
           </div>
         )}
 
-        <div className={cn('grid gap-5 sm:grid-cols-2', isSuperAdmin ? 'lg:grid-cols-4' : 'lg:grid-cols-3')}>
+        <div className={cn('grid gap-5 sm:grid-cols-2', canCustom ? 'lg:grid-cols-4' : 'lg:grid-cols-3')}>
           <Field label="DOT">
             <Input value={form.dot ?? ''} onChange={(e) => set('dot', e.target.value)} placeholder="2323" />
           </Field>
-          {isSuperAdmin ? (
+          {canCustom ? (
             <Field label="ดอกยางตอนใหม่ (มม.)">
               <Input
                 type="number" inputMode="decimal" step="0.1" min={0}
@@ -307,7 +324,12 @@ export function TireFormModal({
         </div>
 
         <Field label="หมายเหตุ">
-          <Textarea value={form.note ?? ''} onChange={(e) => set('note', e.target.value)} />
+          {/* ยาง "อื่นๆ" ใช้หมายเหตุระบุยี่ห้อ/รุ่นจริงบนยาง จึงบังคับตัวพิมพ์ใหญ่เหมือนช่องยี่ห้อ */}
+          <Textarea
+            value={form.note ?? ''}
+            onChange={(e) => set('note', otherBrandSelected ? toUpperText(e.target.value) : e.target.value)}
+            className={cn(otherBrandSelected && 'uppercase')}
+          />
         </Field>
       </form>
     </Modal>

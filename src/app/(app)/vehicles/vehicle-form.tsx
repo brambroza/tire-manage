@@ -8,7 +8,7 @@ import { Button, Field, Input, Select, Textarea } from '@/components/ui'
 import { getLayout } from '@/lib/axle-layouts'
 import { PROVINCES } from '@/lib/provinces'
 import {
-  ODOMETER_MAX, PLATE_NUMBER_MAX, PLATE_PREFIX_MAX,
+  ODOMETER_HINT, ODOMETER_MAX, PLATE_NUMBER_MAX, PLATE_PREFIX_MAX,
   formatNumber, formatThaiDate, sanitizePlateNumber, sanitizePlatePrefix,
 } from '@/lib/utils'
 import { createVehicle, getObservedMonthlyKm, updateVehicle, type VehicleInput } from './actions'
@@ -25,6 +25,7 @@ const EMPTY: VehicleInput = {
   axle_type: '10W',
   current_mileage: 0,
   avg_km_per_month: '',
+  branch: '',
   note: '',
 }
 
@@ -56,6 +57,7 @@ export function VehicleFormModal({
   vehicle,
   companyId,
   axleTypes,
+  branches = [],
 }: {
   open: boolean
   onClose: () => void
@@ -64,6 +66,8 @@ export function VehicleFormModal({
   companyId?: string
   /** ประเภทเพลาจาก Supabase */
   axleTypes: AxleType[]
+  /** รายชื่อสาขาของบริษัท (ตั้งที่หน้าข้อมูลบริษัท) */
+  branches?: string[]
 }) {
   const router = useRouter()
   const [form, setForm] = React.useState<VehicleInput>(EMPTY)
@@ -100,6 +104,7 @@ export function VehicleFormModal({
             axle_type: vehicle.axle_type,
             current_mileage: vehicle.current_mileage,
             avg_km_per_month: vehicle.avg_km_per_month ?? '',
+            branch: vehicle.branch ?? '',
             note: vehicle.note ?? '',
           }
         : { ...EMPTY, axle_type: defaultAxleType },
@@ -170,6 +175,9 @@ export function VehicleFormModal({
   const availableAxleTypes = axleTypes.filter(
     (type) => type.is_active || type.code === vehicle?.axle_type,
   )
+  // สาขาเดิมของรถที่ถูกลบออกจากรายชื่อแล้ว ยังต้องเป็นตัวเลือกอยู่ ไม่งั้นการแก้ไขจะล้างค่าทิ้งเงียบ ๆ
+  const branchOptions =
+    vehicle?.branch && !branches.includes(vehicle.branch) ? [...branches, vehicle.branch] : branches
 
   return (
     <Modal
@@ -270,7 +278,7 @@ export function VehicleFormModal({
           <Field
             label="เลขไมล์ล่าสุด (กม.)"
             required
-            hint="ไม่เกิน 6 หลัก"
+            hint={ODOMETER_HINT}
             error={fieldErrors.current_mileage}
           >
             <Input
@@ -317,6 +325,22 @@ export function VehicleFormModal({
               </button>
             </p>
           )}
+        </Field>
+
+        <Field
+          label="สาขา / หน่วยงาน"
+          hint="ตั้งรายชื่อสาขาได้ที่หน้าข้อมูลบริษัท"
+          error={fieldErrors.branch}
+        >
+          <Select value={form.branch ?? ''} onChange={(e) => set('branch', e.target.value)}>
+            <option value="">— ไม่ระบุสาขา —</option>
+            {branchOptions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+                {branches.includes(name) ? '' : ' (ถูกลบออกจากรายชื่อแล้ว)'}
+              </option>
+            ))}
+          </Select>
         </Field>
 
         <Field label="หมายเหตุ" error={fieldErrors.note}>

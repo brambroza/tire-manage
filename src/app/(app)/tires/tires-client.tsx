@@ -4,7 +4,7 @@ import * as React from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
-  AlertTriangle, CalendarDays, CircleDot, History, Package, Pencil, Plus, Trash2, Truck, Undo2, X,
+  AlertTriangle, CalendarDays, CircleDot, History, Package, Pencil, Plus, Trash2, Truck, Undo2, X, Lock,
 } from 'lucide-react'
 import {
   ALERT_ROW, Card, CardHeader, EmptyState, Field, Input, Select, Table, TableWrap, Td, Th, alertLevel,
@@ -63,6 +63,8 @@ export function TiresClient({
   lastRemovals = {},
   canManage,
   canAdd = false,
+  addLockedMessage,
+  allowOwnCatalog = false,
   companyId,
   basePath = '/tires',
   enableLinks = true,
@@ -79,8 +81,12 @@ export function TiresClient({
   lastRemovals?: Record<string, LastRemoval>
   /** แก้ไข/ตัดจำหน่ายยางได้ */
   canManage: boolean
-  /** เพิ่มยางเข้าคลังได้ — เปิดเฉพาะ super admin (ลูกค้าเพิ่มยางเองไม่ได้ตามที่ตกลง) */
+  /** เพิ่มยางเข้าคลังทีละเส้นได้ — super admin เสมอ, ลูกค้าเฉพาะแพ็กเกจ Premium */
   canAdd?: boolean
+  /** ข้อความเมื่อปุ่มเพิ่มยางถูกล็อกด้วยแพ็กเกจ (มีค่า = โชว์ปุ่มแบบติดกุญแจ) */
+  addLockedMessage?: string
+  /** ลูกค้า Premium พิมพ์ยี่ห้อ/รุ่นเองในฟอร์มได้ (เป็นรายการของบริษัทเท่านั้น) */
+  allowOwnCatalog?: boolean
   /** ระบุเมื่อ super admin จัดการคลังยางแทนลูกค้า */
   companyId?: string
   /** route ของหน้านี้ ใช้ตอนอัปเดตตัวกรองใน query string */
@@ -247,6 +253,18 @@ export function TiresClient({
                 <Plus className="size-5" />
                 เพิ่มยาง
               </button>
+            )}
+            {!canAdd && addLockedMessage && (
+              // ลูกค้าแพ็กเกจ Standard เห็นว่ามีฟีเจอร์นี้ แต่กดไม่ได้ — ข้อความบอกวิธีเปิดใช้
+              <span
+                role="button"
+                aria-disabled="true"
+                title={addLockedMessage}
+                className="inline-flex min-h-12 cursor-not-allowed items-center gap-2 rounded-xl border border-line bg-white px-4 text-[15px] font-medium text-ink-400"
+              >
+                <Lock className="size-5" />
+                เพิ่มยาง (Premium)
+              </span>
             )}
           </div>
         </div>
@@ -583,6 +601,7 @@ export function TiresClient({
         tire={editing}
         models={models}
         companyId={companyId}
+        allowOwnCatalog={allowOwnCatalog}
       />
 
       <TireHistoryModal

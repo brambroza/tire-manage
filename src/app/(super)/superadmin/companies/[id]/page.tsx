@@ -4,8 +4,9 @@ import { AlertTriangle, CircleDot, Gauge, Truck, Users } from 'lucide-react'
 import { requireSession } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { Card, CardBody, CardHeader, EmptyState, StatTile } from '@/components/ui'
-import { formatNumber } from '@/lib/utils'
+import { formatNumber, formatThaiDate } from '@/lib/utils'
 import type { Company, TireOverview } from '@/lib/database.types'
+import { PlanBadge } from '../companies-client'
 import { RecentEventsTable, TopTiresTable, type EventRow } from './company-overview-tables'
 
 /** จำนวนประวัติถอด-ใส่ยางสูงสุดที่ดึงมาแสดงในแท็บภาพรวม */
@@ -100,6 +101,21 @@ export default async function CompanyOverviewPage({
             <Info label="ผู้ใช้งาน" value={`${formatNumber(userCount ?? 0)} บัญชี`} />
             <Info label="เกณฑ์เตือนระยะ" value={`${formatNumber(company.alert_km)} กม.`} />
             <Info label="เกณฑ์เตือนดอกยาง" value={`${company.alert_tread_mm} มม.`} />
+            <Info label="แพ็กเกจ" value={<PlanBadge company={company} />} />
+            <Info
+              label="หมดอายุ"
+              value={
+                company.plan === 'premium' && company.plan_expires_at
+                  ? formatThaiDate(company.plan_expires_at)
+                  : 'ไม่มีกำหนด'
+              }
+            />
+            <div className="col-span-2">
+              <p className="text-xs text-ink-400">สาขา / หน่วยงาน</p>
+              <p className="mt-0.5 text-[15px] text-ink-700">
+                {company.branches?.length ? company.branches.join(' · ') : 'ยังไม่ตั้งสาขา'}
+              </p>
+            </div>
             {company.address && (
               <div className="col-span-2">
                 <p className="text-xs text-ink-400">ที่อยู่</p>

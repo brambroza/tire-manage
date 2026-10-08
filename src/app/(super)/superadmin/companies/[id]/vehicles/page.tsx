@@ -2,21 +2,22 @@ import { requireSession } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { Card, CardHeader } from '@/components/ui'
 import { VehiclesClient, type VehicleRow } from '@/app/(app)/vehicles/vehicles-client'
+import { BRANCH_FILTER_NONE } from '@/app/(app)/vehicles/branch-filter'
 import type { AxleType, Vehicle } from '@/lib/database.types'
 
 export const metadata = { title: 'จัดการรถของลูกค้า · Dream Tire Admin' }
 
-/** แท็บจัดการรถของลูกค้า — ใช้ตาราง/ฟอร์มชุดเดียวกับฝั่งลูกค้า */
+/** แท็บจัดการรถของลูกค้า — ใช้ตาราง/ฟอร์มชุดเดียวกับฝั่งลูกค้า (กรอง ?q= และ ?branch= เหมือนกัน) */
 export default async function CompanyVehiclesPage({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ q?: string }>
+  searchParams: Promise<{ q?: string; branch?: string }>
 }) {
   await requireSession(['super_admin'])
   const { id } = await params
-  const { q } = await searchParams
+  const { q, branch } = await searchParams
   const supabase = await createClient()
 
   let query = supabase.from('vehicles').select('*').eq('company_id', id).order('plate_no')
@@ -26,6 +27,8 @@ export default async function CompanyVehiclesPage({
       `plate_no.ilike.${term},brand.ilike.${term},model.ilike.${term},province.ilike.${term}`,
     )
   }
+  if (branch === BRANCH_FILTER_NONE) query = query.is('branch', null)
+  else if (branch?.trim()) query = query.eq('branch', branch.trim())
 
   const [{ data: vehicleData }, { data: mountedTires }, { data: axleTypeData }, { data: companyData }] = await Promise.all([
     query,
@@ -37,7 +40,7 @@ export default async function CompanyVehiclesPage({
       .eq('company_axle_types.company_id', id)
       .order('sort_order')
       .order('name'),
-    supabase.from('companies').select('name').eq('id', id).maybeSingle(),
+    supabase.from('companies').select('name, branches').eq('id', id).maybeSingle(),
   ])
 
   const mountedCount = new Map<string, number>()
@@ -62,6 +65,7 @@ export default async function CompanyVehiclesPage({
       <VehiclesClient
         vehicles={vehicles}
         axleTypes={(axleTypeData ?? []) as AxleType[]}
+        branches={companyData?.branches ?? []}
         companyId={id}
         enableLinks={false}
         enableHistory

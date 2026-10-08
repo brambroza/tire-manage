@@ -1,3 +1,5 @@
+import Link from 'next/link'
+import { Upload } from 'lucide-react'
 import { requireSession } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { Card, CardHeader } from '@/components/ui'
@@ -99,6 +101,15 @@ export default async function CompanyTiresPage({
         <CardHeader
           title="จัดการคลังยางแทนลูกค้า"
           description="เพิ่มยางเข้าคลัง แก้ไขข้อมูล หรือตัดจำหน่ายได้ — ยางที่ติดตั้งอยู่กับรถต้องถอดออกก่อนจึงตัดจำหน่ายได้"
+          action={
+            <Link
+              href={`/superadmin/companies/${id}/tires/import`}
+              className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-line bg-white px-4 text-[15px] font-medium text-ink-700 hover:border-brand-200 hover:bg-brand-50"
+            >
+              <Upload className="size-5" />
+              นำเข้าซีรีย์ยาง
+            </Link>
+          }
         />
       </Card>
       <TiresClient

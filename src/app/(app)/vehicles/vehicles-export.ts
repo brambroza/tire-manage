@@ -1,5 +1,6 @@
 import { getLayout, type AxleTypeLayoutSource } from '@/lib/axle-layouts'
 import { formatNumber, formatThaiDate, todayISO } from '@/lib/utils'
+import { BRANCH_NONE_LABEL } from './branch-filter'
 import type { VehicleRow } from './vehicles-client'
 import type { Cell, Row, Sheet, SheetData } from 'write-excel-file/browser'
 
@@ -8,6 +9,8 @@ export interface VehiclesExportInput {
   companyName: string
   /** คำค้นหาที่ใช้กรองอยู่ (ว่าง = ทั้งหมด) สำหรับหัวรายงาน */
   searchTerm?: string
+  /** สาขาที่กรองอยู่ (ว่าง = ทุกสาขา) สำหรับหัวรายงาน */
+  branchFilter?: string
   vehicles: VehicleRow[]
   /** ประเภทเพลาของบริษัท ใช้แปลงรหัสเป็นชื่อและจำนวนตำแหน่งล้อ */
   axleTypes: readonly AxleTypeLayoutSource[]
@@ -23,6 +26,8 @@ const LINE = '#E3EDF9'
 interface VehicleExportRow {
   plateNo: string
   province: string
+  /** สาขา/หน่วยงานที่รถสังกัด (ว่าง = ไม่ระบุ) */
+  branch: string
   brand: string
   model: string
   axleTypeName: string
@@ -61,6 +66,7 @@ export function toVehicleExportRows(
     return {
       plateNo: v.plate_no,
       province: v.province ?? '',
+      branch: v.branch ?? '',
       brand: v.brand ?? '',
       model: v.model ?? '',
       axleTypeName: layout.name ? `${v.axle_type} · ${layout.name}` : v.axle_type,
@@ -101,7 +107,11 @@ function exportFilename(extension: 'xlsx' | 'pdf') {
 
 /** ข้อความบรรทัดรองใต้หัวรายงาน (บริษัท + ตัวกรอง + เวลาส่งออก) */
 function metaLabel(input: VehiclesExportInput, exportedAt: Date) {
-  const filter = input.searchTerm?.trim() ? `ค้นหา "${input.searchTerm.trim()}"` : 'รถทั้งหมด'
+  const filters = [
+    input.searchTerm?.trim() ? `ค้นหา "${input.searchTerm.trim()}"` : '',
+    input.branchFilter?.trim() ? `สาขา ${input.branchFilter.trim()}` : '',
+  ].filter(Boolean)
+  const filter = filters.length > 0 ? filters.join(' · ') : 'รถทั้งหมด'
   return `${input.companyName} · ${filter} · ส่งออก ${formatThaiDate(exportedAt, true)}`
 }
 
@@ -159,7 +169,7 @@ export function buildVehiclesExcelSheets(
   ]
 
   const headers = [
-    'ทะเบียนรถ', 'จังหวัด', 'ยี่ห้อ', 'รุ่น', 'ประเภทเพลา', 'จำนวนตำแหน่ง',
+    'ทะเบียนรถ', 'จังหวัด', 'สาขา', 'ยี่ห้อ', 'รุ่น', 'ประเภทเพลา', 'จำนวนตำแหน่ง',
     'ยางที่ติดตั้ง', 'เลขไมล์ล่าสุด (กม.)', 'อัปเดตไมล์ล่าสุด', 'เปลี่ยนยางบ่อย (ครั้ง)', 'สถานะ', 'หมายเหตุ',
   ]
   const detailData: SheetData = [
@@ -185,6 +195,7 @@ export function buildVehiclesExcelSheets(
       return [
         { ...base, value: row.plateNo, type: String, fontWeight: 'bold' },
         { ...base, value: row.province || '-', type: String },
+        { ...base, value: row.branch || BRANCH_NONE_LABEL, type: String },
         { ...base, value: row.brand || '-', type: String },
         { ...base, value: row.model || '-', type: String },
         { ...base, value: row.axleTypeName, type: String, wrap: true },
@@ -214,7 +225,8 @@ export function buildVehiclesExcelSheets(
     {
       data: detailData,
       sheet: 'รายการรถ',
-      columns: [16, 16, 16, 16, 26, 14, 14, 18, 18, 18, 12, 34].map((width) => ({ width })),
+      // เลขไมล์ 8 หลักพร้อมคั่นหลัก (เช่น 12,345,678) ต้องการประมาณ 12 ตัวอักษร — กว้าง 18 พอ
+      columns: [16, 16, 20, 16, 16, 26, 14, 14, 18, 18, 18, 12, 34].map((width) => ({ width })),
       stickyRowsCount: 1,
       showGridLines: false,
       orientation: 'landscape',
@@ -294,10 +306,11 @@ function createPdfPage(
   ` : ''
 
   const rowHtml = rows.length === 0
-    ? '<tr><td colspan="8" class="empty">ไม่พบข้อมูล</td></tr>'
+    ? '<tr><td colspan="9" class="empty">ไม่พบข้อมูล</td></tr>'
     : rows.map((row) => `
       <tr>
         <td><b>${escapeHtml(row.plateNo)}</b><br><span class="sub">${escapeHtml(row.province || '-')}</span></td>
+        <td>${escapeHtml(row.branch || BRANCH_NONE_LABEL)}</td>
         <td>${escapeHtml([row.brand, row.model].filter(Boolean).join(' ') || '-')}</td>
         <td>${escapeHtml(row.axleTypeName)}</td>
         <td class="number ${row.mountedCount >= row.wheelCount ? 'ok' : 'warn'}">${escapeHtml(`${row.mountedCount}/${row.wheelCount}`)}</td>
@@ -344,11 +357,11 @@ function createPdfPage(
     ${summaryHtml}
     <table>
       <colgroup>
-        <col style="width:14%"><col style="width:16%"><col style="width:18%"><col style="width:10%">
-        <col style="width:12%"><col style="width:12%"><col style="width:9%"><col style="width:9%">
+        <col style="width:13%"><col style="width:12%"><col style="width:14%"><col style="width:16%">
+        <col style="width:9%"><col style="width:12%"><col style="width:10%"><col style="width:7%"><col style="width:7%">
       </colgroup>
       <thead><tr>
-        <th>ทะเบียนรถ</th><th>ยี่ห้อ / รุ่น</th><th>ประเภทเพลา</th><th>ยางที่ติดตั้ง</th>
+        <th>ทะเบียนรถ</th><th>สาขา</th><th>ยี่ห้อ / รุ่น</th><th>ประเภทเพลา</th><th>ยางที่ติดตั้ง</th>
         <th>เลขไมล์ล่าสุด</th><th>อัปเดตไมล์</th><th>เปลี่ยนบ่อย</th><th>สถานะ</th>
       </tr></thead>
       <tbody>${rowHtml}</tbody>

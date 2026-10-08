@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/app-shell'
 import { Badge } from '@/components/ui'
 import { CompanyTabs } from './company-tabs'
+import { PlanBadge } from '../companies-client'
 import type { Company } from '@/lib/database.types'
 
 /**
@@ -46,9 +47,12 @@ export default async function CompanyLayout({
         title={company.name}
         subtitle={[company.code, company.contact_name, company.phone].filter(Boolean).join(' · ')}
         action={
-          <Badge tone={company.is_active ? 'emerald' : 'slate'}>
-            {company.is_active ? 'ใช้งาน' : 'ปิดใช้งาน'}
-          </Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            <PlanBadge company={company} />
+            <Badge tone={company.is_active ? 'emerald' : 'slate'}>
+              {company.is_active ? 'ใช้งาน' : 'ปิดใช้งาน'}
+            </Badge>
+          </div>
         }
       />
 

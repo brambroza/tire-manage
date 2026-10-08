@@ -8,6 +8,8 @@ export type UserRole = 'super_admin' | 'admin' | 'technician'
 export type TireStatus = 'in_stock' | 'mounted' | 'scrapped' | 'retreading'
 export type TireEventType = 'mount' | 'unmount'
 export type AxleKind = 'single' | 'dual'
+/** แพ็กเกจการใช้งานของบริษัท */
+export type CompanyPlan = 'standard' | 'premium'
 
 /** หมวดของประเภทเพลาที่ช่างเลือกหน้างาน */
 export type AxleCategory = 'head' | 'trailer'
@@ -33,6 +35,12 @@ export type Company = {
   avg_km_per_month: number | null
   /** หยุดประมาณการหลังไม่มีเลขไมล์จริงกี่วัน */
   estimate_max_days: number
+  /** แพ็กเกจการใช้งาน — super admin กำหนด; premium เปิดฟีเจอร์เสริม เช่น นำเข้าซีรีย์ยาง */
+  plan: CompanyPlan
+  /** วันสุดท้ายที่ premium มีผล (YYYY-MM-DD) — null = ไม่มีกำหนด */
+  plan_expires_at: string | null
+  /** รายชื่อสาขา/หน่วยงานที่แอดมินบริษัทตั้งไว้ ใช้เป็นตัวเลือกช่อง vehicles.branch */
+  branches: string[]
   is_active: boolean
   created_at: string
   updated_at: string
@@ -124,6 +132,8 @@ export type Vehicle = {
   avg_km_per_month: number | null
   /** เวลาที่ current_mileage ถูกอัปเดตจากเลขไมล์จริงครั้งล่าสุด */
   mileage_updated_at: string
+  /** สาขา/หน่วยงานที่รถสังกัด — null = ไม่ระบุสาขา */
+  branch: string | null
   note: string | null
   is_active: boolean
   created_at: string
@@ -262,7 +272,8 @@ export interface Database {
         Insert: Insert<Company, Timestamps | 'code' | 'tax_id' | 'phone' | 'email' | 'address'
           | 'contact_name' | 'logo_url' | 'alert_km' | 'alert_tread_mm'
           | 'alert_change_count' | 'alert_change_days' | 'alert_lifetime_km'
-          | 'avg_km_per_month' | 'estimate_max_days' | 'is_active'>
+          | 'avg_km_per_month' | 'estimate_max_days' | 'plan' | 'plan_expires_at' | 'branches'
+          | 'is_active'>
         Update: Partial<Company>
         Relationships: []
       }
@@ -313,7 +324,7 @@ export interface Database {
         Row: Vehicle
         Insert: Insert<Vehicle, Timestamps | 'brand' | 'model'
           | 'current_mileage' | 'avg_km_per_month' | 'mileage_updated_at'
-          | 'note' | 'is_active'>
+          | 'branch' | 'note' | 'is_active'>
         Update: Partial<Vehicle>
         Relationships: [FK<'company_id', 'companies'>, FK<'axle_type', 'axle_types', 'code'>]
       }

@@ -130,16 +130,23 @@ export function sanitizePlateNumber(value: string): string {
   return value.replace(/\D/g, '').slice(0, PLATE_NUMBER_MAX)
 }
 
-/** เลขไมล์สูงสุดที่ระบบรับ (6 หลัก) */
-export const ODOMETER_MAX = 999_999
-export const ODOMETER_MAX_MESSAGE = 'เลขไมล์ต้องไม่เกิน 6 หลัก (999,999 กม.)'
+/** จำนวนหลักสูงสุดของเลขไมล์ (รถรุ่นใหม่มีเลขไมล์เกิน 6 หลัก — ลูกค้าขอ 8 หลัก) */
+export const ODOMETER_DIGITS = 8
+/** เลขไมล์สูงสุดที่ระบบรับ (8 หลัก = 99,999,999 กม.) */
+export const ODOMETER_MAX = 10 ** ODOMETER_DIGITS - 1
+export const ODOMETER_MAX_MESSAGE =
+  `เลขไมล์ต้องไม่เกิน ${ODOMETER_DIGITS} หลัก (${ODOMETER_MAX.toLocaleString('en-US')} กม.)`
+/** ข้อความช่วยใต้ช่องกรอกเลขไมล์ ใช้ให้ตรงกันทุกหน้า */
+export const ODOMETER_HINT = `กรอกได้ไม่เกิน ${ODOMETER_DIGITS} หลัก`
+/** maxLength ของช่องกรอกเลขไมล์ที่โชว์จุลภาคคั่นหลัก (8 หลัก + จุลภาค 2 ตัว) */
+export const ODOMETER_INPUT_MAXLENGTH = ODOMETER_DIGITS + Math.floor((ODOMETER_DIGITS - 1) / 3)
 
 /**
- * เหลือเฉพาะตัวเลขและตัดให้ไม่เกิน 6 หลัก สำหรับช่องกรอกเลขไมล์
+ * เหลือเฉพาะตัวเลขและตัดให้ไม่เกินจำนวนหลักที่กำหนด สำหรับช่องกรอกเลขไมล์
  * @param value ค่าที่พิมพ์ (อาจมีจุลภาคคั่นหลัก)
  */
 export function sanitizeOdometer(value: string): string {
-  return value.replace(/\D/g, '').slice(0, 6)
+  return value.replace(/\D/g, '').slice(0, ODOMETER_DIGITS)
 }
 
 /**
@@ -149,6 +156,15 @@ export function sanitizeOdometer(value: string): string {
 export function groupDigits(digits: string): string {
   if (digits === '') return ''
   return Number(digits).toLocaleString('en-US')
+}
+
+/**
+ * บังคับตัวพิมพ์ใหญ่ขณะพิมพ์ สำหรับยี่ห้อยาง ซีรีย์ และหมายเหตุยี่ห้อ/รุ่นของยาง "อื่นๆ"
+ * ตัวอักษรไทย ตัวเลข และสัญลักษณ์ไม่เปลี่ยน — ให้ข้อมูลที่ค้นหากันเจอไม่ว่าใครพิมพ์
+ * @param value ค่าที่พิมพ์
+ */
+export function toUpperText(value: string): string {
+  return value.toUpperCase()
 }
 
 /** ซีรีย์ยางยาวได้ไม่เกินกี่ตัว */

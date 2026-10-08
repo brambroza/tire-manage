@@ -3,17 +3,19 @@ import { createClient } from '@/lib/supabase/server'
 import { getVehicleChangeAlerts } from '@/lib/notifications'
 import { PageHeader } from '@/components/app-shell'
 import { VehiclesClient, type VehicleRow } from './vehicles-client'
+import { BRANCH_FILTER_NONE } from './branch-filter'
 import type { AxleType, Vehicle } from '@/lib/database.types'
 
 export const metadata = { title: 'จัดการรถ · Dream Tire' }
 
+/** หน้ารายการรถของบริษัท — กรองด้วยคำค้นหา (?q=) และสาขา (?branch=, `__none__` = ไม่ระบุสาขา) */
 export default async function VehiclesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>
+  searchParams: Promise<{ q?: string; branch?: string }>
 }) {
   const { company } = await requireSession(['admin'])
-  const { q } = await searchParams
+  const { q, branch } = await searchParams
   const supabase = await createClient()
 
   let query = supabase.from('vehicles').select('*').order('plate_no')
@@ -23,6 +25,8 @@ export default async function VehiclesPage({
       `plate_no.ilike.${term},brand.ilike.${term},model.ilike.${term},province.ilike.${term}`,
     )
   }
+  if (branch === BRANCH_FILTER_NONE) query = query.is('branch', null)
+  else if (branch?.trim()) query = query.eq('branch', branch.trim())
 
   const [{ data: vehicleData }, { data: mountedTires }, { data: axleTypeData }, changeAlerts] =
     await Promise.all([
@@ -57,6 +61,7 @@ export default async function VehiclesPage({
       <VehiclesClient
         vehicles={vehicles}
         axleTypes={(axleTypeData ?? []) as AxleType[]}
+        branches={company?.branches ?? []}
         changeAlertLabel={`≥ ${company?.alert_change_count ?? 3} ครั้งใน ${company?.alert_change_days ?? 90} วัน`}
         companyName={company?.name ?? 'Dream Tire'}
       />

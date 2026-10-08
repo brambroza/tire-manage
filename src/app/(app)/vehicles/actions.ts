@@ -23,8 +23,10 @@ const vehicleSchema = z.object({
   /** ค่าเฉลี่ยที่รถคันนี้วิ่งต่อเดือน — เว้นว่าง = ใช้ค่ากลางของบริษัท */
   avg_km_per_month: optionalNumber.refine(
     (v) => v === null || (Number.isInteger(v) && v > 0 && v <= ODOMETER_MAX),
-    'ต้องเป็นจำนวนเต็มบวก ไม่เกิน 999,999',
+    `ต้องเป็นจำนวนเต็มบวก ไม่เกิน ${ODOMETER_MAX.toLocaleString('en-US')}`,
   ),
+  /** สาขา/หน่วยงานที่รถสังกัด — ต้องอยู่ในรายชื่อสาขาของบริษัท (ตรวจตอนบันทึก) · ว่าง = ไม่ระบุ */
+  branch: optionalText.refine((v) => v === null || v.length <= 60, 'ชื่อสาขาไม่เกิน 60 ตัวอักษร'),
   note: optionalText,
 })
 
@@ -67,6 +69,28 @@ const AXLE_TYPE_DENIED: ActionResult<never> = {
 }
 
 /**
+ * ตรวจว่าสาขานี้อยู่ในรายชื่อสาขาที่บริษัทตั้งไว้หรือไม่
+ * (ช่อง vehicles.branch เก็บเป็นข้อความ จึงต้องตรวจที่แอปแทน foreign key)
+ * @param companyId รหัสบริษัทเจ้าของรถ
+ * @param branch ชื่อสาขาที่เลือก
+ */
+async function isBranchAllowed(companyId: string, branch: string): Promise<boolean> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('companies')
+    .select('branches')
+    .eq('id', companyId)
+    .maybeSingle()
+  return (data?.branches ?? []).includes(branch)
+}
+
+const BRANCH_DENIED: ActionResult<never> = {
+  ok: false,
+  error: 'สาขานี้ไม่อยู่ในรายชื่อสาขาของบริษัท',
+  fieldErrors: { branch: 'สาขานี้ไม่อยู่ในรายชื่อสาขาของบริษัท — เพิ่มได้ที่หน้าข้อมูลบริษัท' },
+}
+
+/**
  * เพิ่มรถใหม่
  * @param input ข้อมูลรถจากฟอร์ม
  * @param companyId บริษัทเป้าหมาย (ระบุเมื่อ super admin ทำแทนลูกค้า)
@@ -98,6 +122,9 @@ export async function createVehicle(
   }
 
   if (!(await isAxleTypeAllowed(scope.companyId, parsed.data.axle_type))) return AXLE_TYPE_DENIED
+  if (parsed.data.branch !== null && !(await isBranchAllowed(scope.companyId, parsed.data.branch))) {
+    return BRANCH_DENIED
+  }
 
   const { data, error } = await supabase
     .from('vehicles')
@@ -122,7 +149,7 @@ export async function updateVehicle(id: string, input: VehicleInput): Promise<Ac
 
   const supabase = await createClient()
   const [currentResult, axleTypeResult] = await Promise.all([
-    supabase.from('vehicles').select('company_id, axle_type, plate_no').eq('id', id).maybeSingle(),
+    supabase.from('vehicles').select('company_id, axle_type, plate_no, branch').eq('id', id).maybeSingle(),
     supabase
       .from('axle_types')
       .select('code, is_active')
@@ -161,6 +188,15 @@ export async function updateVehicle(id: string, input: VehicleInput): Promise<Ac
     !(await isAxleTypeAllowed(currentResult.data.company_id, parsed.data.axle_type))
   ) {
     return AXLE_TYPE_DENIED
+  }
+
+  // เปลี่ยนสาขาได้เฉพาะชื่อที่อยู่ในรายชื่อของบริษัท (สาขาเดิมที่ถูกลบออกจากรายชื่อแล้วคงไว้ได้ ไม่บล็อกการแก้ข้อมูลอื่น)
+  if (
+    parsed.data.branch !== null &&
+    parsed.data.branch !== currentResult.data.branch &&
+    !(await isBranchAllowed(currentResult.data.company_id, parsed.data.branch))
+  ) {
+    return BRANCH_DENIED
   }
 
   const { data, error } = await supabase
@@ -250,7 +286,7 @@ export interface UpdateMileageResult {
  * RLS จำกัดให้เห็นเฉพาะรถของบริษัทตัวเองอยู่แล้ว (super admin เห็นทุกบริษัท)
  *
  * @param id รหัสรถ
- * @param mileage เลขไมล์ล่าสุด (ไม่เกิน 6 หลัก)
+ * @param mileage เลขไมล์ล่าสุด (ไม่เกิน ODOMETER_DIGITS หลัก — ดู ODOMETER_MAX)
  */
 export async function updateMileage(
   id: string,

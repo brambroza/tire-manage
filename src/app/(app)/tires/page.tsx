@@ -1,5 +1,8 @@
+import Link from 'next/link'
+import { Lock, Upload } from 'lucide-react'
 import { requireSession } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
+import { featureLockedMessage, hasFeature } from '@/lib/plan'
 import { PageHeader } from '@/components/app-shell'
 import { TiresClient } from './tires-client'
 import type { ModelOption } from './tire-form'
@@ -26,6 +29,13 @@ export default async function TiresPage({
 }) {
   const { profile, company } = await requireSession(['admin', 'technician'])
   const { q, status, date_field, from, to } = await searchParams
+  /** นำเข้าซีรีย์ยางจากไฟล์ — ปุ่มโชว์เสมอสำหรับแอดมิน แต่ติดกุญแจถ้าแพ็กเกจยังไม่เปิด (หน้าปลายทางอธิบายต่อ) */
+  const canImport = hasFeature(company, 'tire_import')
+  /** คีย์ซีรีย์ยางทีละเส้น — เฉพาะแอดมินบริษัทแพ็กเกจ Premium (super admin ทำแทนได้จากหน้าจัดการบริษัท) */
+  const isAdmin = profile.role === 'admin'
+  const canAddManual = isAdmin && hasFeature(company, 'tire_manual_add')
+  /** Premium พิมพ์ยี่ห้อ/รุ่นเองได้ — รายการที่สร้างเป็นของบริษัทนี้เท่านั้น */
+  const canOwnCatalog = isAdmin && hasFeature(company, 'tire_catalog_own')
   const supabase = await createClient()
 
   const [{ data: overviewData }, { data: rawData }, { data: modelData }] = await Promise.all([
@@ -92,14 +102,29 @@ export default async function TiresPage({
       <PageHeader
         title="คลังยาง"
         subtitle={company?.name ?? undefined}
+        action={
+          profile.role === 'admin' ? (
+            <Link
+              href="/tires/import"
+              title={canImport ? undefined : featureLockedMessage('tire_import')}
+              className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-line bg-white px-4 text-[15px] font-medium text-ink-700 hover:border-brand-200 hover:bg-brand-50"
+            >
+              {canImport ? <Upload className="size-5" /> : <Lock className="size-5 text-ink-400" />}
+              นำเข้าซีรีย์ยาง
+            </Link>
+          ) : undefined
+        }
       />
-      {/* ลูกค้าเพิ่มยางเข้าคลังเองไม่ได้ (canAdd ปิด) — เฉพาะ super admin ทำแทนได้จากหน้าจัดการบริษัท */}
+      {/* ลูกค้าแพ็กเกจ Premium เพิ่มยางทีละเส้นได้ (เลือกรุ่นจากแคตตาล็อกเท่านั้น) — Standard เห็นปุ่มติดกุญแจ */}
       <TiresClient
         tires={tires}
         rawTires={rawTires}
         models={models}
         lastRemovals={lastRemovals}
-        canManage={profile.role === 'admin'}
+        canManage={isAdmin}
+        canAdd={canAddManual}
+        addLockedMessage={isAdmin && !canAddManual ? featureLockedMessage('tire_manual_add') : undefined}
+        allowOwnCatalog={canOwnCatalog}
         companyName={company?.name ?? 'Dream Tire'}
         stats={stats}
       />

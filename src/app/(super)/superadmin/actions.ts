@@ -8,6 +8,39 @@ import { ActionResult, fail, optionalNumber, optionalText, zodFail } from '@/lib
 
 /* ============================================================ ลูกค้า */
 
+/** รูปแบบวันที่ YYYY-MM-DD ที่ฟอร์ม (input type="date") ส่งมา */
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * ตรวจว่าข้อความเป็นวันที่ YYYY-MM-DD ที่มีอยู่จริง (กัน 2026-02-30 เป็นต้น)
+ * @param value ข้อความวันที่
+ */
+function isValidISODate(value: string): boolean {
+  if (!ISO_DATE_PATTERN.test(value)) return false
+  const parsed = new Date(`${value}T00:00:00Z`)
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
+}
+
+/** วันที่ YYYY-MM-DD ที่เว้นว่างได้ — ว่าง = null (ไม่มีกำหนด) */
+const optionalDate = optionalText.refine((v) => v === null || isValidISODate(v), 'วันที่ไม่ถูกต้อง')
+
+/** แพ็กเกจ + วันหมดอายุ — super admin เท่านั้นที่เปลี่ยนได้ (DB trigger กันแอดมินบริษัทไว้แล้ว) */
+const planFields = {
+  plan: z.enum(['standard', 'premium']).default('standard'),
+  /** วันสุดท้ายที่ premium มีผล — มีความหมายเฉพาะแพ็กเกจ premium */
+  plan_expires_at: optionalDate,
+}
+
+/**
+ * วันหมดอายุมีความหมายเฉพาะ premium — แพ็กเกจ standard เก็บเป็น null เสมอ
+ * @param data ค่าที่ผ่าน schema แล้ว
+ */
+function normalizePlan<T extends { plan: 'standard' | 'premium'; plan_expires_at: string | null }>(
+  data: T,
+): T {
+  return { ...data, plan_expires_at: data.plan === 'premium' ? data.plan_expires_at : null }
+}
+
 const companySchema = z.object({
   code: z.string().trim().min(2, 'รหัสบริษัทอย่างน้อย 2 ตัวอักษร').max(20),
   name: z.string().trim().min(1, 'กรุณากรอกชื่อบริษัท'),
@@ -18,10 +51,15 @@ const companySchema = z.object({
   contact_name: optionalText,
   alert_km: z.number().int().min(1).default(10000),
   alert_tread_mm: z.number().min(0).default(3),
+  ...planFields,
 })
 
 export type SuperCompanyInput = z.input<typeof companySchema>
 const companyAutoCodeSchema = companySchema.omit({ code: true })
+
+const companyPlanSchema = z.object(planFields)
+
+export type CompanyPlanInput = z.input<typeof companyPlanSchema>
 
 /**
  * เพิ่มบริษัทลูกค้าใหม่
@@ -35,7 +73,7 @@ export async function createCompany(input: SuperCompanyInput): Promise<ActionRes
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('companies')
-    .insert(parsed.data)
+    .insert(normalizePlan(parsed.data))
     .select('id')
     .single()
 
@@ -69,12 +107,36 @@ export async function updateCompany(id: string, input: SuperCompanyInput): Promi
   const supabase = await createClient()
   const { error } = await supabase
     .from('companies')
-    .update(parsed.data)
+    .update(normalizePlan(parsed.data))
     .eq('id', id)
 
   if (error) return fail(error)
   revalidatePath('/superadmin/companies')
   revalidatePath(`/superadmin/companies/${id}`)
+  return { ok: true }
+}
+
+/**
+ * เปลี่ยนแพ็กเกจของบริษัทลูกค้าอย่างเดียว (ปุ่มเปลี่ยนด่วนในตาราง)
+ * @param id รหัสบริษัท
+ * @param input แพ็กเกจและวันหมดอายุ
+ */
+export async function setCompanyPlan(id: string, input: CompanyPlanInput): Promise<ActionResult> {
+  await requireSession(['super_admin'])
+  const parsedId = z.string().uuid('รหัสบริษัทไม่ถูกต้อง').safeParse(id)
+  if (!parsedId.success) return zodFail(parsedId.error)
+  const parsed = companyPlanSchema.safeParse(input)
+  if (!parsed.success) return zodFail(parsed.error)
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('companies')
+    .update(normalizePlan(parsed.data))
+    .eq('id', parsedId.data)
+
+  if (error) return fail(error)
+  revalidatePath('/superadmin/companies')
+  revalidatePath(`/superadmin/companies/${parsedId.data}`)
   return { ok: true }
 }
 

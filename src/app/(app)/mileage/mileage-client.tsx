@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import { AlertCircle, ArrowLeft, Check, Gauge, Truck } from 'lucide-react'
 import { Button, Field, Input } from '@/components/ui'
 import {
-  ODOMETER_MAX, PLATE_NUMBER_MAX, PLATE_PATTERN, PLATE_PATTERN_MESSAGE, PLATE_PREFIX_MAX,
+  ODOMETER_HINT, ODOMETER_INPUT_MAXLENGTH, ODOMETER_MAX,
+  PLATE_NUMBER_MAX, PLATE_PATTERN, PLATE_PATTERN_MESSAGE, PLATE_PREFIX_MAX,
   formatKm, groupDigits, sanitizeOdometer, sanitizePlateNumber, sanitizePlatePrefix,
 } from '@/lib/utils'
 import { updateMileage } from '../vehicles/actions'
@@ -224,7 +225,7 @@ export function MileageClient({
                     ? undefined
                     : delta !== null && delta > 0
                       ? `วิ่งเพิ่มจากครั้งก่อน ${formatKm(delta)} · ระยะรอบนี้ของยางทุกเส้นบนรถจะเพิ่มเท่านี้`
-                      : 'กรอกได้ไม่เกิน 6 หลัก · ต้องไม่น้อยกว่าไมล์ล่าสุดในระบบ'
+                      : `${ODOMETER_HINT} · ต้องไม่น้อยกว่าไมล์ล่าสุดในระบบ`
                 }
                 error={belowCurrent ? `ต้องไม่น้อยกว่า ${formatKm(vehicle.current_mileage)}` : undefined}
               >
@@ -241,7 +242,7 @@ export function MileageClient({
                         void save()
                       }
                     }}
-                    maxLength={7}
+                    maxLength={ODOMETER_INPUT_MAXLENGTH}
                     autoFocus
                     className="h-16 pl-12 text-2xl font-semibold"
                   />

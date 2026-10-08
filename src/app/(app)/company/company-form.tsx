@@ -2,11 +2,140 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertCircle, Check } from 'lucide-react'
-import { Button, Card, CardBody, CardHeader, Field, Input, Textarea } from '@/components/ui'
+import { AlertCircle, Check, Crown, Plus, X } from 'lucide-react'
+import { Badge, Button, Card, CardBody, CardHeader, Field, Input, Textarea } from '@/components/ui'
 import { previewLifetimeAlertCount, updateOwnCompany, type CompanyInput } from './actions'
 import type { Company } from '@/lib/database.types'
-import { formatNumber } from '@/lib/utils'
+import { PLAN_LABEL, effectivePlan } from '@/lib/plan'
+import { formatNumber, formatThaiDate } from '@/lib/utils'
+
+/** ความยาวสูงสุดของชื่อสาขา — ต้องตรงกับ schema ใน actions.ts */
+const BRANCH_NAME_MAX = 60
+/** จำนวนสาขาสูงสุด — ต้องตรงกับ schema ใน actions.ts */
+const BRANCH_LIMIT = 50
+
+/**
+ * ตัวแก้ไขรายชื่อสาขาแบบชิป — พิมพ์ชื่อแล้วกด Enter หรือปุ่ม "เพิ่ม", กด X เพื่อลบ
+ * @param value รายชื่อสาขาปัจจุบัน
+ * @param onChange เรียกเมื่อรายชื่อเปลี่ยน
+ * @param error ข้อผิดพลาดจาก server (ถ้ามี)
+ */
+function BranchEditor({
+  value,
+  onChange,
+  error,
+}: {
+  value: string[]
+  onChange: (next: string[]) => void
+  error?: string
+}) {
+  const [draft, setDraft] = React.useState('')
+  const [localError, setLocalError] = React.useState<string | null>(null)
+
+  /** เพิ่มชื่อในช่องกรอกเข้ารายการ (ตัดช่องว่างหัวท้าย ไม่รับชื่อซ้ำหรือว่าง) */
+  function addDraft() {
+    const name = draft.trim()
+    if (!name) return
+    if (name.length > BRANCH_NAME_MAX) {
+      setLocalError(`ชื่อสาขาไม่เกิน ${BRANCH_NAME_MAX} ตัวอักษร`)
+      return
+    }
+    if (value.includes(name)) {
+      setLocalError('มีสาขาชื่อนี้อยู่แล้ว')
+      return
+    }
+    if (value.length >= BRANCH_LIMIT) {
+      setLocalError(`ตั้งสาขาได้ไม่เกิน ${BRANCH_LIMIT} แห่ง`)
+      return
+    }
+    onChange([...value, name])
+    setDraft('')
+    setLocalError(null)
+  }
+
+  return (
+    <Field
+      label="รายชื่อสาขา"
+      hint="ใช้เป็นตัวเลือกช่องสาขาตอนเพิ่ม/แก้รถ และใช้แยกกลุ่มในรายงานรถ"
+      error={localError ?? error}
+    >
+      <div className="flex gap-2">
+        <Input
+          value={draft}
+          onChange={(e) => {
+            setDraft(e.target.value)
+            setLocalError(null)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              addDraft()
+            }
+          }}
+          placeholder="เช่น สาขาระยอง, คลังสินค้าบางนา"
+          maxLength={BRANCH_NAME_MAX}
+          aria-label="ชื่อสาขาใหม่"
+        />
+        <Button type="button" variant="secondary" onClick={addDraft} disabled={!draft.trim()}>
+          <Plus className="size-4.5" />
+          เพิ่ม
+        </Button>
+      </div>
+      {value.length > 0 ? (
+        <ul className="mt-3 flex flex-wrap gap-2" aria-label="สาขาที่ตั้งไว้">
+          {value.map((name) => (
+            <li
+              key={name}
+              className="inline-flex items-center gap-1 rounded-full bg-brand-50 py-1 pl-3 pr-1 text-sm font-medium text-brand-800 ring-1 ring-inset ring-brand-200"
+            >
+              {name}
+              <button
+                type="button"
+                onClick={() => onChange(value.filter((item) => item !== name))}
+                aria-label={`ลบสาขา ${name}`}
+                className="flex size-6 items-center justify-center rounded-full text-brand-600 hover:bg-brand-100"
+              >
+                <X className="size-3.5" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-3 text-sm text-ink-400">ยังไม่ตั้งสาขา — รถทุกคันจะอยู่ในกลุ่ม “ไม่ระบุสาขา”</p>
+      )}
+    </Field>
+  )
+}
+
+/**
+ * การ์ดแพ็กเกจการใช้งาน (อ่านอย่างเดียว) — แอดมินบริษัทดูได้แต่เปลี่ยนเองไม่ได้
+ * @param company บริษัทของผู้ใช้
+ */
+function PlanCard({ company }: { company: Company }) {
+  const plan = effectivePlan(company)
+  const expired = company.plan === 'premium' && plan === 'standard'
+  return (
+    <Card>
+      <CardHeader title="แพ็กเกจการใช้งาน" />
+      <CardBody className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge tone={expired ? 'amber' : plan === 'premium' ? 'brand' : 'slate'}>
+            {plan === 'premium' && <Crown className="size-3" />}
+            {expired ? 'Premium หมดอายุ' : PLAN_LABEL[plan]}
+          </Badge>
+          {company.plan === 'premium' && (
+            <span className="text-sm text-ink-500">
+              {company.plan_expires_at
+                ? `${expired ? 'หมดอายุเมื่อ' : 'ถึง'} ${formatThaiDate(company.plan_expires_at)}`
+                : 'ไม่มีกำหนดหมดอายุ'}
+            </span>
+          )}
+        </div>
+        <p className="text-sm text-ink-500">เปลี่ยนแพ็กเกจได้โดยติดต่อ Dreammaker</p>
+      </CardBody>
+    </Card>
+  )
+}
 
 /** ฟอร์มแก้ไขข้อมูลบริษัทของตัวเอง (เฉพาะแอดมิน) */
 export function CompanyForm({ company }: { company: Company }) {
@@ -25,6 +154,7 @@ export function CompanyForm({ company }: { company: Company }) {
     alert_lifetime_km: company.alert_lifetime_km ?? '',
     avg_km_per_month: company.avg_km_per_month ?? '',
     estimate_max_days: company.estimate_max_days ?? 90,
+    branches: company.branches ?? [],
   })
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
@@ -114,6 +244,22 @@ export function CompanyForm({ company }: { company: Company }) {
       </Card>
 
       <div className="space-y-4">
+        <PlanCard company={company} />
+
+        <Card>
+          <CardHeader
+            title="สาขา / หน่วยงาน"
+            description="ตั้งรายชื่อสาขาเพื่อระบุว่ารถแต่ละคันสังกัดที่ไหน"
+          />
+          <CardBody>
+            <BranchEditor
+              value={form.branches ?? []}
+              onChange={(next) => set('branches', next)}
+              error={fieldErrors.branches}
+            />
+          </CardBody>
+        </Card>
+
         <Card>
           <CardHeader
             title="เกณฑ์แจ้งเตือน"

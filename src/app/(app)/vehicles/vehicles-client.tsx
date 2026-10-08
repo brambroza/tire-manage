@@ -2,9 +2,11 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { History, Pencil, Plus, Power, PowerOff, Repeat, Truck } from 'lucide-react'
-import { ALERT_ROW, Badge, Button, Card, EmptyState, Table, TableWrap, Td, Th } from '@/components/ui'
+import {
+  ALERT_ROW, Badge, Button, Card, EmptyState, Select, Table, TableWrap, Td, Th,
+} from '@/components/ui'
 import { ConfirmDialog } from '@/components/ui/modal'
 import { SearchInput } from '@/components/search-input'
 import { ExportButtons } from '@/components/export-buttons'
@@ -13,6 +15,7 @@ import { getLayout } from '@/lib/axle-layouts'
 import { formatKm } from '@/lib/utils'
 import { VehicleFormModal } from './vehicle-form'
 import { deactivateVehicle, reactivateVehicle } from './actions'
+import { BRANCH_FILTER_NONE, BRANCH_NONE_LABEL, branchFilterLabel } from './branch-filter'
 import type { AxleType, Vehicle } from '@/lib/database.types'
 
 export interface VehicleRow extends Vehicle {
@@ -22,10 +25,44 @@ export interface VehicleRow extends Vehicle {
   frequent_change_count?: number | null
 }
 
+/**
+ * ตัวกรองสาขาที่ผูกกับ query string (?branch=) — เปลี่ยนแล้วโหลดรายการใหม่จาก server
+ * @param branches รายชื่อสาขาของบริษัท
+ */
+function BranchFilter({ branches }: { branches: string[] }) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const params = useSearchParams()
+  const current = params.get('branch') ?? ''
+  const [pending, startTransition] = React.useTransition()
+
+  function apply(value: string) {
+    const next = new URLSearchParams(params.toString())
+    if (value) next.set('branch', value)
+    else next.delete('branch')
+    const qs = next.toString()
+    startTransition(() => router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false }))
+  }
+
+  return (
+    <Select
+      value={current}
+      onChange={(e) => apply(e.target.value)}
+      aria-label="กรองตามสาขา"
+      className={pending ? 'opacity-70' : undefined}
+    >
+      <option value="">ทุกสาขา</option>
+      {branches.map((name) => <option key={name} value={name}>{name}</option>)}
+      <option value={BRANCH_FILTER_NONE}>{BRANCH_NONE_LABEL}</option>
+    </Select>
+  )
+}
+
 /** ตารางรายการรถ + ฟอร์มเพิ่ม/แก้ไข */
 export function VehiclesClient({
   vehicles,
   axleTypes,
+  branches = [],
   companyId,
   enableLinks = true,
   enableHistory = false,
@@ -35,6 +72,8 @@ export function VehiclesClient({
   vehicles: VehicleRow[]
   /** ประเภทเพลาจาก Supabase ใช้ทั้งชื่อ จำนวนล้อ และฟอร์มรถ */
   axleTypes: AxleType[]
+  /** รายชื่อสาขาของบริษัท — ใช้เป็นตัวเลือกในฟอร์มและตัวกรอง */
+  branches?: string[]
   /** ระบุเมื่อ super admin จัดการรถแทนลูกค้า */
   companyId?: string
   /** ปิดลิงก์ไปหน้ารายละเอียดรถ (หน้า super admin ยังไม่มี route นั้น) */
@@ -48,6 +87,8 @@ export function VehiclesClient({
 }) {
   const router = useRouter()
   const searchParams = useSearchParams()
+  /** มีตัวกรอง (คำค้น/สาขา) อยู่ — ใช้เลือกข้อความ empty state ให้ตรงสถานการณ์ */
+  const isFiltering = Boolean(searchParams.get('q') || searchParams.get('branch'))
   const [formOpen, setFormOpen] = React.useState(false)
   const [editing, setEditing] = React.useState<Vehicle | null>(null)
   const [confirm, setConfirm] = React.useState<VehicleRow | null>(null)
@@ -64,7 +105,13 @@ export function VehiclesClient({
     setMessage(null)
     try {
       const exporter = await import('./vehicles-export')
-      const input = { companyName, searchTerm: searchParams.get('q') ?? '', vehicles, axleTypes }
+      const input = {
+        companyName,
+        searchTerm: searchParams.get('q') ?? '',
+        branchFilter: branchFilterLabel(searchParams.get('branch')),
+        vehicles,
+        axleTypes,
+      }
       if (format === 'excel') await exporter.exportVehiclesExcel(input)
       else await exporter.exportVehiclesPdf(input)
     } catch (error) {
@@ -98,6 +145,11 @@ export function VehiclesClient({
     <>
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
         <SearchInput placeholder="ค้นหาทะเบียนรถ, ยี่ห้อ, รุ่น..." className="sm:max-w-md" />
+        {branches.length > 0 && (
+          <div className="sm:w-52">
+            <BranchFilter branches={branches} />
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
           <ExportButtons
             exporting={exporting}
@@ -119,12 +171,21 @@ export function VehiclesClient({
 
       <Card>
         {vehicles.length === 0 ? (
-          <EmptyState
-            icon={<Truck className="size-6" />}
-            title="ยังไม่มีรถในระบบ"
-            description="เพิ่มรถคันแรกเพื่อเริ่มบันทึกการถอด-ใส่ยาง"
-            action={<Button onClick={openCreate}><Plus className="size-4.5" />เพิ่มรถใหม่</Button>}
-          />
+          // กรองอยู่แล้วไม่เจอ ≠ ยังไม่มีรถเลย — ข้อความต้องบอกให้ล้างตัวกรองแทนชวนเพิ่มรถ
+          isFiltering ? (
+            <EmptyState
+              icon={<Truck className="size-6" />}
+              title="ไม่พบรถตามตัวกรองที่เลือก"
+              description="ลองเปลี่ยนสาขาหรือคำค้นหา"
+            />
+          ) : (
+            <EmptyState
+              icon={<Truck className="size-6" />}
+              title="ยังไม่มีรถในระบบ"
+              description="เพิ่มรถคันแรกเพื่อเริ่มบันทึกการถอด-ใส่ยาง"
+              action={<Button onClick={openCreate}><Plus className="size-4.5" />เพิ่มรถใหม่</Button>}
+            />
+          )
         ) : (
           <TableWrap>
             <Table>
@@ -132,6 +193,7 @@ export function VehiclesClient({
                 <tr>
                   <Th>ทะเบียนรถ</Th>
                   <Th className="hidden lg:table-cell">ยี่ห้อ / รุ่น</Th>
+                  <Th className="hidden lg:table-cell">สาขา</Th>
                   <Th className="hidden md:table-cell">ประเภทเพลา</Th>
                   <Th className="text-right">เลขไมล์ล่าสุด</Th>
                   <Th className="text-center">ยางที่ติดตั้ง</Th>
@@ -182,6 +244,7 @@ export function VehiclesClient({
                       <Td className="hidden lg:table-cell">
                         {[v.brand, v.model].filter(Boolean).join(' ') || '-'}
                       </Td>
+                      <Td className="hidden lg:table-cell">{v.branch ?? '-'}</Td>
                       <Td className="hidden whitespace-nowrap md:table-cell">
                         <Badge tone="brand">{v.axle_type}</Badge>
                         <span className="ml-2 text-sm text-ink-400">{layout.wheelCount} ตำแหน่ง</span>
@@ -252,6 +315,7 @@ export function VehiclesClient({
         vehicle={editing}
         companyId={companyId}
         axleTypes={axleTypes}
+        branches={branches}
       />
 
       <VehicleHistoryModal
