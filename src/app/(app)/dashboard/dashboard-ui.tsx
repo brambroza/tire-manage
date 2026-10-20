@@ -1,8 +1,8 @@
 import Link from 'next/link'
-import { ArrowRight, Check, Package, Repeat, X } from 'lucide-react'
+import { ArrowRight, Check, Package, Repeat, Sparkles, X } from 'lucide-react'
 import { Card } from '@/components/ui'
 import { cn } from '@/lib/utils'
-import type { TireStatus } from '@/lib/database.types'
+import type { TireDisplayStatus } from '@/lib/utils'
 
 /**
  * โทนสีความหมายเดียวทั้งหน้า dashboard
@@ -47,7 +47,8 @@ const TONE_SOLID: Record<DashTone, string> = {
 }
 
 /** โทนสี + ไอคอนของสถานะยาง — ใช้ชุดเดียวกันทั้ง dashboard และหน้าคลังยาง ให้สีตรงกับโดนัทและ legend */
-export const TIRE_STATUS_CHIP: Record<TireStatus, { tone: DashTone; icon: React.ReactNode }> = {
+export const TIRE_STATUS_CHIP: Record<TireDisplayStatus, { tone: DashTone; icon: React.ReactNode }> = {
+  new: { tone: 'brand', icon: <Sparkles /> },
   mounted: { tone: 'good', icon: <Check strokeWidth={3} /> },
   in_stock: { tone: 'info', icon: <Package /> },
   scrapped: { tone: 'scrap', icon: <X strokeWidth={3} /> },

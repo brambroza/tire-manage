@@ -8,7 +8,8 @@
 --   และถ้าแถวยี่ห้อปกติมีหมายเหตุของผู้ใช้ ที่มาจะไม่ถูกบันทึก
 --   จึงเพิ่มตาราง tire_imports (1 แถว = 1 รอบนำเข้า) และ tires.import_id ผูกยางกับรอบ
 --
--- backfill: สร้างรอบย้อนหลังจากหมายเหตุเดิม จัดกลุ่มตาม บริษัท + ชื่อไฟล์ + วันที่สร้างยาง
+-- backfill: สร้างรอบย้อนหลังจากหมายเหตุเดิม ("นำเข้าจากไฟล์ ..." หรือ "คีย์/สแกน · ...")
+--   จัดกลุ่มตาม บริษัท + ชื่อไฟล์/ชื่อรอบ + วันที่สร้างยาง
 --   ยางที่หมายเหตุไม่มีข้อความที่มา (ยี่ห้อปกติที่กรอกหมายเหตุเอง) ระบุย้อนหลังไม่ได้
 -- ============================================================
 
@@ -52,13 +53,16 @@ begin
   for grp in
     select
       t.company_id,
-      substring(t.note from 'นำเข้าจากไฟล์ (.+) [0-9]{1,2} \S+ [0-9]{4}$') as file_name,
+      coalesce(
+        substring(t.note from 'นำเข้าจากไฟล์ (.+) [0-9]{1,2} \S+ [0-9]{4}$'),
+        substring(t.note from '(คีย์/สแกน · .+) [0-9]{1,2} \S+ [0-9]{4}$')
+      ) as file_name,
       (t.created_at at time zone 'Asia/Bangkok')::date as import_day,
       min(t.created_at) as first_at,
       array_agg(t.id) as tire_ids
     from public.tires t
     where t.import_id is null
-      and t.note ~ 'นำเข้าจากไฟล์ .+ [0-9]{1,2} \S+ [0-9]{4}$'
+      and t.note ~ '(นำเข้าจากไฟล์|คีย์/สแกน ·) .+ [0-9]{1,2} \S+ [0-9]{4}$'
     group by 1, 2, 3
   loop
     insert into public.tire_imports

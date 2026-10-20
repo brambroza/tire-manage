@@ -49,14 +49,14 @@ export const IMPORT_TEMPLATE_COLUMNS: ReadonlyArray<{
     key: 'brand',
     header: 'ยี่ห้อ',
     required: true,
-    hint: 'ยี่ห้อในแคตตาล็อกที่บริษัทได้รับสิทธิ์ หรือ "อื่นๆ" — แพ็กเกจ Premium ใส่ยี่ห้อใหม่ได้ ระบบจะสร้างให้เป็นของบริษัท',
+    hint: 'ยี่ห้อตามเมนูข้อมูลยางของบริษัท หรือ "อื่นๆ" — ระบบไม่สร้างยี่ห้อใหม่ให้ ต้องให้ Dreammaker เพิ่ม/เปิดสิทธิ์ก่อน',
     examples: ['Michelin', OTHER_BRAND],
   },
   {
     key: 'model',
     header: 'รุ่น',
     required: true,
-    hint: 'ชื่อรุ่นตามแคตตาล็อก หรือรุ่นใหม่ของบริษัท (Premium) · ยี่ห้อ "อื่นๆ" เว้นว่างได้',
+    hint: 'ชื่อรุ่นตามเมนูข้อมูลยางของบริษัท · ยี่ห้อ "อื่นๆ" เว้นว่างได้',
     examples: ['X MULTI Z', OTHER_BRAND],
   },
   {
@@ -287,13 +287,28 @@ export function validateImportRows(rows: TireImportRow[]): ImportFormatCheck[] {
   })
 }
 
+/** ขึ้นต้นชื่อรอบนำเข้าที่มาจากการคีย์/สแกนซีรีย์ (ไม่ใช่ไฟล์) */
+export const SCAN_SOURCE_PREFIX = 'คีย์/สแกน · '
+
+/**
+ * ชื่อรอบนำเข้าสำหรับการคีย์/สแกนซีรีย์ทีละรุ่น เช่น "คีย์/สแกน · CHENGSHAN CST-35 11R22.5 16PR"
+ * @param brand ยี่ห้อ
+ * @param model รุ่น
+ * @param size ขนาด
+ */
+export function scanBatchName(brand: string, model: string, size: string): string {
+  return `${SCAN_SOURCE_PREFIX}${[brand, model, size].filter(Boolean).join(' ')}`.slice(0, 200)
+}
+
 /**
  * ข้อความบอกที่มาของยางที่นำเข้า — เก็บใน tires.note
- * @param fileName ชื่อไฟล์ที่นำเข้า
+ * @param fileName ชื่อไฟล์ที่นำเข้า หรือชื่อรอบจาก scanBatchName
  * @param at เวลาที่นำเข้า
  */
 export function importSourceLabel(fileName: string, at = new Date()): string {
-  return `นำเข้าจากไฟล์ ${fileName} ${formatThaiDate(at)}`
+  return fileName.startsWith(SCAN_SOURCE_PREFIX)
+    ? `${fileName} ${formatThaiDate(at)}`
+    : `นำเข้าจากไฟล์ ${fileName} ${formatThaiDate(at)}`
 }
 
 /**

@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowLeft, Lock, Upload } from 'lucide-react'
+import { ArrowLeft, Lock, ScanBarcode, Upload } from 'lucide-react'
 import { requireSession } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { PLAN_LABEL, effectivePlan, featureLockedMessage, hasFeature } from '@/lib/plan'
@@ -10,12 +10,16 @@ import { ImportHistoryClient } from './import-history-client'
 
 export const metadata = { title: 'ข้อมูลยางใหม่ · Dream Tire' }
 
+const SECONDARY_LINK =
+  'inline-flex min-h-12 items-center gap-2 rounded-xl border border-line bg-white px-4 text-[15px] font-medium text-ink-700 hover:bg-brand-50'
+
 const PRIMARY_LINK =
   'inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-600 px-5 text-[15px] font-medium text-white hover:bg-brand-700'
 
 /**
- * เมนู "ข้อมูลยางใหม่" (แอดมินบริษัท · Premium) — ประวัติการนำเข้าซีรีย์ยางจากไฟล์ทุกรอบ
- * พร้อมรายการยางทุกเส้นที่นำเข้าและสถานะปัจจุบัน ปุ่มนำเข้าไฟล์ใหม่ไปที่ /tires/import/new
+ * เมนู "ข้อมูลยางใหม่" (แอดมินบริษัท · Premium) — ประวัติการนำเข้าทุกรอบ (ไฟล์ / คีย์-สแกน)
+ * พร้อมรายการยางทุกเส้นที่นำเข้าและสถานะปัจจุบัน
+ * เพิ่มยางได้ 2 ทาง: /tires/import/scan (เลือกรุ่นแล้วสแกน/คีย์ซีรีย์) และ /tires/import/new (ไฟล์)
  */
 export default async function NewTireDataPage({
   searchParams,
@@ -29,16 +33,22 @@ export default async function NewTireDataPage({
   const header = (
     <PageHeader
       title="ข้อมูลยางใหม่"
-      subtitle={`ยางใหม่ที่นำเข้าคลังจากไฟล์ทั้งหมด · ${company?.name ?? ''}`}
+      subtitle={`คลังยางใหม่ — ยางที่นำเข้าจากไฟล์หรือคีย์/สแกนซีรีย์ · ${company?.name ?? ''}`}
       breadcrumb={['คลังยาง', 'ข้อมูลยางใหม่']}
       action={
         <>
           <Badge tone={unlocked ? 'brand' : 'slate'}>แพ็กเกจ {PLAN_LABEL[effectivePlan(company)]}</Badge>
           {unlocked && (
-            <Link href="/tires/import/new" className={PRIMARY_LINK}>
-              <Upload className="size-5" />
-              นำเข้าไฟล์ใหม่
-            </Link>
+            <>
+              <Link href="/tires/import/new" className={SECONDARY_LINK}>
+                <Upload className="size-5" />
+                นำเข้าจากไฟล์
+              </Link>
+              <Link href="/tires/import/scan" className={PRIMARY_LINK}>
+                <ScanBarcode className="size-5" />
+                คีย์/สแกนซีรีย์
+              </Link>
+            </>
           )}
         </>
       }

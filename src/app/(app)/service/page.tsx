@@ -12,7 +12,8 @@ interface ModelRow {
   name: string
   size: string | null
   new_tread_mm: number | null
-  tire_brands: { name: string } | null
+  created_by_company: string | null
+  tire_brands: { name: string; is_active: boolean } | null
 }
 
 export default async function ServicePage({
@@ -20,7 +21,7 @@ export default async function ServicePage({
 }: {
   searchParams: Promise<{ vehicle?: string }>
 }) {
-  await requireSession(['admin', 'technician'])
+  const { company } = await requireSession(['admin', 'technician'])
   const { vehicle } = await searchParams
   const supabase = await createClient()
 
@@ -30,6 +31,7 @@ export default async function ServicePage({
     { data: reasonData },
     { data: axleTypeData },
     { data: modelData },
+    { data: grantData },
   ] = await Promise.all([
     supabase
       .from('vehicles')
@@ -49,16 +51,26 @@ export default async function ServicePage({
       .eq('is_active', true)
       .order('sort_order'),
     supabase.from('axle_types').select('*').order('sort_order').order('name'),
-    // แคตตาล็อกที่ super admin กำหนดให้บริษัทนี้เห็น (RLS กรองให้แล้ว)
+    // แคตตาล็อก — RLS ให้เห็นรุ่นที่ได้รับสิทธิ์ + รุ่นที่บริษัทสร้างเอง จึงต้องกรองซ้ำด้วยสิทธิ์ด้านล่าง
     // ใช้เป็นตัวเลือกขนาดยาง และค่าดอกยางตอนใหม่
     supabase
       .from('tire_models')
-      .select('id, name, size, new_tread_mm, tire_brands(name)')
+      .select('id, name, size, new_tread_mm, created_by_company, tire_brands(name, is_active)')
       .eq('is_active', true)
       .order('name'),
+    company
+      ? supabase.from('company_tire_models').select('tire_model_id').eq('company_id', company.id)
+      : Promise.resolve({ data: [] as { tire_model_id: string }[] }),
   ])
 
-  const models: TireModelLite[] = ((modelData ?? []) as unknown as ModelRow[]).map((m) => ({
+  // ตัวเลือกรุ่นยาง = เฉพาะรุ่นกลางที่ super admin เปิดสิทธิ์ให้บริษัทนี้ (กฎเดียวกับหน้า "ข้อมูลยาง")
+  // ไม่รวมรุ่นที่บริษัทสร้างเอง และรุ่นที่ยี่ห้อถูกปิดใช้งาน — ยางในคลังที่ผูกรุ่นเหล่านั้นยังเลือกได้ตามปกติ
+  const granted = new Set((grantData ?? []).map((g) => g.tire_model_id))
+  const visibleModels = ((modelData ?? []) as unknown as ModelRow[]).filter(
+    (m) => granted.has(m.id) && m.created_by_company === null && m.tire_brands?.is_active !== false,
+  )
+
+  const models: TireModelLite[] = visibleModels.map((m) => ({
     id: m.id,
     brand_name: m.tire_brands?.name ?? '',
     model_name: m.name,

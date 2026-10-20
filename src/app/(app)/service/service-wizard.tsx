@@ -191,13 +191,15 @@ function toCatalogOptions(list: TireModelLite[]): TireOption[] {
     .sort(
       (a, b) =>
         (a.size ?? '').localeCompare(b.size ?? '') ||
+        a.brand_name.localeCompare(b.brand_name) ||
         a.model_name.localeCompare(b.model_name),
     )
     .map((model) => ({
       kind: 'catalog' as const,
       id: model.id,
       size: model.size ?? 'ไม่ระบุขนาด',
-      detail: model.model_name || 'ไม่ระบุรุ่น',
+      // ใส่ยี่ห้อด้วย ไม่งั้นรุ่นชื่อคล้ายกันคนละยี่ห้อ (เช่น "อื่นๆ") ดูเหมือนรายการซ้ำ
+      detail: [model.brand_name || null, model.model_name || 'ไม่ระบุรุ่น'].filter(Boolean).join(' '),
       model,
     }))
 }
@@ -1230,6 +1232,8 @@ export function ServiceWizard({
             pick={mnPick}
             onChange={setMnPick}
             options={mountKind === 'used' ? mountUsedOptions : mountNewOptions}
+            // ใส่ยางใหม่: โชว์ยางใหม่ในคลังก่อนอย่างเดียว แคตตาล็อกขึ้นเมื่อพิมพ์ค้นหา
+            stockOnlyUntilSearch={mountKind === 'new'}
             emptyText={
               mountKind === 'used'
                 ? 'ยังไม่มียางในคลัง — เลือกรุ่นจากแคตตาล็อกแล้วคีย์ซีเรียลเข้าไปใหม่ได้เลย'
@@ -1239,7 +1243,7 @@ export function ServiceWizard({
             selectionHint={
               mountKind === 'used'
                 ? 'ยางในคลังขึ้นก่อน (ใหม่/เคยใช้) — ถ้าเส้นที่ถืออยู่ไม่มีในรายการ เลือกรุ่นจากแคตตาล็อกแล้วคีย์ซีเรียลเอง'
-                : 'ยางใหม่ที่นำเข้าไว้ในคลังขึ้นก่อน ตามด้วยรุ่นในแคตตาล็อก — ถ้าไม่ทราบยี่ห้อ เลือก “อื่นๆ” ตามขนาดยาง'
+                : 'แสดงยางใหม่ที่นำเข้าไว้ในคลังก่อน — ถ้าเส้นที่ถืออยู่ไม่มีในรายการ พิมพ์ขนาดเพื่อค้นรุ่นจากแคตตาล็อก (ไม่ทราบยี่ห้อ เลือก “อื่นๆ” ตามขนาดยาง)'
             }
             withTread={mountKind === 'used'}
             treadLabel="ดอกยาง (มม.)"
@@ -1437,6 +1441,7 @@ function TireAutocomplete({
   options,
   emptyText,
   fallbackLabel,
+  stockOnlyUntilSearch,
 }: {
   pick: TirePick
   onChange: (pick: TirePick) => void
@@ -1445,6 +1450,11 @@ function TireAutocomplete({
   emptyText: string
   /** ชื่อยางที่เลือกไว้แต่ไม่อยู่ใน options (เช่น หยิบจากคลังผ่านช่องซีรีย์) */
   fallbackLabel?: string
+  /**
+   * true = ยังไม่พิมพ์ค้นหา โชว์เฉพาะยางในคลัง (ถ้ามี) — รุ่นจากแคตตาล็อกขึ้นเมื่อพิมพ์ค้นหาเท่านั้น
+   * ใช้ตอนใส่ยางใหม่ ไม่ให้รายการแคตตาล็อกกลบยางใหม่ที่นำเข้าไว้
+   */
+  stockOnlyUntilSearch?: boolean
 }) {
   const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState('')
@@ -1464,7 +1474,18 @@ function TireAutocomplete({
       ? fallbackLabel
       : query
 
+  /** ยังไม่พิมพ์ค้นหาและมียางในคลัง → ซ่อนแคตตาล็อกไว้ก่อน */
+  const stockOptionsOnly = React.useMemo(() => options.filter((o) => o.kind === 'stock'), [options])
+  const hideCatalog =
+    Boolean(stockOnlyUntilSearch) &&
+    query.trim() === '' &&
+    stockOptionsOnly.length > 0 &&
+    // เลือกรุ่นจากแคตตาล็อกไว้แล้ว ต้องเห็นรายการนั้นตอนเปิดใหม่
+    selected?.kind !== 'catalog'
+  const hiddenCatalogCount = hideCatalog ? options.length - stockOptionsOnly.length : 0
+
   const matches = React.useMemo(() => {
+    if (hideCatalog) return stockOptionsOnly.slice(0, 50)
     if (selected) return options.slice(0, 50)
     const tokens = searchTokens(query)
     if (tokens.length === 0) return options.slice(0, 50)
@@ -1474,7 +1495,7 @@ function TireAutocomplete({
         return tokens.every((t) => hay.includes(t))
       })
       .slice(0, 50)
-  }, [options, query, selected])
+  }, [options, query, selected, hideCatalog, stockOptionsOnly])
 
   /** เลือก 1 รายการ — ยางในคลังเติมซีเรียลและดอกยางให้เลย */
   function choose(option: TireOption) {
@@ -1606,6 +1627,12 @@ function TireAutocomplete({
               {option.id === selectedId && <Check className="size-5 shrink-0 text-brand-600" />}
             </button>
           ))}
+
+          {hiddenCatalogCount > 0 && (
+            <p className="border-t border-line px-4 py-3 text-sm text-ink-500">
+              ไม่มีเส้นที่ถืออยู่? พิมพ์ขนาดหรือยี่ห้อเพื่อค้นรุ่นจากแคตตาล็อกอีก {hiddenCatalogCount} รายการ
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -1628,9 +1655,12 @@ function TirePickFields({
   serialError,
   stockTires,
   mountedText,
+  stockOnlyUntilSearch,
 }: {
   pick: TirePick
   onChange: (pick: TirePick) => void
+  /** ส่งต่อให้ TireAutocomplete — ยังไม่ค้นหาโชว์เฉพาะยางในคลัง */
+  stockOnlyUntilSearch?: boolean
   /** ยางที่เลือกได้ — แคตตาล็อกของบริษัทนี้ หรือยางว่างในคลัง */
   options: TireOption[]
   emptyText: string
@@ -1678,6 +1708,7 @@ function TirePickFields({
           onChange={onChange}
           options={options}
           emptyText={emptyText}
+          stockOnlyUntilSearch={stockOnlyUntilSearch}
           fallbackLabel={
             stockPicked
               ? [stockPicked.size ?? 'ไม่ระบุขนาด', stockPicked.serial_no, stockPicked.model_name || null]

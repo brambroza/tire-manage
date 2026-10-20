@@ -20,7 +20,7 @@ import { dateRangeLabel } from '@/app/(app)/dashboard/removal-report-types'
 import { positionLabel, type AxleTypeLayoutSource } from '@/lib/axle-layouts'
 import { tireBrandModelLabel, tireSizeLabel } from '@/lib/tire-display'
 import {
-  TIRE_STATUS_LABEL, cn, diffDays, formatDuration, formatKm, formatKmApprox, formatNumber,
+  TIRE_DISPLAY_LABEL, TIRE_STOCK_LOCATION, cn, tireDisplayStatus, diffDays, formatDuration, formatKm, formatKmApprox, formatNumber,
   formatThaiDate, treadPercent,
 } from '@/lib/utils'
 import type { LastRemoval } from '@/lib/tire-events'
@@ -32,18 +32,12 @@ import type { Tire, TireOverview, TireStatus } from '@/lib/database.types'
 const FILTERS: Array<{ value: string; label: string }> = [
   { value: 'all', label: 'ทั้งหมด' },
   { value: 'mounted', label: 'อยู่บนรถ' },
-  { value: 'in_stock', label: 'อยู่ในคลัง' },
+  { value: 'new', label: 'ยางใหม่' },
+  { value: 'in_stock', label: 'คลังยางเคยใช้' },
   { value: 'scrapped', label: 'ตัดจำหน่าย' },
   { value: 'alert', label: 'ถึงเกณฑ์เตือน' },
 ]
 
-/** ข้อความบอกว่ายางที่ไม่ได้อยู่บนรถตอนนี้อยู่ที่ไหน — ตามสถานะจริง ไม่ใช่ "คลังสินค้า" ทุกกรณี */
-const LOCATION_LABEL: Record<TireStatus, string> = {
-  mounted: 'อยู่บนรถ',
-  in_stock: 'คลังสินค้า',
-  retreading: 'ส่งหล่อดอก',
-  scrapped: 'ตัดจำหน่ายแล้ว',
-}
 
 /** เซลล์ตาราง: สูงคงที่ 76px (รูป 56 + padding) จัดกลางแนวตั้ง ตัวเลขเรียงหลักตรงกัน */
 const CELL = 'h-[76px] px-3.5 py-3 align-middle text-[15px] text-ink-700 tabular-nums'
@@ -377,7 +371,8 @@ export function TiresClient({
                   const level = alertLevel(
                     t.status === 'mounted', t.current_run_km, t.alert_km, t.tread_mm, t.alert_tread_mm,
                   )
-                  const chip = TIRE_STATUS_CHIP[t.status as TireStatus]
+                  const displayStatus = tireDisplayStatus(t.status as TireStatus, t.lifetime_km)
+                  const chip = TIRE_STATUS_CHIP[displayStatus]
                   // ยางในคลัง/ตัดจำหน่าย: บอกที่มาว่าถอดจากรถคันไหน ที่เลขไมล์เท่าไร
                   const removal = t.status !== 'mounted' ? lastRemovals[t.id] : undefined
                   // ระยะเวลาใช้งาน: มีเลขไมล์หรือไม่ก็นับได้ — mounted นับถึงวันนี้, ถอดแล้วนับถึงวันที่ถอด
@@ -437,7 +432,7 @@ export function TiresClient({
                       {/* สถานะ: chip เดียว + จุดสีบอกระดับเตือน */}
                       <Td className={CELL}>
                         <StatusChip tone={chip.tone} icon={chip.icon}>
-                          {TIRE_STATUS_LABEL[t.status as TireStatus]}
+                          {TIRE_DISPLAY_LABEL[displayStatus]}
                         </StatusChip>
                         {level === 'danger' && <span className={cn(FLAG, 'text-rose-700')}>ดอกยางต่ำ</span>}
                         {level === 'warn' && <span className={cn(FLAG, 'text-orange-700')}>วิ่งเกินระยะ</span>}
@@ -458,7 +453,7 @@ export function TiresClient({
                               <span className="text-ink-500"> · {positionLabel(t.position_code)}</span>
                             </span>
                             <span className={LINE2}>
-                              {t.mounted_at ? `ติดตั้ง ${formatThaiDate(t.mounted_at)}` : LOCATION_LABEL.mounted}
+                              {t.mounted_at ? `ติดตั้ง ${formatThaiDate(t.mounted_at)}` : TIRE_STOCK_LOCATION.mounted}
                             </span>
                           </>
                         ) : removal ? (
@@ -490,7 +485,7 @@ export function TiresClient({
                           </>
                         ) : (
                           <>
-                            <span className={cn(LINE1, 'font-bold text-ink-900')}>{LOCATION_LABEL[t.status as TireStatus]}</span>
+                            <span className={cn(LINE1, 'font-bold text-ink-900')}>{TIRE_STOCK_LOCATION[displayStatus]}</span>
                             <span className={LINE2}>ยังไม่มีประวัติการถอด</span>
                           </>
                         )}

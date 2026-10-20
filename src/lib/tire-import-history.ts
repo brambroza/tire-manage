@@ -10,8 +10,11 @@ import type { TireStatus } from '@/lib/database.types'
 
 type Supabase = Awaited<ReturnType<typeof createClient>>
 
-/** ข้อความที่มาในหมายเหตุยาง (ตรงกับ importSourceLabel ใน tire-import.ts) */
-const SOURCE_NOTE_PATTERN = /นำเข้าจากไฟล์ (.+) (\d{1,2} \S+ \d{4})$/
+/**
+ * ข้อความที่มาในหมายเหตุยาง (ตรงกับ importSourceLabel ใน tire-import.ts)
+ * กลุ่ม 1 = ชื่อไฟล์, กลุ่ม 2 = ชื่อรอบคีย์/สแกน, กลุ่ม 3 = วันที่
+ */
+const SOURCE_NOTE_PATTERN = /(?:นำเข้าจากไฟล์ (.+)|(คีย์\/สแกน · .+)) (\d{1,2} \S+ \d{4})$/
 
 /** จำกัดจำนวนยางที่โหลดต่อครั้ง กันหน้าโหลดหนักเกิน (นำเข้าได้ครั้งละ 2,000 เส้น) */
 export const IMPORT_HISTORY_TIRE_LIMIT = 10_000
@@ -154,7 +157,7 @@ async function loadFromNotes(supabase: Supabase, companyId: string): Promise<Imp
     .from('tires')
     .select(TIRE_COLUMNS)
     .eq('company_id', companyId)
-    .ilike('note', '%นำเข้าจากไฟล์%')
+    .or('note.ilike.%นำเข้าจากไฟล์%,note.ilike.%คีย์/สแกน ·%')
     .order('created_at', { ascending: false })
     .order('serial_no')
     .limit(IMPORT_HISTORY_TIRE_LIMIT + 1)
@@ -167,12 +170,13 @@ async function loadFromNotes(supabase: Supabase, companyId: string): Promise<Imp
   for (const t of rows) {
     const match = SOURCE_NOTE_PATTERN.exec(t.note ?? '')
     if (!match) continue
-    const key = `${match[1]}|${match[2]}`
+    const name = match[1] ?? match[2]
+    const key = `${name}|${match[3]}`
     let batch = batchMap.get(key)
     if (!batch) {
       batch = {
         id: `note:${key}`,
-        fileName: match[1],
+        fileName: name,
         importedByName: null,
         rowCount: 0,
         insertedCount: 0,

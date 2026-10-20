@@ -31,7 +31,5 @@ where c.id = i.company_id
   and c.code = 'GO1'
   and not exists (select 1 from public.tires t where t.import_id = i.id);
 
--- 4) รุ่น/ยี่ห้อที่ไฟล์ 02 สร้างให้ GO1 (BRIDGESTONE R150, SAILUN SAC1) ปิดใช้งานได้ที่เมนู "ข้อมูลยาง"
---    ไม่ลบที่นี่เพราะอาจมียางอ้างอิงอยู่
 
 rollback; -- เปลี่ยนเป็น commit; เมื่อตรวจจำนวนแล้ว

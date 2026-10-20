@@ -6,7 +6,6 @@ import { resolveCompanyScope } from '@/lib/company-scope'
 import { createClient } from '@/lib/supabase/server'
 import { fail, zodFail, type ActionResult } from '@/lib/action-result'
 import { featureLockedMessage, hasFeature } from '@/lib/plan'
-import { ensureBrandModelFor } from '@/lib/tire-stock'
 import { isMissingImportSchema } from '@/lib/tire-import-history'
 import {
   IMPORT_NOTE_MAX, IMPORT_TEXT_MAX, MAX_IMPORT_ROWS, buildImportNote, importSourceLabel,
@@ -27,8 +26,6 @@ export interface TireImportPreviewRow {
   status: 'ok' | 'error'
   /** สาเหตุที่นำเข้าไม่ได้ (null เมื่อผ่าน) */
   message: string | null
-  /** true = ไม่มีรุ่นนี้ในแคตตาล็อก จะสร้างยี่ห้อ/รุ่นใหม่ให้บริษัทตอนนำเข้า (เฉพาะ Premium) */
-  willCreate?: boolean
   /** รุ่นในแคตตาล็อกที่จับคู่ได้ + snapshot ที่จะบันทึกลง tires */
   resolved: {
     tire_model_id: string
@@ -83,10 +80,6 @@ async function resolveImportScope(companyId?: string) {
   return scope
 }
 
-/** บริษัทนี้สร้างยี่ห้อ/รุ่นของตัวเองระหว่างนำเข้าได้ไหม — super admin ทำแทนได้เสมอ */
-function canCreateCatalogFor(scope: { session: { profile: { role: string }; company: Parameters<typeof hasFeature>[0] } }): boolean {
-  return scope.session.profile.role === 'super_admin' || hasFeature(scope.session.company, 'tire_catalog_own')
-}
 
 /* ------------------------------------------------------------- lookups */
 
@@ -116,8 +109,8 @@ function matchKey(value: string | null | undefined): string {
 }
 
 /**
- * โหลดแคตตาล็อกที่บริษัทนี้ใช้ได้ = รุ่นที่ super admin เปิดสิทธิ์ + รุ่นที่บริษัทสร้างเอง
- * (กฎเดียวกับ RLS ของ tire_models แต่ต้องกรองเองเพราะ super admin เห็นทุกรุ่น)
+ * โหลดแคตตาล็อกที่นำเข้าได้ = เฉพาะรุ่นที่ super admin เปิดสิทธิ์ให้บริษัท (company_tire_models)
+ * ยี่ห้อ/รุ่นต้องมีอยู่ก่อนเสมอ ระบบไม่สร้างให้ระหว่างนำเข้า
  */
 async function loadCompanyCatalog(
   supabase: Supabase,
@@ -139,7 +132,8 @@ async function loadCompanyCatalog(
 
   for (const m of (models ?? []) as unknown as CatalogModelRow[]) {
     if (!m.tire_brands || !m.tire_brands.is_active) continue
-    if (!granted.has(m.id) && m.created_by_company !== companyId) continue
+    // รับเฉพาะรุ่นที่ super admin เปิดสิทธิ์ให้ — ไม่สร้างหรือรับรุ่นที่บริษัทพิมพ์เอง กันข้อมูลผิด
+    if (!granted.has(m.id)) continue
     const model: CatalogModel = {
       id: m.id,
       brand_name: m.tire_brands.name,
@@ -215,8 +209,6 @@ async function checkRows(
   supabase: Supabase,
   companyId: string,
   rows: TireImportRow[],
-  /** บริษัทสร้างยี่ห้อ/รุ่นของตัวเองได้ (Premium หรือ super admin ทำแทน) */
-  canCreateCatalog: boolean,
 ): Promise<TireImportPreviewRow[] | { error: unknown }> {
   const checks = validateImportRows(rows)
 
@@ -248,23 +240,12 @@ async function checkRows(
       ? catalog.otherBySize.get(matchKey(row.size))
       : catalog.byFull.get(`${matchKey(row.brand)}|${matchKey(row.model)}|${matchKey(row.size)}`)
     if (!model) {
-      // Premium: ยี่ห้อ/รุ่นที่ไม่มีในแคตตาล็อกจะถูกสร้างเป็นรายการของบริษัทตอนนำเข้า
-      // (ยกเว้น "อื่นๆ" ที่ต้องมีขนาดในแคตตาล็อกกลางอยู่แล้ว)
-      if (canCreateCatalog && !isOtherBrand(row.brand)) {
-        return {
-          ...base,
-          status: 'ok',
-          willCreate: true,
-          message: `ยังไม่มีรุ่นนี้ — จะสร้าง ${row.brand} ${row.model} ${row.size} เป็นรายการของบริษัทให้`,
-          resolved: null,
-        }
-      }
       return {
         ...base,
         status: 'error',
         message: isOtherBrand(row.brand)
           ? `ไม่มีรุ่น "อื่นๆ" ขนาด ${row.size} ในแคตตาล็อก — แจ้ง Dreammaker เพิ่มขนาดนี้`
-          : 'บริษัทยังไม่ได้รับสิทธิ์ใช้รุ่นนี้ แจ้ง Dreammaker เปิดให้ (ตรวจการสะกดยี่ห้อ/รุ่น/ขนาดด้วย)',
+          : 'ไม่พบยี่ห้อ/รุ่น/ขนาดนี้ในข้อมูลยางของบริษัท — ตรวจการสะกด หรือแจ้ง Dreammaker เพิ่ม/เปิดสิทธิ์รุ่นนี้ก่อนนำเข้า',
         resolved: null,
       }
     }
@@ -349,7 +330,7 @@ export async function previewTireImport(
   if (!parsed.success) return zodFail(parsed.error)
 
   const supabase = await createClient()
-  const checked = await checkRows(supabase, scope.companyId, parsed.data, canCreateCatalogFor(scope))
+  const checked = await checkRows(supabase, scope.companyId, parsed.data)
   if ('error' in checked) return fail(checked.error)
   return { ok: true, data: { rows: checked } }
 }
@@ -375,33 +356,8 @@ export async function commitTireImport(
   if (!safeFileName.success) return { ok: false, error: 'ชื่อไฟล์ไม่ถูกต้อง' }
 
   const supabase = await createClient()
-  const checked = await checkRows(supabase, scope.companyId, parsed.data, canCreateCatalogFor(scope))
+  const checked = await checkRows(supabase, scope.companyId, parsed.data)
   if ('error' in checked) return fail(checked.error)
-
-  // สร้างยี่ห้อ/รุ่นใหม่ให้บริษัทก่อน (Premium) แล้วค่อยผูกซีรีย์เข้ากับรุ่นที่ได้ — รุ่นซ้ำกันหลายแถวสร้างครั้งเดียว
-  // super admin ทำแทน → รายการใหม่เป็นของบริษัทลูกค้านั้น ไม่ใช่แคตตาล็อกกลาง
-  const createdModels = new Map<string, NonNullable<TireImportPreviewRow['resolved']>>()
-  for (const r of checked) {
-    if (r.status !== 'ok' || !r.willCreate) continue
-    const key = `${r.brand.toLowerCase()}|${r.model.toLowerCase()}|${r.size.toLowerCase().replace(/\s+/g, '')}`
-    let resolved = createdModels.get(key)
-    if (!resolved) {
-      const ensured = await ensureBrandModelFor(supabase, scope.companyId, r.brand, r.model, r.size)
-      if (!ensured.ok || !ensured.data?.modelId) {
-        revalidateImport(scope.companyId)
-        return { ok: false, error: `แถว ${r.rowNo}: ${ensured.ok ? 'สร้างรุ่นยางไม่สำเร็จ' : ensured.error}` }
-      }
-      resolved = {
-        tire_model_id: ensured.data.modelId,
-        brand_name: r.brand.toUpperCase(),
-        model_name: r.model,
-        size: r.size || null,
-        new_tread_mm: null,
-      }
-      createdModels.set(key, resolved)
-    }
-    r.resolved = resolved
-  }
 
   const okRows = checked.filter((r) => r.status === 'ok' && r.resolved)
   const skipped = checked.length - okRows.length

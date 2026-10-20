@@ -1,7 +1,7 @@
 import { positionLabel } from '@/lib/axle-layouts'
 import { tireBrandModelLabel, tireSizeLabel } from '@/lib/tire-display'
 import {
-  TIRE_STATUS_LABEL, diffDays, formatNumber, formatThaiDate, todayISO, treadPercent,
+  TIRE_DISPLAY_LABEL, TIRE_STOCK_LOCATION, diffDays, tireDisplayStatus, formatNumber, formatThaiDate, todayISO, treadPercent,
 } from '@/lib/utils'
 import type { LastRemoval } from '@/lib/tire-events'
 import type { Tire, TireOverview, TireStatus } from '@/lib/database.types'
@@ -97,11 +97,12 @@ export function toTireExportRows(
       : removal?.position_code
         ? positionLabel(removal.position_code)
         : ''
+    const displayStatus = tireDisplayStatus(t.status, t.lifetime_km)
     const locationLabel = mounted
       ? [plateNo, position].filter(Boolean).join(' · ')
       : removal
-        ? `คลังสินค้า · ถอดจาก ${removal.plate_no ?? 'รถที่ถูกลบแล้ว'} ${formatThaiDate(removal.event_date)}`
-        : 'คลังสินค้า'
+        ? `${TIRE_STOCK_LOCATION[displayStatus]} · ถอดจาก ${removal.plate_no ?? 'รถที่ถูกลบแล้ว'} ${formatThaiDate(removal.event_date)}`
+        : TIRE_STOCK_LOCATION[displayStatus]
     const treadAlert = t.tread_mm !== null && t.tread_mm <= t.alert_tread_mm
     const runAlert = mounted && t.current_run_km >= t.alert_km
     return {
@@ -110,7 +111,7 @@ export function toTireExportRows(
       brandModel: tireBrandModelLabel(t.brand_name, t.model_name, ''),
       dot: t.dot ?? '',
       status: t.status,
-      statusLabel: TIRE_STATUS_LABEL[t.status],
+      statusLabel: TIRE_DISPLAY_LABEL[displayStatus],
       plateNo,
       position,
       locationLabel,

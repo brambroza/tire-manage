@@ -11,7 +11,7 @@ import { TireEventTable } from '@/components/tire-event-table'
 import { positionLabel } from '@/lib/axle-layouts'
 import { TIRE_EVENT_SELECT, type TireEventRow } from '@/lib/tire-events'
 import {
-  TIRE_STATUS_LABEL, TIRE_STATUS_TONE, formatBaht, formatKm, formatNumber, treadPercent,
+  TIRE_DISPLAY_LABEL, TIRE_DISPLAY_TONE, tireDisplayStatus, formatBaht, formatKm, formatNumber, treadPercent,
 } from '@/lib/utils'
 import type { AxleType, Tire, TireOverview } from '@/lib/database.types'
 
@@ -67,7 +67,10 @@ export default async function TireDetailPage({ params }: { params: Promise<{ id:
             detailClassName="text-sm text-ink-500"
           />
         )}
-        action={<Badge tone={TIRE_STATUS_TONE[t.status]}>{TIRE_STATUS_LABEL[t.status]}</Badge>}
+        action={(() => {
+          const ds = tireDisplayStatus(t.status, t.lifetime_km)
+          return <Badge tone={TIRE_DISPLAY_TONE[ds]}>{TIRE_DISPLAY_LABEL[ds]}</Badge>
+        })()}
       />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

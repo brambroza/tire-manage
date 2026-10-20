@@ -1,6 +1,7 @@
 import Link from 'next/link'
-import { Lock, Upload } from 'lucide-react'
+import { Upload } from 'lucide-react'
 import { requireSession } from '@/lib/auth'
+import { tireDisplayStatus } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/server'
 import { featureLockedMessage, hasFeature } from '@/lib/plan'
 import { PageHeader } from '@/components/app-shell'
@@ -29,7 +30,7 @@ export default async function TiresPage({
 }) {
   const { profile, company } = await requireSession(['admin', 'technician'])
   const { q, status, date_field, from, to } = await searchParams
-  /** นำเข้าซีรีย์ยางจากไฟล์ — ปุ่มโชว์เสมอสำหรับแอดมิน แต่ติดกุญแจถ้าแพ็กเกจยังไม่เปิด (หน้าปลายทางอธิบายต่อ) */
+  /** นำเข้าซีรีย์ยางจากไฟล์ — ปุ่มโชว์เฉพาะแอดมินบริษัทแพ็กเกจ Premium (Standard ไม่เห็นปุ่มเลย) */
   const canImport = hasFeature(company, 'tire_import')
   /** คีย์ซีรีย์ยางทีละเส้น — เฉพาะแอดมินบริษัทแพ็กเกจ Premium (super admin ทำแทนได้จากหน้าจัดการบริษัท) */
   const isAdmin = profile.role === 'admin'
@@ -77,6 +78,12 @@ export default async function TiresPage({
         t.status === 'mounted' &&
         (t.current_run_km >= t.alert_km || (t.tread_mm !== null && t.tread_mm <= t.alert_tread_mm)),
     )
+  } else if (status === 'new') {
+    // ยางใหม่ = อยู่ในคลังและยังไม่เคยวิ่ง (คลังยางใหม่)
+    tires = tires.filter((t) => tireDisplayStatus(t.status, t.lifetime_km) === 'new')
+  } else if (status === 'in_stock') {
+    // คลังยางเคยใช้ = อยู่ในคลังแต่เคยวิ่งแล้ว ไม่รวมยางใหม่
+    tires = tires.filter((t) => tireDisplayStatus(t.status, t.lifetime_km) === 'in_stock')
   } else if (status && status !== 'all') {
     tires = tires.filter((t) => t.status === status)
   }
@@ -103,13 +110,12 @@ export default async function TiresPage({
         title="คลังยาง"
         subtitle={company?.name ?? undefined}
         action={
-          profile.role === 'admin' ? (
+          isAdmin && canImport ? (
             <Link
               href="/tires/import/new"
-              title={canImport ? undefined : featureLockedMessage('tire_import')}
               className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-line bg-white px-4 text-[15px] font-medium text-ink-700 hover:border-brand-200 hover:bg-brand-50"
             >
-              {canImport ? <Upload className="size-5" /> : <Lock className="size-5 text-ink-400" />}
+              <Upload className="size-5" />
               นำเข้าซีรีย์ยาง
             </Link>
           ) : undefined

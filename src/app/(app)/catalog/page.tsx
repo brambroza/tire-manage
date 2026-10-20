@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import { requireSession } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
-import { featureLockedMessage } from '@/lib/plan'
+import { featureLockedMessage, hasFeature } from '@/lib/plan'
 import { isOtherBrand } from '@/lib/tire-import'
 import { PageHeader } from '@/components/app-shell'
 import { CompanyCatalogClient, type CompanyCatalogModel } from './catalog-client'
@@ -27,10 +27,12 @@ interface ModelRow {
  * - ไม่แสดงรุ่นหรือยี่ห้อที่ super admin ปิดใช้งาน
  * - ไม่แสดงยี่ห้อ "อื่นๆ" ซึ่ง migration 010 เปิดให้ทุกบริษัทอัตโนมัติเป็นตัวเลือกสำรอง (ยังใช้ได้ในฟอร์มยาง/นำเข้า)
  * ยี่ห้อแสดงเฉพาะที่มีรุ่นผ่านเงื่อนไขข้างต้น
+ * เฉพาะแพ็กเกจ Premium (เมนูถูกซ่อนใน layout สำหรับ Standard)
  */
 export default async function CompanyCatalogPage() {
   const { company } = await requireSession(['admin'])
-  if (!company) notFound()
+  // เมนูนี้มีเฉพาะแพ็กเกจ Premium — Standard เข้าผ่าน URL ตรงก็ไม่เห็น
+  if (!company || !hasFeature(company, 'tire_import')) notFound()
 
   const supabase = await createClient()
 

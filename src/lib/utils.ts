@@ -198,6 +198,42 @@ export const TIRE_STATUS_TONE: Record<TireStatus, 'sky' | 'emerald' | 'rose' | '
 }
 
 /**
+ * สถานะสำหรับแสดงผล — แยก "ยางใหม่" ออกจากยางในคลังที่เคยใช้แล้ว
+ * ยางใหม่ = status in_stock และยังไม่เคยวิ่ง (ระยะสะสม 0) เช่น ยางที่นำเข้าจากไฟล์หรือคีย์/สแกนซีรีย์เข้ามา
+ * ในฐานข้อมูลยังเป็น in_stock เหมือนเดิม เพื่อให้หน้าช่าง/ฟังก์ชันติดตั้งยางทำงานได้โดยไม่ต้องแก้ enum
+ * พอใส่รถแล้วถอดกลับมา (ระยะสะสม > 0) จะกลายเป็น "อยู่ในคลัง" (คลังยางเคยใช้) อัตโนมัติ
+ */
+export type TireDisplayStatus = TireStatus | 'new'
+
+/**
+ * หาสถานะสำหรับแสดงผลของยาง 1 เส้น
+ * @param status สถานะในฐานข้อมูล
+ * @param lifetimeKm ระยะสะสมตลอดอายุยาง (กม.)
+ */
+export function tireDisplayStatus(status: TireStatus, lifetimeKm: number): TireDisplayStatus {
+  return status === 'in_stock' && lifetimeKm === 0 ? 'new' : status
+}
+
+export const TIRE_DISPLAY_LABEL: Record<TireDisplayStatus, string> = {
+  ...TIRE_STATUS_LABEL,
+  new: 'ยางใหม่',
+}
+
+export const TIRE_DISPLAY_TONE: Record<TireDisplayStatus, 'sky' | 'emerald' | 'rose' | 'amber' | 'brand'> = {
+  ...TIRE_STATUS_TONE,
+  new: 'brand',
+}
+
+/** ที่อยู่ของยางที่ไม่ได้ติดรถ แยกคลังยางใหม่ / คลังยางเคยใช้ */
+export const TIRE_STOCK_LOCATION: Record<TireDisplayStatus, string> = {
+  new: 'คลังยางใหม่',
+  in_stock: 'คลังยางเคยใช้',
+  mounted: 'อยู่บนรถ',
+  retreading: 'ส่งหล่อดอก',
+  scrapped: 'ตัดจำหน่ายแล้ว',
+}
+
+/**
  * คำนวณ % ดอกยางคงเหลือ
  * @param tread ดอกยางปัจจุบัน (มม.)
  * @param newTread ดอกยางตอนใหม่ (มม.)

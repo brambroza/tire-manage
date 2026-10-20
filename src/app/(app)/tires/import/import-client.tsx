@@ -233,7 +233,7 @@ export function TireImportClient({
           <Card>
             <CardHeader
               title="เลือกไฟล์ซีรีย์ยาง"
-              description={`นำเข้าเข้าคลังของ ${companyName} — รองรับ .xlsx และ .csv ครั้งละไม่เกิน ${formatNumber(MAX_IMPORT_ROWS)} แถว`}
+              description={`นำเข้าเป็นยางใหม่ของ ${companyName} — รองรับ .xlsx และ .csv ครั้งละไม่เกิน ${formatNumber(MAX_IMPORT_ROWS)} แถว`}
               action={
                 <Button variant="secondary" onClick={() => void downloadTemplate()} className="min-h-12">
                   <Download className="size-5" />
@@ -399,12 +399,7 @@ export function TireImportClient({
                     <Td>{(r.resolved?.size ?? r.size) || '-'}</Td>
                     <Td className="max-w-xs truncate text-ink-600" title={r.note}>{r.note || '-'}</Td>
                     <Td>
-                      {r.status === 'ok' && r.willCreate ? (
-                        <span className="inline-flex items-start gap-1.5 text-sm font-medium text-amber-700">
-                          <Check className="mt-0.5 size-4 shrink-0" strokeWidth={3} />
-                          {r.message}
-                        </span>
-                      ) : r.status === 'ok' ? (
+                      {r.status === 'ok' ? (
                         <span className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700">
                           <Check className="size-4" strokeWidth={3} />
                           ผ่าน
@@ -426,7 +421,7 @@ export function TireImportClient({
             <p className="text-sm text-ink-500">
               {errorCount > 0
                 ? 'แถวที่ติดปัญหาจะถูกข้าม — แก้ไฟล์แล้วนำเข้าเพิ่มภายหลังได้ ซีรีย์ที่นำเข้าแล้วจะไม่ซ้ำ'
-                : 'ทุกแถวผ่านการตรวจ พร้อมนำเข้าเข้าคลัง'}
+                : 'ทุกแถวผ่านการตรวจ พร้อมนำเข้าเป็นยางใหม่'}
             </p>
             <Button
               variant="success"
@@ -456,7 +451,7 @@ export function TireImportClient({
             <p className="mt-1 text-sm text-ink-500">
               {result.skipped > 0
                 ? `ข้ามแถวที่ติดปัญหา ${formatNumber(result.skipped)} แถว — แก้ไฟล์แล้วนำเข้าเพิ่มได้`
-                : 'ยางทั้งหมดอยู่ในคลังแล้ว ช่างเลือกซีรีย์จากคลังได้ทันทีตอนใส่ยาง'}
+                : 'ยางทั้งหมดมีสถานะ “ยางใหม่” อยู่ในคลังยางใหม่ ช่างเลือกซีรีย์ได้ทันทีตอนใส่ยาง'}
             </p>
             <div className="mt-6 flex flex-wrap justify-center gap-3">
               {historyPath && (

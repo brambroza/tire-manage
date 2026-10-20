@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, Truck, CircleDot, Users, Building2, Wrench, Gauge, BarChart3, BookOpen, Upload,
+  LayoutDashboard, Truck, CircleDot, Users, Building2, Wrench, BarChart3, BookOpen, Upload,
 } from 'lucide-react'
 import { AppShell, type NavItem } from '@/components/app-shell'
 import { NotificationBell } from '@/components/notification-bell'
@@ -18,22 +18,22 @@ const ADMIN_NAV: NavItem[] = [
   { href: '/catalog',     label: 'ข้อมูลยาง',           icon: <BookOpen className={ICON} /> },
   { href: '/tires/import', label: 'ข้อมูลยางใหม่',      icon: <Upload className={ICON} /> },
   { href: '/service',     label: 'บันทึกถอด-ใส่ยาง',   icon: <Wrench className={ICON} /> },
-  { href: '/mileage',     label: 'บันทึกเลขไมล์',       icon: <Gauge className={ICON} /> },
   { href: '/technicians', label: 'ช่างของบริษัท',       icon: <Users className={ICON} /> },
   { href: '/company',     label: 'ข้อมูลบริษัท',        icon: <Building2 className={ICON} /> },
 ]
 
 // ช่างเห็นเฉพาะหน้าทำงานหน้างาน — ไม่มีเมนูค้นหายาง/รถตามสเปคหน้าช่าง
+// เมนู "บันทึกเลขไมล์" ถูกเอาออก (ลูกค้าให้เหลือ "บันทึกถอด-ใส่ยาง" อย่างเดียว) — หน้า /mileage ยังเข้าได้จากลิงก์
+// "บันทึกไมล์" ในหน้าจัดการรถ และลิงก์เตือนไมล์เก่าในหน้ารายละเอียดยาง
 const TECH_NAV: NavItem[] = [
   { href: '/service', label: 'บันทึกถอด-ใส่ยาง', icon: <Wrench className={ICON} />, exact: true },
-  { href: '/mileage', label: 'บันทึกเลขไมล์',     icon: <Gauge className={ICON} />, exact: true },
 ]
 
 /**
- * เมนูที่ซ่อนไว้เมื่อแพ็กเกจยังไม่เปิดฟีเจอร์ — เมนู "ข้อมูลยางใหม่" (นำเข้า + ประวัตินำเข้า) มีเฉพาะลูกค้า Premium
- * (ปุ่มติดกุญแจในหน้าคลังยางยังอยู่ เพื่อให้ลูกค้า Standard รู้ว่ามีฟีเจอร์นี้)
+ * เมนูที่ซ่อนไว้เมื่อแพ็กเกจยังไม่เปิดฟีเจอร์ — มีเฉพาะลูกค้า Premium:
+ * "ข้อมูลยาง" (แคตตาล็อกรุ่นที่ได้รับสิทธิ์) และ "ข้อมูลยางใหม่" (นำเข้า + ประวัตินำเข้า)
  */
-const PREMIUM_ONLY_NAV = new Set(['/tires/import'])
+const PREMIUM_ONLY_NAV = new Set(['/catalog', '/tires/import'])
 
 /**
  * เมนูตามสิทธิ์และแพ็กเกจของบริษัท
