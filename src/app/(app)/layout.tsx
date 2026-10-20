@@ -1,11 +1,12 @@
 import {
-  LayoutDashboard, Truck, CircleDot, Users, Building2, Wrench, Gauge, BarChart3, BookOpen,
+  LayoutDashboard, Truck, CircleDot, Users, Building2, Wrench, Gauge, BarChart3, BookOpen, Upload,
 } from 'lucide-react'
 import { AppShell, type NavItem } from '@/components/app-shell'
 import { NotificationBell } from '@/components/notification-bell'
 import { requireSession } from '@/lib/auth'
 import { getTireAlerts } from '@/lib/notifications'
-import type { UserRole } from '@/lib/database.types'
+import { hasFeature } from '@/lib/plan'
+import type { Company, UserRole } from '@/lib/database.types'
 
 const ICON = 'size-5'
 
@@ -15,6 +16,7 @@ const ADMIN_NAV: NavItem[] = [
   { href: '/vehicles',    label: 'จัดการรถ',           icon: <Truck className={ICON} /> },
   { href: '/tires',       label: 'คลังยาง',            icon: <CircleDot className={ICON} /> },
   { href: '/catalog',     label: 'ข้อมูลยาง',           icon: <BookOpen className={ICON} /> },
+  { href: '/tires/import', label: 'ข้อมูลยางใหม่',      icon: <Upload className={ICON} /> },
   { href: '/service',     label: 'บันทึกถอด-ใส่ยาง',   icon: <Wrench className={ICON} /> },
   { href: '/mileage',     label: 'บันทึกเลขไมล์',       icon: <Gauge className={ICON} /> },
   { href: '/technicians', label: 'ช่างของบริษัท',       icon: <Users className={ICON} /> },
@@ -27,8 +29,21 @@ const TECH_NAV: NavItem[] = [
   { href: '/mileage', label: 'บันทึกเลขไมล์',     icon: <Gauge className={ICON} />, exact: true },
 ]
 
-function navFor(role: UserRole): NavItem[] {
-  return role === 'admin' ? ADMIN_NAV : TECH_NAV
+/**
+ * เมนูที่ซ่อนไว้เมื่อแพ็กเกจยังไม่เปิดฟีเจอร์ — เมนู "ข้อมูลยางใหม่" (นำเข้า + ประวัตินำเข้า) มีเฉพาะลูกค้า Premium
+ * (ปุ่มติดกุญแจในหน้าคลังยางยังอยู่ เพื่อให้ลูกค้า Standard รู้ว่ามีฟีเจอร์นี้)
+ */
+const PREMIUM_ONLY_NAV = new Set(['/tires/import'])
+
+/**
+ * เมนูตามสิทธิ์และแพ็กเกจของบริษัท
+ * @param role บทบาทผู้ใช้
+ * @param company บริษัทของผู้ใช้ (ใช้ตรวจแพ็กเกจ)
+ */
+function navFor(role: UserRole, company: Company | null): NavItem[] {
+  if (role !== 'admin') return TECH_NAV
+  const premium = hasFeature(company, 'tire_import')
+  return ADMIN_NAV.filter((item) => premium || !PREMIUM_ONLY_NAV.has(item.href))
 }
 
 /** Layout ฝั่งลูกค้า (แอดมินบริษัท + ช่าง) */
@@ -40,7 +55,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <AppShell
-      nav={navFor(profile.role)}
+      nav={navFor(profile.role, company)}
       userName={profile.full_name}
       role={profile.role}
       companyName={company?.name}

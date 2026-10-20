@@ -107,12 +107,15 @@ export function TireImportClient({
   companyName,
   companyId,
   basePath,
+  historyPath,
 }: {
   companyName: string
   /** บริษัทเป้าหมาย — ใส่เฉพาะเมื่อ super admin ทำแทน */
   companyId?: string
   /** ลิงก์กลับไปหน้าคลังยางของบริษัทนี้ */
   basePath: string
+  /** หน้าประวัติการนำเข้า (ฝั่งลูกค้า) — ใส่แล้วขั้นเสร็จจะมีปุ่มดูรายการที่นำเข้ารอบนี้ */
+  historyPath?: string
 }) {
   const router = useRouter()
   const [step, setStep] = React.useState<Step>('file')
@@ -197,7 +200,7 @@ export function TireImportClient({
       setError(res.error)
       return
     }
-    setResult(res.data ?? { inserted: okCount, skipped: errorCount })
+    setResult(res.data ?? { inserted: okCount, skipped: errorCount, importId: null })
     setStep('done')
     router.refresh()
   }
@@ -456,9 +459,22 @@ export function TireImportClient({
                 : 'ยางทั้งหมดอยู่ในคลังแล้ว ช่างเลือกซีรีย์จากคลังได้ทันทีตอนใส่ยาง'}
             </p>
             <div className="mt-6 flex flex-wrap justify-center gap-3">
+              {historyPath && (
+                <Link
+                  href={result.importId ? `${historyPath}?batch=${result.importId}` : historyPath}
+                  className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-600 px-5 text-[15px] font-medium text-white hover:bg-brand-700"
+                >
+                  ดูรายการที่นำเข้ารอบนี้
+                </Link>
+              )}
               <Link
                 href={basePath}
-                className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-600 px-5 text-[15px] font-medium text-white hover:bg-brand-700"
+                className={cn(
+                  'inline-flex min-h-12 items-center gap-2 rounded-xl px-5 text-[15px] font-medium',
+                  historyPath
+                    ? 'border border-line bg-white text-ink-700 hover:bg-brand-50'
+                    : 'bg-brand-600 text-white hover:bg-brand-700',
+                )}
               >
                 ไปที่คลังยาง
               </Link>

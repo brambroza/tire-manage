@@ -159,8 +159,23 @@ export type Tire = {
   new_tread_mm: number | null
   purchase_price: number | null
   note: string | null
+  /** รอบนำเข้าจากไฟล์ (migration 014) — null = คีย์เอง/สร้างจากหน้าช่าง */
+  import_id: string | null
   created_at: string
   updated_at: string
+}
+
+/** ประวัติการนำเข้าซีรีย์ยางจากไฟล์ 1 รอบ (migration 014) */
+export type TireImport = {
+  id: string
+  company_id: string
+  file_name: string
+  imported_by: string | null
+  imported_by_name: string | null
+  row_count: number
+  inserted_count: number
+  skipped_count: number
+  created_at: string
 }
 
 export type TireEvent = {
@@ -333,13 +348,21 @@ export interface Database {
         Insert: Insert<Tire, Timestamps | 'tire_model_id' | 'brand_name' | 'model_name'
           | 'size' | 'dot' | 'status' | 'vehicle_id' | 'position_code' | 'total_distance_km'
           | 'mounted_odometer' | 'mounted_at' | 'tread_mm' | 'new_tread_mm'
-          | 'purchase_price' | 'note'>
+          | 'purchase_price' | 'note' | 'import_id'>
         Update: Partial<Tire>
         Relationships: [
           FK<'company_id', 'companies'>,
           FK<'tire_model_id', 'tire_models'>,
           FK<'vehicle_id', 'vehicles'>,
+          FK<'import_id', 'tire_imports'>,
         ]
+      }
+      tire_imports: {
+        Row: TireImport
+        Insert: Insert<TireImport, 'id' | 'created_at' | 'imported_by' | 'imported_by_name'
+          | 'row_count' | 'inserted_count' | 'skipped_count'>
+        Update: Partial<TireImport>
+        Relationships: [FK<'company_id', 'companies'>, FK<'imported_by', 'profiles'>]
       }
       tire_events: {
         Row: TireEvent

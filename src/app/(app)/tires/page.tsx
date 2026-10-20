@@ -105,7 +105,7 @@ export default async function TiresPage({
         action={
           profile.role === 'admin' ? (
             <Link
-              href="/tires/import"
+              href="/tires/import/new"
               title={canImport ? undefined : featureLockedMessage('tire_import')}
               className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-line bg-white px-4 text-[15px] font-medium text-ink-700 hover:border-brand-200 hover:bg-brand-50"
             >

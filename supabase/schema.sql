@@ -212,6 +212,22 @@ create index if not exists vehicles_axle_type_idx on public.vehicles(axle_type);
 create index if not exists vehicles_plate_trgm on public.vehicles using gin (plate_no gin_trgm_ops);
 
 -- ------------------------------------------------------------
+-- tire_imports : ประวัติการนำเข้าซีรีย์ยางใหม่จากไฟล์ (1 แถว = 1 รอบ) — migration 014
+-- ------------------------------------------------------------
+create table if not exists public.tire_imports (
+  id               uuid primary key default gen_random_uuid(),
+  company_id       uuid not null references public.companies(id) on delete cascade,
+  file_name        text not null,
+  imported_by      uuid references public.profiles(id) on delete set null,
+  imported_by_name text,
+  row_count        integer not null default 0 check (row_count >= 0),
+  inserted_count   integer not null default 0 check (inserted_count >= 0),
+  skipped_count    integer not null default 0 check (skipped_count >= 0),
+  created_at       timestamptz not null default now()
+);
+create index if not exists tire_imports_company_idx on public.tire_imports(company_id, created_at desc);
+
+-- ------------------------------------------------------------
 -- tires : ยางรายเส้น (ทรัพย์สินของบริษัทลูกค้า)
 -- ------------------------------------------------------------
 create table if not exists public.tires (
@@ -236,6 +252,8 @@ create table if not exists public.tires (
   new_tread_mm       numeric(3,1) default 16.0,  -- ดอกยางตอนใหม่ ใช้คำนวณ %
   purchase_price     numeric(12,2),
   note               text,
+  -- รอบนำเข้าจากไฟล์ (null = คีย์เอง/สร้างจากหน้าช่าง) — migration 014
+  import_id          uuid references public.tire_imports(id) on delete set null,
   created_at         timestamptz not null default now(),
   updated_at         timestamptz not null default now(),
   constraint tires_mounted_consistency check (
@@ -247,6 +265,7 @@ create table if not exists public.tires (
 create unique index if not exists tires_company_serial_upper_key
   on public.tires (company_id, upper(serial_no));
 create index if not exists tires_company_idx  on public.tires(company_id);
+create index if not exists tires_import_idx   on public.tires(import_id) where import_id is not null;
 create index if not exists tires_vehicle_idx  on public.tires(vehicle_id);
 create index if not exists tires_status_idx   on public.tires(company_id, status);
 create index if not exists tires_serial_trgm  on public.tires using gin (serial_no gin_trgm_ops);
@@ -707,6 +726,7 @@ alter table public.companies          enable row level security;
 alter table public.profiles           enable row level security;
 alter table public.vehicles           enable row level security;
 alter table public.tires              enable row level security;
+alter table public.tire_imports       enable row level security;
 alter table public.tire_events        enable row level security;
 alter table public.tire_brands        enable row level security;
 alter table public.tire_models        enable row level security;
@@ -745,11 +765,11 @@ create policy profiles_admin_write on public.profiles for all to authenticated
   using (is_company_admin() and company_id = current_company_id() and role <> 'super_admin')
   with check (is_company_admin() and company_id = current_company_id() and role <> 'super_admin');
 
--- vehicles / tires / tire_events : tenant isolation ----------
+-- vehicles / tires / tire_events / tire_imports : tenant isolation
 do $$
 declare tbl text;
 begin
-  foreach tbl in array array['vehicles','tires','tire_events'] loop
+  foreach tbl in array array['vehicles','tires','tire_events','tire_imports'] loop
     execute format('drop policy if exists %1$s_tenant_select on public.%1$I', tbl);
     execute format($f$create policy %1$s_tenant_select on public.%1$I
       for select to authenticated

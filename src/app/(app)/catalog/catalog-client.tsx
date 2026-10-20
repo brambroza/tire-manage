@@ -53,6 +53,7 @@ export function CompanyCatalogClient({
   companyId,
   canManage,
   lockedMessage,
+  readOnly = false,
 }: {
   brands: TireBrand[]
   models: CompanyCatalogModel[]
@@ -61,6 +62,8 @@ export function CompanyCatalogClient({
   canManage: boolean
   /** ข้อความแจ้งเมื่อแพ็กเกจยังไม่เปิด */
   lockedMessage: string
+  /** true = แสดงอย่างเดียว ซ่อนปุ่มเพิ่ม/แก้ และแถบแจ้งแพ็กเกจ (หน้าข้อมูลยางของลูกค้าตอนนี้) */
+  readOnly?: boolean
 }) {
   const router = useRouter()
 
@@ -188,7 +191,7 @@ export function CompanyCatalogClient({
 
   return (
     <div className="space-y-4">
-      {!canManage && (
+      {!canManage && !readOnly && (
         <div className="flex items-start gap-2.5 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-inset ring-amber-200">
           <Lock className="mt-0.5 size-4 shrink-0" />
           <span>{lockedMessage}</span>
@@ -208,10 +211,12 @@ export function CompanyCatalogClient({
             title="ยี่ห้อยาง"
             description={`${brands.length} ยี่ห้อ`}
             action={
-              <Button size="sm" variant="secondary" onClick={() => setBrandOpen(true)} disabled={!canManage}>
-                <Plus className="size-4" />
-                เพิ่ม
-              </Button>
+              readOnly ? undefined : (
+                <Button size="sm" variant="secondary" onClick={() => setBrandOpen(true)} disabled={!canManage}>
+                  <Plus className="size-4" />
+                  เพิ่ม
+                </Button>
+              )
             }
           />
           <CardBody className="space-y-1.5">
@@ -269,10 +274,12 @@ export function CompanyCatalogClient({
                 : `${models.length} รุ่นที่ใช้ได้จากแคตตาล็อกกลาง`
             }
             action={
-              <Button size="sm" onClick={openCreateModel} disabled={!canManage || activeBrands.length === 0}>
-                <Plus className="size-4" />
-                เพิ่มรุ่นยาง
-              </Button>
+              readOnly ? undefined : (
+                <Button size="sm" onClick={openCreateModel} disabled={!canManage || activeBrands.length === 0}>
+                  <Plus className="size-4" />
+                  เพิ่มรุ่นยาง
+                </Button>
+              )
             }
           />
           {filteredModels.length === 0 ? (
@@ -280,7 +287,7 @@ export function CompanyCatalogClient({
               icon={<CircleDot className="size-6" />}
               title="ยังไม่มีรุ่นยางที่ใช้ได้"
               description={
-                canManage
+                canManage && !readOnly
                   ? 'เพิ่มรุ่นยางของบริษัทได้เลย หรือแจ้ง Dreammaker เปิดสิทธิ์รุ่นจากแคตตาล็อกกลาง'
                   : 'แจ้ง Dreammaker เปิดสิทธิ์รุ่นยางจากแคตตาล็อกกลางให้บริษัท'
               }
@@ -292,10 +299,10 @@ export function CompanyCatalogClient({
                   <tr>
                     <Th className="w-16">รูป</Th>
                     <Th>ขนาด รุ่น / ยี่ห้อ</Th>
-                    <Th>ที่มา</Th>
+                    {!readOnly && <Th>ที่มา</Th>}
                     <Th className="text-right">ยางในคลัง</Th>
-                    <Th>สถานะ</Th>
-                    <Th className="text-right">จัดการ</Th>
+                    {!readOnly && <Th>สถานะ</Th>}
+                    {!readOnly && <Th className="text-right">จัดการ</Th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -307,40 +314,46 @@ export function CompanyCatalogClient({
                       <Td>
                         <TireSpec size={sizeWithModel(m)} brandName={m.brand_name} />
                       </Td>
-                      <Td>
-                        {m.is_own
-                          ? <Badge tone="slate">ของบริษัท</Badge>
-                          : <Badge tone="brand">แคตตาล็อกกลาง</Badge>}
-                      </Td>
+                      {!readOnly && (
+                        <Td>
+                          {m.is_own
+                            ? <Badge tone="slate">ของบริษัท</Badge>
+                            : <Badge tone="brand">แคตตาล็อกกลาง</Badge>}
+                        </Td>
+                      )}
                       <Td className="text-right">{m.tire_count}</Td>
-                      <Td>
-                        <Badge tone={m.is_active ? 'emerald' : 'slate'}>
-                          {m.is_active ? 'ใช้งาน' : 'ปิดใช้งาน'}
-                        </Badge>
-                      </Td>
-                      <Td>
-                        {canManage && m.is_own ? (
-                          <div className="flex items-center justify-end gap-1">
-                            <button
-                              type="button" onClick={() => openEditModel(m)} aria-label="แก้ไข"
-                              className="flex size-11 items-center justify-center rounded-lg text-ink-500 hover:bg-brand-50 hover:text-brand-600"
-                            >
-                              <Pencil className="size-4.5" />
-                            </button>
-                            <button
-                              type="button" onClick={() => toggleModel(m)}
-                              aria-label={m.is_active ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}
-                              className="flex size-11 items-center justify-center rounded-lg text-ink-500 hover:bg-rose-50 hover:text-rose-600"
-                            >
-                              {m.is_active ? <PowerOff className="size-4.5" /> : <Power className="size-4.5" />}
-                            </button>
-                          </div>
-                        ) : (
-                          <span className={cn('block text-right text-xs text-ink-400')}>
-                            {m.is_own ? '—' : 'ดูอย่างเดียว'}
-                          </span>
-                        )}
-                      </Td>
+                      {!readOnly && (
+                        <>
+                          <Td>
+                            <Badge tone={m.is_active ? 'emerald' : 'slate'}>
+                              {m.is_active ? 'ใช้งาน' : 'ปิดใช้งาน'}
+                            </Badge>
+                          </Td>
+                          <Td>
+                            {canManage && m.is_own ? (
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  type="button" onClick={() => openEditModel(m)} aria-label="แก้ไข"
+                                  className="flex size-11 items-center justify-center rounded-lg text-ink-500 hover:bg-brand-50 hover:text-brand-600"
+                                >
+                                  <Pencil className="size-4.5" />
+                                </button>
+                                <button
+                                  type="button" onClick={() => toggleModel(m)}
+                                  aria-label={m.is_active ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}
+                                  className="flex size-11 items-center justify-center rounded-lg text-ink-500 hover:bg-rose-50 hover:text-rose-600"
+                                >
+                                  {m.is_active ? <PowerOff className="size-4.5" /> : <Power className="size-4.5" />}
+                                </button>
+                              </div>
+                            ) : (
+                              <span className={cn('block text-right text-xs text-ink-400')}>
+                                {m.is_own ? '—' : 'ดูอย่างเดียว'}
+                              </span>
+                            )}
+                          </Td>
+                        </>
+                      )}
                     </tr>
                   ))}
                 </tbody>

@@ -1,7 +1,8 @@
 import { notFound } from 'next/navigation'
 import { requireSession } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
-import { featureLockedMessage, hasFeature } from '@/lib/plan'
+import { featureLockedMessage } from '@/lib/plan'
+import { isOtherBrand } from '@/lib/tire-import'
 import { PageHeader } from '@/components/app-shell'
 import { CompanyCatalogClient, type CompanyCatalogModel } from './catalog-client'
 import type { TireBrand } from '@/lib/database.types'
@@ -21,30 +22,46 @@ interface ModelRow {
 }
 
 /**
- * ข้อมูลยางของบริษัท: รุ่นจากแคตตาล็อกกลางที่ได้รับสิทธิ์ + ยี่ห้อ/รุ่นที่บริษัทเพิ่มเอง
- * แก้ไขได้เฉพาะรายการของตัวเอง และต้องเป็นแพ็กเกจ Premium จึงเพิ่ม/แก้ได้
+ * ข้อมูลยางของบริษัท (ดูอย่างเดียว): แสดงเฉพาะรุ่นที่ super admin เปิดสิทธิ์ให้ใน company_tire_models
+ * - ไม่แสดงรุ่น/ยี่ห้อที่บริษัทสร้างเอง (จากการนำเข้าหรือพิมพ์เองตอนเพิ่มยาง)
+ * - ไม่แสดงรุ่นหรือยี่ห้อที่ super admin ปิดใช้งาน
+ * - ไม่แสดงยี่ห้อ "อื่นๆ" ซึ่ง migration 010 เปิดให้ทุกบริษัทอัตโนมัติเป็นตัวเลือกสำรอง (ยังใช้ได้ในฟอร์มยาง/นำเข้า)
+ * ยี่ห้อแสดงเฉพาะที่มีรุ่นผ่านเงื่อนไขข้างต้น
  */
 export default async function CompanyCatalogPage() {
   const { company } = await requireSession(['admin'])
   if (!company) notFound()
 
-  const canManage = hasFeature(company, 'tire_catalog_own')
   const supabase = await createClient()
 
-  // ยี่ห้อ: เฉพาะของกลาง (created_by_company = null) และของบริษัทนี้ — ไม่โชว์ยี่ห้อที่ลูกค้ารายอื่นสร้าง
-  // รุ่น: RLS กรองให้เห็นเฉพาะที่ได้รับสิทธิ์ + ของตัวเองอยู่แล้ว
-  const [{ data: brandData }, { data: modelData }, { data: tireData }] = await Promise.all([
+  // RLS ให้เห็นรุ่นที่ได้รับสิทธิ์ + ของบริษัทเอง จึงต้องกรองซ้ำด้วยสิทธิ์ที่ super admin กำหนดเท่านั้น
+  const [{ data: brandData }, { data: modelData }, { data: tireData }, { data: grantData }] = await Promise.all([
     supabase
       .from('tire_brands')
       .select('*')
-      .or(`created_by_company.is.null,created_by_company.eq.${company.id}`)
+      .is('created_by_company', null)
+      .eq('is_active', true)
       .order('name'),
     supabase
       .from('tire_models')
       .select('id, brand_id, name, size, pattern_code, image_url, is_active, created_by_company, tire_brands(name)')
       .order('name'),
     supabase.from('tires').select('tire_model_id'),
+    supabase.from('company_tire_models').select('tire_model_id').eq('company_id', company.id),
   ])
+
+  const granted = new Set((grantData ?? []).map((g) => g.tire_model_id))
+  const activeBrands = new Map(((brandData ?? []) as TireBrand[]).map((b) => [b.id, b]))
+  const visibleModels = ((modelData ?? []) as unknown as ModelRow[]).filter(
+    (m) =>
+      granted.has(m.id) &&
+      m.created_by_company === null &&
+      m.is_active &&
+      activeBrands.has(m.brand_id) &&
+      !isOtherBrand(m.tire_brands?.name),
+  )
+  const visibleBrandIds = new Set(visibleModels.map((m) => m.brand_id))
+  const brands = [...activeBrands.values()].filter((b) => visibleBrandIds.has(b.id))
 
   const tireCount = new Map<string, number>()
   for (const t of tireData ?? []) {
@@ -52,7 +69,7 @@ export default async function CompanyCatalogPage() {
     tireCount.set(t.tire_model_id, (tireCount.get(t.tire_model_id) ?? 0) + 1)
   }
 
-  const models: CompanyCatalogModel[] = ((modelData ?? []) as unknown as ModelRow[]).map((m) => ({
+  const models: CompanyCatalogModel[] = visibleModels.map((m) => ({
     id: m.id,
     brand_id: m.brand_id,
     brand_name: m.tire_brands?.name ?? '-',
@@ -69,13 +86,14 @@ export default async function CompanyCatalogPage() {
     <>
       <PageHeader
         title="ข้อมูลยาง"
-        subtitle="ยี่ห้อและรุ่นยางที่ใช้ในคลังและหน้าช่าง — รายการจากแคตตาล็อกกลางดูได้อย่างเดียว เพิ่ม/แก้ได้เฉพาะรายการของบริษัท"
+        subtitle="ยี่ห้อและรุ่นยางที่ Dreammaker เปิดให้บริษัทใช้ — ต้องการรุ่นเพิ่ม แจ้ง Dreammaker"
       />
       <CompanyCatalogClient
-        brands={(brandData ?? []) as TireBrand[]}
+        brands={brands}
         models={models}
         companyId={company.id}
-        canManage={canManage}
+        canManage={false}
+        readOnly
         lockedMessage={featureLockedMessage('tire_catalog_own')}
       />
     </>

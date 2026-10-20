@@ -84,11 +84,18 @@ export function AppShell({
     writeCollapsed(!collapsed)
   }
 
-  const isActive = (item: NavItem) =>
+  const matches = (item: NavItem) =>
     item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`)
 
-  /** เมนูที่กำลังเปิดอยู่ ใช้แสดงชื่อหน้าบน top bar */
-  const currentSection = nav.find(isActive)
+  /**
+   * เมนูที่กำลังเปิดอยู่ — ถ้า path ตรงกับหลายเมนู (เช่น /tires กับ /tires/import)
+   * ให้ถือเมนูที่ href ยาวที่สุดเป็นเมนูปัจจุบัน เพื่อให้เมนูซ้อนกันได้โดยไม่ไฮไลต์ซ้ำ
+   */
+  const currentSection = nav
+    .filter(matches)
+    .reduce<NavItem | undefined>((best, item) => (!best || item.href.length > best.href.length ? item : best), undefined)
+
+  const isActive = (item: NavItem) => item === currentSection
 
   /**
    * เนื้อหาใน sidebar

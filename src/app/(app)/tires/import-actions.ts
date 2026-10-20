@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/server'
 import { fail, zodFail, type ActionResult } from '@/lib/action-result'
 import { featureLockedMessage, hasFeature } from '@/lib/plan'
 import { ensureBrandModelFor } from '@/lib/tire-stock'
+import { isMissingImportSchema } from '@/lib/tire-import-history'
 import {
   IMPORT_NOTE_MAX, IMPORT_TEXT_MAX, MAX_IMPORT_ROWS, buildImportNote, importSourceLabel,
   isOtherBrand, validateImportRows, type TireImportRow,
@@ -41,6 +42,8 @@ export interface TireImportPreviewRow {
 export interface TireImportCommitResult {
   inserted: number
   skipped: number
+  /** รอบนำเข้าที่บันทึกไว้ (null = ยังไม่ได้ apply migration 014 จึงไม่มีประวัติรอบ) */
+  importId: string | null
 }
 
 /* ---------------------------------------------------------- validation */
@@ -281,6 +284,53 @@ async function checkRows(
   })
 }
 
+/* ------------------------------------------------------- import batch */
+
+/**
+ * เปิดรอบนำเข้าใหม่ใน tire_imports ก่อนบันทึกยาง เพื่อให้ยางทุกเส้นผูก import_id ได้
+ * @returns id ของรอบ, null ถ้ายังไม่ได้ apply migration 014, หรือ error อื่น
+ */
+async function startImportBatch(
+  supabase: Supabase,
+  input: {
+    companyId: string
+    fileName: string
+    userId: string
+    userName: string
+    rowCount: number
+    skipped: number
+  },
+): Promise<{ id: string | null } | { error: unknown }> {
+  const { data, error } = await supabase
+    .from('tire_imports')
+    .insert({
+      company_id: input.companyId,
+      file_name: input.fileName,
+      imported_by: input.userId,
+      imported_by_name: input.userName,
+      row_count: input.rowCount,
+      inserted_count: 0,
+      skipped_count: input.skipped,
+    })
+    .select('id')
+    .single()
+  if (error) return isMissingImportSchema(error) ? { id: null } : { error }
+  return { id: data.id }
+}
+
+/**
+ * ปิดรอบนำเข้า: บันทึกจำนวนที่นำเข้าได้จริง — ถ้าไม่ได้สักเส้นให้ลบรอบทิ้ง ไม่ให้มีรอบว่างในประวัติ
+ * ไม่ส่ง error กลับ เพราะยางถูกบันทึกไปแล้ว ประวัติรอบเป็นข้อมูลประกอบ
+ */
+async function finishImportBatch(supabase: Supabase, id: string | null, inserted: number, skipped: number) {
+  if (!id) return
+  if (inserted === 0) {
+    await supabase.from('tire_imports').delete().eq('id', id)
+    return
+  }
+  await supabase.from('tire_imports').update({ inserted_count: inserted, skipped_count: skipped }).eq('id', id)
+}
+
 /* ------------------------------------------------------------- actions */
 
 /**
@@ -359,6 +409,17 @@ export async function commitTireImport(
     return { ok: false, error: 'ไม่มีแถวที่ผ่านการตรวจ — แก้ไฟล์ตามข้อความในตารางแล้วลองใหม่' }
   }
 
+  const batch = await startImportBatch(supabase, {
+    companyId: scope.companyId,
+    fileName: safeFileName.data,
+    userId: scope.session.userId,
+    userName: scope.session.profile.full_name,
+    rowCount: checked.length,
+    skipped,
+  })
+  if ('error' in batch) return fail(batch.error)
+  const importId = batch.id
+
   const source = importSourceLabel(safeFileName.data)
   const payload = okRows.map((r) => {
     const resolved = r.resolved!
@@ -375,6 +436,8 @@ export async function commitTireImport(
       tread_mm: resolved.new_tread_mm,
       new_tread_mm: resolved.new_tread_mm,
       note: buildImportNote(r.note, isOtherBrand(r.brand), source),
+      // ใส่เฉพาะเมื่อมีรอบ — ก่อน apply migration 014 ตาราง tires ยังไม่มีคอลัมน์นี้
+      ...(importId ? { import_id: importId } : {}),
     }
   })
 
@@ -383,6 +446,7 @@ export async function commitTireImport(
     const chunk = payload.slice(i, i + 200)
     const { error } = await supabase.from('tires').insert(chunk)
     if (error) {
+      await finishImportBatch(supabase, importId, inserted, checked.length - inserted)
       revalidateImport(scope.companyId)
       const prefix = inserted > 0 ? `นำเข้าไปแล้ว ${inserted} เส้น แต่` : ''
       if (error.code === '23505') {
@@ -399,13 +463,15 @@ export async function commitTireImport(
     inserted += chunk.length
   }
 
+  await finishImportBatch(supabase, importId, inserted, skipped)
   revalidateImport(scope.companyId)
-  return { ok: true, data: { inserted, skipped } }
+  return { ok: true, data: { inserted, skipped, importId } }
 }
 
 /** หน้าที่แสดงคลังยาง/ตัวเลือกยางต้องเห็นเส้นที่เพิ่งนำเข้าทันที */
 function revalidateImport(companyId: string) {
   revalidatePath('/tires')
+  revalidatePath('/tires/import')
   revalidatePath('/service')
   revalidatePath('/dashboard')
   revalidatePath(`/superadmin/companies/${companyId}/tires`)
