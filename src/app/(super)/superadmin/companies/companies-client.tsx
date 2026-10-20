@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   AlertCircle, Building2, Crown, Pencil, Plus, Power, PowerOff, UserPlus, Users,
 } from 'lucide-react'
@@ -10,6 +10,7 @@ import {
   Badge, Button, Card, EmptyState, Field, Input, Select, Table, TableWrap, Td, Textarea, Th,
 } from '@/components/ui'
 import { ConfirmDialog, Modal } from '@/components/ui/modal'
+import { SearchInput } from '@/components/search-input'
 import { Pagination, usePagination } from '@/components/ui/pagination'
 import { formatNumber, formatThaiDate } from '@/lib/utils'
 import { FEATURE_LABEL, PLAN_LABEL, effectivePlan } from '@/lib/plan'
@@ -105,6 +106,9 @@ function PlanFields({
 /** ตารางลูกค้า + ฟอร์มเพิ่ม/แก้ไข (super admin) */
 export function CompaniesClient({ companies }: { companies: CompanyRow[] }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  /** กำลังค้นหาอยู่ — ใช้เลือกข้อความ empty state ให้ตรงสถานการณ์ */
+  const isSearching = Boolean(searchParams.get('q'))
   const [open, setOpen] = React.useState(false)
   const [editing, setEditing] = React.useState<Company | null>(null)
   const [form, setForm] = React.useState<SuperCompanyInput>(EMPTY)
@@ -206,8 +210,9 @@ export function CompaniesClient({ companies }: { companies: CompanyRow[] }) {
 
   return (
     <>
-      <div className="mb-4 flex justify-end">
-        <Button onClick={openCreate}>
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <SearchInput placeholder="ค้นหาชื่อบริษัท, รหัส, ผู้ติดต่อ, เบอร์โทร..." className="sm:max-w-md" />
+        <Button onClick={openCreate} className="sm:ml-auto">
           <Plus className="size-4.5" />
           เพิ่มลูกค้าใหม่
         </Button>
@@ -215,11 +220,19 @@ export function CompaniesClient({ companies }: { companies: CompanyRow[] }) {
 
       <Card>
         {companies.length === 0 ? (
-          <EmptyState
-            icon={<Building2 className="size-6" />}
-            title="ยังไม่มีลูกค้าในระบบ"
-            action={<Button onClick={openCreate}><Plus className="size-4.5" />เพิ่มลูกค้าใหม่</Button>}
-          />
+          isSearching ? (
+            <EmptyState
+              icon={<Building2 className="size-6" />}
+              title="ไม่พบลูกค้าตามคำค้นหา"
+              description="ลองเปลี่ยนคำค้นหา เช่น ชื่อบริษัท รหัส หรือเบอร์โทร"
+            />
+          ) : (
+            <EmptyState
+              icon={<Building2 className="size-6" />}
+              title="ยังไม่มีลูกค้าในระบบ"
+              action={<Button onClick={openCreate}><Plus className="size-4.5" />เพิ่มลูกค้าใหม่</Button>}
+            />
+          )
         ) : (
           <TableWrap>
             <Table className="min-w-[1000px]">

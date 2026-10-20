@@ -373,7 +373,6 @@ export function TireImportClient({
                   <Th>ซีรีย์</Th>
                   <Th>ยี่ห้อ / รุ่น</Th>
                   <Th>ขนาด</Th>
-                  <Th>DOT</Th>
                   <Th>หมายเหตุ</Th>
                   <Th>ผลตรวจ</Th>
                 </tr>
@@ -381,7 +380,7 @@ export function TireImportClient({
               <tbody>
                 {visibleRows.length === 0 && (
                   <tr>
-                    <Td colSpan={7} className="py-10 text-center text-ink-500">
+                    <Td colSpan={6} className="py-10 text-center text-ink-500">
                       ไม่มีแถวที่ติดปัญหา
                     </Td>
                   </tr>
@@ -395,7 +394,6 @@ export function TireImportClient({
                       <span className="block text-[13px] text-ink-500">{(r.resolved?.model_name ?? r.model) || '-'}</span>
                     </Td>
                     <Td>{(r.resolved?.size ?? r.size) || '-'}</Td>
-                    <Td>{r.dot || '-'}</Td>
                     <Td className="max-w-xs truncate text-ink-600" title={r.note}>{r.note || '-'}</Td>
                     <Td>
                       {r.status === 'ok' && r.willCreate ? (

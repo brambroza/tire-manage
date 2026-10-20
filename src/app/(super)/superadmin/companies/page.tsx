@@ -16,13 +16,27 @@ function countBy(rows: Array<{ company_id: string | null }>): Map<string, number
   return map
 }
 
-export default async function CompaniesPage() {
+/** หน้ารายการลูกค้า (super admin) — ค้นหาด้วย ?q= จากชื่อ รหัส ผู้ติดต่อ เบอร์โทร อีเมล เลขผู้เสียภาษี */
+export default async function CompaniesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>
+}) {
   await requireSession(['super_admin'])
+  const { q } = await searchParams
   const supabase = await createClient()
+
+  let query = supabase.from('companies').select('*').order('name')
+  if (q?.trim()) {
+    const term = `%${q.trim()}%`
+    query = query.or(
+      `name.ilike.${term},code.ilike.${term},contact_name.ilike.${term},phone.ilike.${term},email.ilike.${term},tax_id.ilike.${term}`,
+    )
+  }
 
   const [{ data: companyData }, { data: vehicles }, { data: tires }, { data: profiles }] =
     await Promise.all([
-      supabase.from('companies').select('*').order('name'),
+      query,
       supabase.from('vehicles').select('company_id'),
       supabase.from('tires').select('company_id'),
       supabase.from('profiles').select('company_id'),

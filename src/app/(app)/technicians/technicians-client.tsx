@@ -27,13 +27,16 @@ const EMPTY: CreateUserInput = {
 
 const ROLE_LABEL: Record<string, string> = { admin: 'แอดมิน', technician: 'ช่าง' }
 
+/** แถวผู้ใช้ในตาราง — แนบอีเมลเข้าสู่ระบบได้เมื่อฝั่ง server ดึงมาให้ */
+export type MemberRow = Profile & { email?: string | null }
+
 /** จัดการผู้ใช้งานในบริษัท (ช่างและแอดมิน) */
 export function TechniciansClient({
   members,
   currentUserId,
   companyId,
 }: {
-  members: Profile[]
+  members: MemberRow[]
   currentUserId: string
   /** ระบุเมื่อ super admin จัดการผู้ใช้แทนลูกค้า */
   companyId?: string
@@ -51,6 +54,9 @@ export function TechniciansClient({
   const [pwTarget, setPwTarget] = React.useState<Profile | null>(null)
   const [newPassword, setNewPassword] = React.useState('')
   const [notice, setNotice] = React.useState<string | null>(null)
+
+  /** แสดงคอลัมน์อีเมลเฉพาะเมื่อ server ส่งข้อมูลอีเมลมาด้วย (หน้า super admin) */
+  const showEmail = members.some((m) => m.email !== undefined)
 
   function openCreate() {
     setEditing(null)
@@ -168,6 +174,7 @@ export function TechniciansClient({
               <thead>
                 <tr>
                   <Th>ชื่อ-นามสกุล</Th>
+                  {showEmail && <Th>อีเมล</Th>}
                   <Th>รหัสพนักงาน</Th>
                   <Th>เบอร์โทร</Th>
                   <Th>สิทธิ์</Th>
@@ -183,6 +190,7 @@ export function TechniciansClient({
                       {m.full_name}
                       {m.id === currentUserId && <span className="ml-2 text-xs text-ink-400">(คุณ)</span>}
                     </Td>
+                    {showEmail && <Td className="text-ink-600">{m.email ?? '-'}</Td>}
                     <Td>{m.employee_no ?? '-'}</Td>
                     <Td>{m.phone ?? '-'}</Td>
                     <Td><Badge tone={m.role === 'admin' ? 'brand' : 'sky'}>{ROLE_LABEL[m.role]}</Badge></Td>

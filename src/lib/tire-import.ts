@@ -16,7 +16,6 @@ export interface TireImportRow {
   model: string
   size: string
   serial: string
-  dot: string
   note: string
 }
 
@@ -32,7 +31,7 @@ export const MAX_IMPORT_ROWS = 2000
 /** หมายเหตุยาวได้ไม่เกินกี่ตัวอักษร */
 export const IMPORT_NOTE_MAX = 200
 
-/** ความยาวสูงสุดของยี่ห้อ/รุ่น/ขนาด/DOT ที่รับจากไฟล์ (กันเซลล์ขยะยาว ๆ) */
+/** ความยาวสูงสุดของยี่ห้อ/รุ่น/ขนาด ที่รับจากไฟล์ (กันเซลล์ขยะยาว ๆ) */
 export const IMPORT_TEXT_MAX = 80
 
 /** คำอธิบายคอลัมน์ในไฟล์ต้นแบบ — เรียงตามลำดับคอลัมน์ในไฟล์ */
@@ -75,13 +74,6 @@ export const IMPORT_TEMPLATE_COLUMNS: ReadonlyArray<{
     examples: ['MX1234567', 'OT9988'],
   },
   {
-    key: 'dot',
-    header: 'DOT',
-    required: false,
-    hint: 'สัปดาห์/ปีผลิต เช่น 1224 (ไม่บังคับ)',
-    examples: ['1224', ''],
-  },
-  {
     key: 'note',
     header: 'หมายเหตุ',
     required: 'other',
@@ -113,7 +105,6 @@ const HEADER_ALIASES: Record<string, TireImportColumnKey> = {
   'serialno': 'serial',
   'serial_no': 'serial',
   'serialnumber': 'serial',
-  'dot': 'dot',
   'หมายเหตุ': 'note',
   'note': 'note',
   'remark': 'note',
@@ -137,7 +128,7 @@ function normalizeHeader(value: string): string {
 
 /**
  * แปลงค่าในเซลล์เป็นข้อความที่ตัดช่องว่างแล้ว
- * ตัวเลขจาก Excel (เช่น DOT 1224 ที่ Excel มองเป็นตัวเลข) ต้องไม่กลายเป็น "1224.0" หรือ "1.2e3"
+ * ตัวเลขจาก Excel (เช่น ซีรีย์ 1224 ที่ Excel มองเป็นตัวเลข) ต้องไม่กลายเป็น "1224.0" หรือ "1.2e3"
  * @param value ค่าดิบจากไลบรารีอ่านไฟล์
  */
 export function cellText(value: unknown): string {
@@ -184,7 +175,7 @@ export function parseImportMatrix(cells: unknown[][]): ParseMatrixResult {
       .join(', ')
     return {
       ok: false,
-      error: `ไฟล์ไม่มีคอลัมน์ ${names} — ใช้หัวตารางตามไฟล์ต้นแบบ (ยี่ห้อ | รุ่น | ขนาด | ซีรีย์ | DOT | หมายเหตุ)`,
+      error: `ไฟล์ไม่มีคอลัมน์ ${names} — ใช้หัวตารางตามไฟล์ต้นแบบ (ยี่ห้อ | รุ่น | ขนาด | ซีรีย์ | หมายเหตุ)`,
     }
   }
 
@@ -204,12 +195,11 @@ export function parseImportMatrix(cells: unknown[][]): ParseMatrixResult {
       model: read(row, 'model'),
       size: read(row, 'size'),
       serial: read(row, 'serial'),
-      dot: read(row, 'dot'),
       note: isOtherBrand(brand) ? read(row, 'note').toUpperCase() : read(row, 'note'),
     }
     const isEmpty =
       parsed.brand === '' && parsed.model === '' && parsed.size === '' &&
-      parsed.serial === '' && parsed.dot === '' && parsed.note === ''
+      parsed.serial === '' && parsed.note === ''
     if (!isEmpty) rows.push(parsed)
   }
 
@@ -255,7 +245,6 @@ export function checkImportRowFormat(row: TireImportRow): string | null {
     ['ยี่ห้อ', row.brand],
     ['รุ่น', row.model],
     ['ขนาด', row.size],
-    ['DOT', row.dot],
   ] as const) {
     if (value.length > IMPORT_TEXT_MAX) return `${label} ยาวเกิน ${IMPORT_TEXT_MAX} ตัวอักษร`
   }

@@ -38,6 +38,8 @@ const EMPTY: TireInput = {
 /**
  * ฟอร์มเพิ่ม/แก้ไขยาง
  * รองรับทั้งเลือกรุ่นจากแคตตาล็อกที่ super admin กำหนดให้ และพิมพ์ยี่ห้อ/รุ่นเองกรณียังไม่มีในระบบ
+ * ช่อง DOT / ดอกยางตอนใหม่ / ดอกยางปัจจุบัน / ราคาซื้อ แสดงเฉพาะ super admin —
+ * ลูกค้าไม่เห็น แต่ค่าเดิมยังอยู่ใน state และถูกส่งกลับครบ จึงไม่ถูกล้างตอนลูกค้ากดบันทึก
  */
 export function TireFormModal({
   open,
@@ -269,7 +271,7 @@ export function TireFormModal({
                   ? canCustom
                     ? 'ยังไม่มีรุ่นยางที่เปิดสิทธิ์ให้บริษัทนี้ — ใช้โหมดพิมพ์เองได้'
                     : 'ยังไม่มีรุ่นยางที่เปิดสิทธิ์ให้บริษัทนี้ — แจ้งผู้ดูแลระบบให้เปิดสิทธิ์'
-                  : selectedModel
+                  : selectedModel && isSuperAdmin
                     ? `ดอกยางตอนใหม่จากแคตตาล็อก: ${selectedModel.new_tread_mm ?? EMPTY.new_tread_mm} มม.`
                     : undefined
               }
@@ -294,11 +296,12 @@ export function TireFormModal({
           </div>
         )}
 
-        <div className={cn('grid gap-5 sm:grid-cols-2', canCustom ? 'lg:grid-cols-4' : 'lg:grid-cols-3')}>
-          <Field label="DOT">
-            <Input value={form.dot ?? ''} onChange={(e) => set('dot', e.target.value)} placeholder="2323" />
-          </Field>
-          {canCustom ? (
+        {/* DOT / ดอกยาง / ราคา — เฉพาะ super admin กรอก ลูกค้าไม่เห็น (ค่าเดิมยังคงอยู่ใน form state และถูกส่งกลับตามเดิม) */}
+        {isSuperAdmin && (
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            <Field label="DOT">
+              <Input value={form.dot ?? ''} onChange={(e) => set('dot', e.target.value)} placeholder="2323" />
+            </Field>
             <Field label="ดอกยางตอนใหม่ (มม.)">
               <Input
                 type="number" inputMode="decimal" step="0.1" min={0}
@@ -306,22 +309,22 @@ export function TireFormModal({
                 onChange={(e) => set('new_tread_mm', e.target.value === '' ? null : Number(e.target.value))}
               />
             </Field>
-          ) : null}
-          <Field label="ดอกยางปัจจุบัน (มม.)">
-            <Input
-              type="number" inputMode="decimal" step="0.1" min={0}
-              value={form.tread_mm ?? ''}
-              onChange={(e) => set('tread_mm', e.target.value === '' ? null : Number(e.target.value))}
-            />
-          </Field>
-          <Field label="ราคาซื้อ (บาท)">
-            <Input
-              type="number" inputMode="decimal" step="0.01" min={0}
-              value={form.purchase_price ?? ''}
-              onChange={(e) => set('purchase_price', e.target.value === '' ? null : Number(e.target.value))}
-            />
-          </Field>
-        </div>
+            <Field label="ดอกยางปัจจุบัน (มม.)">
+              <Input
+                type="number" inputMode="decimal" step="0.1" min={0}
+                value={form.tread_mm ?? ''}
+                onChange={(e) => set('tread_mm', e.target.value === '' ? null : Number(e.target.value))}
+              />
+            </Field>
+            <Field label="ราคาซื้อ (บาท)">
+              <Input
+                type="number" inputMode="decimal" step="0.01" min={0}
+                value={form.purchase_price ?? ''}
+                onChange={(e) => set('purchase_price', e.target.value === '' ? null : Number(e.target.value))}
+              />
+            </Field>
+          </div>
+        )}
 
         <Field label="หมายเหตุ">
           {/* ยาง "อื่นๆ" ใช้หมายเหตุระบุยี่ห้อ/รุ่นจริงบนยาง จึงบังคับตัวพิมพ์ใหญ่เหมือนช่องยี่ห้อ */}

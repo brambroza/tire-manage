@@ -809,6 +809,11 @@ create policy brands_super_write on public.tire_brands for all to authenticated
 drop policy if exists brands_tenant_insert on public.tire_brands;
 create policy brands_tenant_insert on public.tire_brands for insert to authenticated
   with check (created_by_company = current_company_id());
+-- แอดมินบริษัทแก้ไข/ปิดใช้งานได้เฉพาะยี่ห้อที่บริษัทตัวเองสร้าง (migration 013)
+drop policy if exists brands_tenant_update on public.tire_brands;
+create policy brands_tenant_update on public.tire_brands for update to authenticated
+  using (created_by_company = current_company_id())
+  with check (created_by_company = current_company_id());
 
 -- tire_models : ลูกค้าเห็นเฉพาะรุ่นที่ super admin กำหนดให้ ----
 drop policy if exists models_select on public.tire_models;
@@ -827,6 +832,11 @@ create policy models_super_write on public.tire_models for all to authenticated
   using (is_super_admin()) with check (is_super_admin());
 drop policy if exists models_tenant_insert on public.tire_models;
 create policy models_tenant_insert on public.tire_models for insert to authenticated
+  with check (created_by_company = current_company_id());
+-- แอดมินบริษัทแก้ไข/ปิดใช้งานได้เฉพาะรุ่นที่บริษัทตัวเองสร้าง (migration 013)
+drop policy if exists models_tenant_update on public.tire_models;
+create policy models_tenant_update on public.tire_models for update to authenticated
+  using (created_by_company = current_company_id())
   with check (created_by_company = current_company_id());
 
 -- company_tire_models ---------------------------------------

@@ -22,7 +22,6 @@ export interface TireImportPreviewRow {
   brand: string
   model: string
   size: string
-  dot: string
   note: string
   status: 'ok' | 'error'
   /** สาเหตุที่นำเข้าไม่ได้ (null เมื่อผ่าน) */
@@ -56,7 +55,6 @@ const rowSchema = z.object({
   model: z.string().trim().max(IMPORT_TEXT_MAX * 4),
   size: z.string().trim().max(IMPORT_TEXT_MAX * 4),
   serial: z.string().trim().max(200),
-  dot: z.string().trim().max(IMPORT_TEXT_MAX * 4),
   note: z.string().trim().max(IMPORT_NOTE_MAX * 4),
 })
 
@@ -236,7 +234,6 @@ async function checkRows(
       brand: row.brand,
       model: row.model,
       size: row.size,
-      dot: row.dot,
       note: row.note,
     }
     if (error) return { ...base, status: 'error', message: error, resolved: null }
@@ -372,7 +369,6 @@ export async function commitTireImport(
       brand_name: resolved.brand_name,
       model_name: resolved.model_name,
       size: resolved.size,
-      dot: r.dot === '' ? null : r.dot,
       status: 'in_stock' as const,
       total_distance_km: 0,
       // ยางที่นำเข้าถือว่ายังไม่เคยใช้ → ดอกยางเริ่มต้นเท่ากับดอกยางตอนใหม่ของรุ่น

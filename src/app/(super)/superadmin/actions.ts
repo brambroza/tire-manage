@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { requireSession } from '@/lib/auth'
 import { createAdminClient, createClient } from '@/lib/supabase/server'
+import { removeTireImage, storeTireImage } from '@/lib/tire-images'
 import { ActionResult, fail, optionalNumber, optionalText, zodFail } from '@/lib/action-result'
 
 /* ============================================================ ลูกค้า */
@@ -249,81 +250,26 @@ const modelSchema = z.object({
   image_url: optionalText,
 })
 
-/** ชนิดไฟล์รูปที่รับได้ และขนาดสูงสุด 3 MB */
-const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/avif']
-const MAX_IMAGE_BYTES = 3 * 1024 * 1024
-const TIRE_IMAGE_BUCKET = 'tire-images'
-
 /**
- * อัปโหลดรูปยางขึ้น Supabase Storage แล้วคืน public URL
- * ใช้ service role เพื่อไม่ต้องเปิดสิทธิ์เขียน storage ให้ผู้ใช้ทั่วไป
- *
+ * อัปโหลดรูปยางของแคตตาล็อกกลางขึ้น Supabase Storage แล้วคืน public URL
  * @param formData ต้องมี field ชื่อ "file"
  */
 export async function uploadTireImage(
   formData: FormData,
 ): Promise<ActionResult<{ url: string }>> {
   await requireSession(['super_admin'])
-
-  const file = formData.get('file')
-  if (!(file instanceof File) || file.size === 0) {
-    return { ok: false, error: 'ไม่พบไฟล์รูปที่อัปโหลด' }
-  }
-  if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-    return { ok: false, error: 'รองรับเฉพาะไฟล์ JPG, PNG, WebP หรือ AVIF' }
-  }
-  if (file.size > MAX_IMAGE_BYTES) {
-    return { ok: false, error: 'ไฟล์ใหญ่เกิน 3 MB กรุณาย่อรูปก่อนอัปโหลด' }
-  }
-
-  let admin
-  try {
-    admin = createAdminClient()
-  } catch {
-    return { ok: false, error: 'ยังไม่ได้ตั้งค่า SUPABASE_SERVICE_ROLE_KEY จึงอัปโหลดรูปไม่ได้' }
-  }
-
-  const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
-  const path = `models/${crypto.randomUUID()}.${ext}`
-
-  const { error } = await admin.storage
-    .from(TIRE_IMAGE_BUCKET)
-    .upload(path, file, { contentType: file.type, upsert: false })
-
-  if (error) {
-    return {
-      ok: false,
-      error: error.message.includes('Bucket not found')
-        ? 'ยังไม่ได้สร้าง bucket "tire-images" — กรุณารัน migration 002 ก่อน'
-        : `อัปโหลดรูปไม่สำเร็จ: ${error.message}`,
-    }
-  }
-
-  const { data } = admin.storage.from(TIRE_IMAGE_BUCKET).getPublicUrl(path)
-  return { ok: true, data: { url: data.publicUrl } }
+  return storeTireImage(formData.get('file'), 'models')
 }
 
 /**
- * ลบรูปยางออกจาก Storage (ใช้ตอนผู้ใช้กดเอารูปออก)
+ * ลบรูปยางออกจาก Storage (ใช้ตอนผู้ใช้กดเอารูปออก) — super admin ลบได้ทุกรูปใน bucket
  * @param url public URL ของรูปที่ต้องการลบ
  */
 export async function deleteTireImage(url: string): Promise<ActionResult> {
   await requireSession(['super_admin'])
-  const marker = `/${TIRE_IMAGE_BUCKET}/`
-  const index = url.indexOf(marker)
-  if (index === -1) return { ok: false, error: 'ลิงก์รูปไม่ถูกต้อง' }
-
-  try {
-    const admin = createAdminClient()
-    const { error } = await admin.storage
-      .from(TIRE_IMAGE_BUCKET)
-      .remove([url.slice(index + marker.length)])
-    if (error) return fail(error)
-    revalidatePath('/superadmin/catalog')
-    return { ok: true }
-  } catch {
-    return { ok: false, error: 'ยังไม่ได้ตั้งค่า SUPABASE_SERVICE_ROLE_KEY จึงลบรูปไม่ได้' }
-  }
+  const result = await removeTireImage(url)
+  if (result.ok) revalidatePath('/superadmin/catalog')
+  return result
 }
 
 export type ModelInput = z.input<typeof modelSchema>
