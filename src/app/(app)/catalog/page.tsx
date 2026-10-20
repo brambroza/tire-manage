@@ -88,7 +88,7 @@ export default async function CompanyCatalogPage() {
     <>
       <PageHeader
         title="ข้อมูลยาง"
-        subtitle="ยี่ห้อและรุ่นยางที่ Dreammaker เปิดให้บริษัทใช้ — ต้องการรุ่นเพิ่ม แจ้ง Dreammaker"
+        subtitle="ยี่ห้อและรุ่นยางที่บริษัทใช้ได้ ถ้ารุ่นที่ต้องการยังไม่มี แจ้ง Dreammaker ได้เลย"
       />
       <CompanyCatalogClient
         brands={brands}

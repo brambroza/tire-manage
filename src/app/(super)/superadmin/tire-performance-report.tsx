@@ -259,7 +259,7 @@ export function TirePerformanceReport({
       <Card className="mt-4 overflow-hidden">
         <CardHeader
           title="ประสิทธิภาพยางและสาเหตุการเปลี่ยน"
-          description="เปรียบเทียบอายุใช้งานต่อหนึ่งรอบติดตั้ง-ถอด แยกตามยี่ห้อ รุ่น บริษัท และสาเหตุ"
+          description="อายุใช้งานต่อรอบใส่-ถอด แยกดูตามยี่ห้อ รุ่น บริษัท หรือสาเหตุที่ถอด"
         />
         <CardBody className="space-y-6">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end">
@@ -365,7 +365,7 @@ export function TirePerformanceReport({
             <EmptyState
               icon={<Gauge className="size-6" />}
               title="ยังไม่มีข้อมูลระยะทางสำหรับวิเคราะห์"
-              description="เมื่อมีการถอดยางและบันทึกระยะรอบ ระบบจะจัดอันดับให้โดยอัตโนมัติ"
+              description="ต้องมีการถอดยางพร้อมระยะรอบก่อน ถึงจะจัดอันดับได้"
             />
           ) : (
             <>

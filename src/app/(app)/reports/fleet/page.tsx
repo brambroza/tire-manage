@@ -149,7 +149,7 @@ export default async function FleetReportPage({
           <EmptyState
             icon={<Truck className="size-6" />}
             title="ยังไม่มีรถในระบบ"
-            description="เพิ่มรถที่หน้าจัดการรถก่อน แล้วรายงานนี้จะสรุปให้อัตโนมัติ"
+            description="เพิ่มรถที่หน้าจัดการรถก่อน รายงานนี้ถึงจะมีข้อมูล"
           />
         </Card>
       ) : vehicles.length === 0 ? (

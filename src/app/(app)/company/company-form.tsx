@@ -56,7 +56,7 @@ function BranchEditor({
   return (
     <Field
       label="รายชื่อสาขา"
-      hint="ใช้เป็นตัวเลือกช่องสาขาตอนเพิ่ม/แก้รถ และใช้แยกกลุ่มในรายงานรถ"
+      hint="รายชื่อนี้จะไปเป็นตัวเลือกช่องสาขาของรถ และใช้แยกกลุ่มในรายงานรถ"
       error={localError ?? error}
     >
       <div className="flex gap-2">
@@ -249,7 +249,7 @@ export function CompanyForm({ company }: { company: Company }) {
         <Card>
           <CardHeader
             title="สาขา / หน่วยงาน"
-            description="ตั้งรายชื่อสาขาเพื่อระบุว่ารถแต่ละคันสังกัดที่ไหน"
+            description="สาขาหรือหน่วยงานที่รถแต่ละคันสังกัด"
           />
           <CardBody>
             <BranchEditor
@@ -263,13 +263,13 @@ export function CompanyForm({ company }: { company: Company }) {
         <Card>
           <CardHeader
             title="เกณฑ์แจ้งเตือน"
-            description="ใช้คำนวณการแจ้งเตือนในหน้าภาพรวมและแผนผังล้อ"
+            description="เกณฑ์ที่หน้าภาพรวมและผังล้อใช้ขึ้นเตือน"
           />
           <CardBody className="space-y-5">
             <Field
               label="ระยะของรอบการติดตั้งปัจจุบันที่จะแจ้งเตือน (กม.)"
               required
-              hint="นับเฉพาะรอบที่ใส่อยู่ ถอดแล้วใส่ใหม่จะเริ่มนับใหม่ · ค่าเริ่มต้นตามสเปคคือ 10,000 กม."
+              hint="นับเฉพาะรอบที่ใส่อยู่ ถอดแล้วใส่ใหม่เริ่มนับใหม่ ค่าเริ่มต้น 10,000 กม."
               error={fieldErrors.alert_km}
             >
               <Input
@@ -295,7 +295,7 @@ export function CompanyForm({ company }: { company: Company }) {
         <Card>
           <CardHeader
             title="ยางครบระยะสะสม"
-            description="แจ้งเตือนเมื่อยางเส้นหนึ่งวิ่งครบตามที่กำหนด นับรวมทุกรอบการติดตั้ง ไม่รีเซ็ตเมื่อสลับตำแหน่ง"
+            description="เตือนเมื่อยางเส้นหนึ่งวิ่งสะสมครบตามนี้ นับรวมทุกรอบที่เคยใส่ สลับตำแหน่งก็ไม่เริ่มนับใหม่"
           />
           <CardBody className="space-y-5">
             <Field
@@ -318,7 +318,7 @@ export function CompanyForm({ company }: { company: Company }) {
             </Field>
             <Field
               label="ค่าเฉลี่ยที่รถวิ่งต่อเดือน (กม.)"
-              hint="ใช้ประมาณระยะที่วิ่งไปหลังบันทึกเลขไมล์ครั้งล่าสุด · รถที่กรอกค่าของตัวเองไว้จะใช้ค่านั้นแทน · เว้นว่าง = ไม่ประมาณ"
+              hint="ใช้เดาระยะที่วิ่งไปตั้งแต่บันทึกไมล์ครั้งล่าสุด รถที่กรอกค่าของตัวเองไว้จะใช้ค่านั้น เว้นว่างถ้าไม่อยากให้เดา"
               error={fieldErrors.avg_km_per_month}
             >
               <Input
@@ -330,7 +330,7 @@ export function CompanyForm({ company }: { company: Company }) {
             <Field
               label="หยุดประมาณการหลังจากไม่มีเลขไมล์ใหม่ (วัน)"
               required
-              hint="เลยจากนี้ระบบจะหยุดเดาและขอให้ยืนยันเลขไมล์ · ค่าเริ่มต้น 90 วัน"
+              hint="ถ้าไม่ได้บันทึกไมล์นานกว่านี้ จะหยุดเดาแล้วขอให้ยืนยันเลขไมล์ ค่าเริ่มต้น 90 วัน"
               error={fieldErrors.estimate_max_days}
             >
               <Input
@@ -345,7 +345,7 @@ export function CompanyForm({ company }: { company: Company }) {
         <Card>
           <CardHeader
             title="รถเปลี่ยนยางบ่อย"
-            description="แจ้งเตือนทะเบียนรถที่ถอดยางถี่ผิดปกติ เพื่อตรวจสภาพรถหรือพฤติกรรมการใช้งาน"
+            description="เตือนรถที่ถอดยางบ่อยผิดปกติ จะได้ไปดูสภาพรถหรือการใช้งาน"
           />
           <CardBody className="space-y-5">
             <Field

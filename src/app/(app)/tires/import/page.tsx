@@ -33,7 +33,7 @@ export default async function NewTireDataPage({
   const header = (
     <PageHeader
       title="ข้อมูลยางใหม่"
-      subtitle={`คลังยางใหม่ — ยางที่นำเข้าจากไฟล์หรือคีย์/สแกนซีรีย์ · ${company?.name ?? ''}`}
+      subtitle={`ยางใหม่ที่นำเข้าจากไฟล์หรือสแกนซีรีย์ของ ${company?.name ?? 'บริษัท'}`}
       breadcrumb={['คลังยาง', 'ข้อมูลยางใหม่']}
       action={
         <>

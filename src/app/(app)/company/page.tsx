@@ -13,7 +13,7 @@ export default async function CompanyPage() {
     <>
       <PageHeader
         title="ข้อมูลบริษัท"
-        subtitle="แก้ไขข้อมูลติดต่อและตั้งค่าเกณฑ์แจ้งเตือนการใช้งานยาง"
+        subtitle="ข้อมูลติดต่อ สาขา และเกณฑ์แจ้งเตือนของบริษัท"
       />
       <CompanyForm company={company} />
     </>

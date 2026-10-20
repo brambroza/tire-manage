@@ -121,7 +121,7 @@ export default async function SuperDashboardPage() {
     <>
       <PageHeader
         title="ภาพรวมระบบทั้งหมด"
-        subtitle="สรุปการใช้งานของลูกค้าทุกรายในระบบ Dream Tire"
+        subtitle="ลูกค้าแต่ละรายใช้งานไปถึงไหนแล้ว"
       />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -150,7 +150,7 @@ export default async function SuperDashboardPage() {
       />
 
       <Card className="mt-4">
-        <CardHeader title="การใช้งานรายบริษัท" description="คลิกชื่อบริษัทเพื่อดูรายละเอียดและกำหนดสิทธิ์ยาง" />
+        <CardHeader title="การใช้งานรายบริษัท" description="กดชื่อบริษัทเพื่อดูรายละเอียดหรือเปิดสิทธิ์รุ่นยาง" />
         {summary.length === 0 ? (
           <EmptyState
             icon={<Building2 className="size-6" />}

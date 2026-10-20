@@ -104,7 +104,7 @@ export function AxleAccessClient({
     <Card>
       <CardHeader
         title="สิทธิ์การมองเห็นประเภทเพลา"
-        description="เลือกประเภทเพลาที่บริษัทนี้จะเลือกใช้ได้ตอนเพิ่มรถและตอนบริการหน้างาน"
+        description="ติ๊กประเภทเพลาที่จะให้บริษัทนี้ใช้ตอนเพิ่มรถและหน้างาน"
         action={
           <div className="flex items-center gap-3">
             {saved && (

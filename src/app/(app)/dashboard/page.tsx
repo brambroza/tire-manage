@@ -325,7 +325,7 @@ export default async function DashboardPage({
           <EmptyState
             icon={<AlertTriangle className="size-6" />}
             title="ยังไม่มียางที่ถึงเกณฑ์แจ้งเตือน"
-            description="ระบบจะแจ้งเตือนอัตโนมัติเมื่อยางวิ่งเกินเกณฑ์ที่ตั้งไว้ในหน้าข้อมูลบริษัท"
+            description="ยังไม่มียางเส้นไหนวิ่งถึงเกณฑ์ที่ตั้งไว้ในหน้าข้อมูลบริษัท"
           />
         ) : (
           <TableWrap>
@@ -418,7 +418,7 @@ export default async function DashboardPage({
           <EmptyState
             icon={<Repeat className="size-6" />}
             title="ยังไม่มีรถที่เปลี่ยนยางถี่ผิดปกติ"
-            description="ระบบจะแจ้งเตือนเมื่อรถคันใดถอดยางถึงเกณฑ์ที่ตั้งไว้"
+            description="ยังไม่มีรถคันไหนถอดยางบ่อยถึงเกณฑ์ที่ตั้งไว้"
           />
         ) : (
           <TableWrap>

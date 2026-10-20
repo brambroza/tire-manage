@@ -104,7 +104,7 @@ export function ImportHistoryClient({
         <EmptyState
           icon={<FileSpreadsheet className="size-7" />}
           title="ยังไม่มีข้อมูลยางใหม่"
-          description="สแกน/คีย์ซีรีย์ทีละรุ่น หรือนำเข้าจากไฟล์ Excel/CSV แล้วรายการทั้งหมดจะแสดงที่หน้านี้"
+          description="เริ่มจากสแกนซีรีย์หรืออัปโหลดไฟล์ ยางที่เพิ่มแล้วจะมาอยู่ที่นี่"
           action={
             <div className="flex flex-wrap justify-center gap-3">
               <Link
@@ -259,7 +259,7 @@ export function ImportHistoryClient({
       <Card>
         <CardHeader
           title="ประวัติการนำเข้า"
-          description={`${formatNumber(batches.length)} รอบ · กดที่รอบเพื่อดูรายการยางของรอบนั้น`}
+          description={`${formatNumber(batches.length)} รอบ กดรอบไหนจะเห็นยางของรอบนั้นในตารางด้านบน`}
           action={
             batches.length > COLLAPSED_BATCHES && (
               <button

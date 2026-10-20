@@ -56,7 +56,7 @@ export default async function VehiclesPage({
     <>
       <PageHeader
         title="จัดการรถ"
-        subtitle="ข้อมูลทะเบียน จังหวัด ยี่ห้อ/รุ่น ประเภทเพลา และเลขไมล์ล่าสุด"
+        subtitle="รถทุกคันของบริษัท พร้อมประเภทเพลาและเลขไมล์ล่าสุด"
       />
       <VehiclesClient
         vehicles={vehicles}

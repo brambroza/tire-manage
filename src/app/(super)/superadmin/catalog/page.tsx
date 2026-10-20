@@ -64,7 +64,7 @@ export default async function CatalogPage() {
     <>
       <PageHeader
         title="ข้อมูลยาง"
-        subtitle="จัดการยี่ห้อ รุ่น ซีรีส์ ขนาด และดอกยางตอนใหม่ สำหรับใช้ทั้งระบบ"
+        subtitle="ยี่ห้อ รุ่น ขนาด และดอกยางตอนใหม่ที่ใช้ร่วมกันทุกบริษัท"
       />
       <CatalogClient brands={(brandData ?? []) as TireBrand[]} models={models} />
     </>

@@ -36,7 +36,7 @@ export default async function CompanyTireImportPage({
       <Card className="mb-4">
         <CardHeader
           title="นำเข้าซีรีย์ยางแทนลูกค้า"
-          description="ยางที่นำเข้าจะมีสถานะ “ยางใหม่” อยู่ในคลังยางใหม่ของบริษัทนี้ ช่างเลือกซีรีย์ได้ทันที · รับเฉพาะยี่ห้อ/รุ่นที่เปิดสิทธิ์ให้บริษัทแล้ว"
+          description="ยางที่นำเข้าจะเป็นยางใหม่ในคลังของบริษัทนี้ ช่างเลือกใช้ได้ทันที ในไฟล์ใช้ได้เฉพาะยี่ห้อ/รุ่นที่เปิดสิทธิ์ให้แล้ว"
           action={
             <div className="flex items-center gap-2">
               <Badge tone={plan === 'premium' ? 'brand' : 'slate'}>แพ็กเกจ {PLAN_LABEL[plan]}</Badge>

@@ -11,7 +11,7 @@ const thai = IBM_Plex_Sans_Thai({
 
 export const metadata: Metadata = {
   title: 'Dream Tire — ระบบจัดการยางรถบรรทุก',
-  description: 'บันทึกการถอด-ใส่ยาง ติดตามระยะใช้งานยางรายเส้น และแจ้งเตือนเมื่อถึงเกณฑ์',
+  description: 'บันทึกถอด-ใส่ยางและติดตามระยะวิ่งของยางแต่ละเส้น แจ้งเตือนเมื่อถึงเกณฑ์',
   applicationName: 'Dream Tire',
   appleWebApp: { capable: true, title: 'Dream Tire', statusBarStyle: 'default' },
 }

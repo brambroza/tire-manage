@@ -59,7 +59,7 @@ export default async function CompanyUsersPage({
       <Card className="mb-4">
         <CardHeader
           title="บัญชีผู้ใช้งานของลูกค้า"
-          description="สร้างบัญชีแอดมินหรือช่างให้ลูกค้า แก้ไขข้อมูล ตั้งรหัสผ่านใหม่ และเปิด/ปิดการใช้งานได้จากที่นี่"
+          description="บัญชีแอดมินและช่างของลูกค้ารายนี้ สร้างใหม่ ตั้งรหัสผ่าน หรือปิดการใช้งานได้ที่นี่"
         />
       </Card>
       <TechniciansClient

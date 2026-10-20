@@ -21,7 +21,7 @@ export default async function TireImportPage() {
     <>
       <PageHeader
         title="นำเข้าซีรีย์ยางใหม่"
-        subtitle={`เพิ่มยางใหม่เข้าคลังจากไฟล์ Excel/CSV · ${company?.name ?? ''}`}
+        subtitle={`อัปโหลดไฟล์ Excel หรือ CSV เพื่อเพิ่มยางใหม่ให้ ${company?.name ?? 'บริษัท'}`}
         breadcrumb={['ข้อมูลยางใหม่', 'นำเข้าไฟล์']}
         action={
           <>

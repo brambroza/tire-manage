@@ -342,7 +342,7 @@ export function CatalogClient({
               <span>{error}</span>
             </div>
           )}
-          <Field label="ชื่อยี่ห้อ" required hint="ระบบจะบันทึกเป็นตัวพิมพ์ใหญ่">
+          <Field label="ชื่อยี่ห้อ" required hint="บันทึกเป็นตัวพิมพ์ใหญ่ทั้งหมด">
             <Input
               value={brandName}
               onChange={(e) => setBrandName(toUpperText(e.target.value))}
@@ -410,7 +410,7 @@ export function CatalogClient({
 
           <Field
             label="รูปยาง"
-            hint="รองรับ JPG, PNG, WebP, AVIF ขนาดไม่เกิน 3 MB — รูปนี้จะแสดงตอนช่างเลือกยางและในแดชบอร์ด"
+            hint="JPG, PNG, WebP หรือ AVIF ไม่เกิน 3 MB ช่างจะเห็นรูปนี้ตอนเลือกยาง"
           >
             <div className="flex items-center gap-4">
               <TireThumb src={form.image_url} alt="ตัวอย่างรูปยาง" size="xl" />

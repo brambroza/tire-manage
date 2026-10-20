@@ -42,7 +42,7 @@ export default async function ScanSerialPage() {
   const header = (
     <PageHeader
       title="เพิ่มซีรีย์ยางใหม่"
-      subtitle={`เลือกยี่ห้อ/รุ่น แล้วสแกนหรือคีย์ซีรีย์ · ${company?.name ?? ''}`}
+      subtitle={`${company?.name ?? 'บริษัท'} · เลือกรุ่นยางก่อน แล้วค่อยสแกนหรือพิมพ์ซีรีย์ทีละเส้น`}
       breadcrumb={['ข้อมูลยางใหม่', 'คีย์/สแกนซีรีย์']}
       action={back}
     />

@@ -100,7 +100,7 @@ export default async function CompanyTiresPage({
       <Card className="mb-4">
         <CardHeader
           title="จัดการคลังยางแทนลูกค้า"
-          description="เพิ่มยางเข้าคลัง แก้ไขข้อมูล หรือตัดจำหน่ายได้ — ยางที่ติดตั้งอยู่กับรถต้องถอดออกก่อนจึงตัดจำหน่ายได้"
+          description="ทำแทนลูกค้าได้ทุกอย่าง ยางที่ยังอยู่บนรถต้องถอดก่อนถึงจะตัดจำหน่ายได้"
           action={
             <Link
               href={`/superadmin/companies/${id}/tires/import`}

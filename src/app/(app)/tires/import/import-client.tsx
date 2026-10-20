@@ -233,7 +233,7 @@ export function TireImportClient({
           <Card>
             <CardHeader
               title="เลือกไฟล์ซีรีย์ยาง"
-              description={`นำเข้าเป็นยางใหม่ของ ${companyName} — รองรับ .xlsx และ .csv ครั้งละไม่เกิน ${formatNumber(MAX_IMPORT_ROWS)} แถว`}
+              description={`ไฟล์ .xlsx หรือ .csv ครั้งละไม่เกิน ${formatNumber(MAX_IMPORT_ROWS)} แถว ยางทั้งหมดจะเข้าเป็นยางใหม่ของ ${companyName}`}
               action={
                 <Button variant="secondary" onClick={() => void downloadTemplate()} className="min-h-12">
                   <Download className="size-5" />
@@ -290,7 +290,7 @@ export function TireImportClient({
           <Card>
             <CardHeader
               title="คอลัมน์ในไฟล์"
-              description="จับคู่จากชื่อหัวคอลัมน์ (ไทยหรืออังกฤษ) สลับลำดับคอลัมน์ได้"
+              description="ดูจากชื่อหัวคอลัมน์ ไทยหรืออังกฤษก็ได้ จะเรียงคอลัมน์ยังไงก็ได้"
             />
             <TableWrap>
               <Table>

@@ -227,7 +227,7 @@ export function ScanSerialClient({ models }: { models: ScanModelOption[] }) {
         <EmptyState
           icon={<ScanBarcode className="size-7" />}
           title="ยังไม่มีรุ่นยางที่บริษัทใช้ได้"
-          description="แจ้ง Dreammaker เพิ่มหรือเปิดสิทธิ์ยี่ห้อ/รุ่นยางให้บริษัทก่อน แล้วจึงเพิ่มซีรีย์ได้"
+          description="ต้องมีรุ่นยางก่อนถึงจะเพิ่มซีรีย์ได้ แจ้ง Dreammaker เปิดรุ่นให้บริษัท"
         />
       </Card>
     )
@@ -268,7 +268,7 @@ export function ScanSerialClient({ models }: { models: ScanModelOption[] }) {
     <div className="grid gap-4 lg:grid-cols-5">
       {/* ------------------------------------------------ เลือกรุ่น + สแกน */}
       <Card className="lg:col-span-2">
-        <CardHeader title="1. เลือกยี่ห้อและรุ่นยาง" description="เฉพาะรุ่นในเมนูข้อมูลยางของบริษัท" />
+        <CardHeader title="1. เลือกยี่ห้อและรุ่นยาง" description="เลือกได้เฉพาะรุ่นที่อยู่ในเมนูข้อมูลยาง" />
         <CardBody className="space-y-5">
           <Field label="ยี่ห้อ" required>
             <Select value={brand} onChange={(e) => changeBrand(e.target.value)}>
@@ -294,7 +294,7 @@ export function ScanSerialClient({ models }: { models: ScanModelOption[] }) {
           )}
         </CardBody>
 
-        <CardHeader title="2. สแกนหรือคีย์ซีรีย์" description="สแกนบาร์โค้ดได้ต่อเนื่อง หรือพิมพ์แล้วกด Enter" className="border-t" />
+        <CardHeader title="2. สแกนหรือคีย์ซีรีย์" description="ยิงบาร์โค้ดต่อกันได้เลย หรือพิมพ์แล้วกด Enter" className="border-t" />
         <CardBody className="space-y-3">
           <form onSubmit={submitInput} className="flex gap-2">
             <Input
@@ -392,7 +392,7 @@ export function ScanSerialClient({ models }: { models: ScanModelOption[] }) {
         open={pasteOpen}
         onClose={() => setPasteOpen(false)}
         title="วางหลายซีรีย์พร้อมกัน"
-        description="หนึ่งซีรีย์ต่อบรรทัด หรือคั่นด้วยจุลภาค — คัดลอกมาจาก Excel ได้"
+        description="บรรทัดละหนึ่งซีรีย์ หรือคั่นด้วยจุลภาค ก๊อปจาก Excel มาวางได้เลย"
         footer={
           <>
             <Button variant="secondary" onClick={() => setPasteOpen(false)}>ยกเลิก</Button>

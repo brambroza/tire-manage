@@ -48,7 +48,7 @@ export default async function MileagePage({
     <>
       <PageHeader
         title="บันทึกเลขไมล์"
-        subtitle="อัปเดตไมล์รถระหว่างทาง เพื่อให้ระยะรอบนี้และการแจ้งเตือนของยางทุกเส้นบนรถเป็นปัจจุบัน"
+        subtitle="บันทึกเลขไมล์วันนี้ ยางทุกเส้นบนรถคันนั้นจะได้ระยะที่ตรงกับความจริง"
       />
       <MileageClient vehicles={vehicles} initialVehicleId={vehicle} />
     </>

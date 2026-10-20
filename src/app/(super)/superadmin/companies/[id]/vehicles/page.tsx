@@ -59,7 +59,7 @@ export default async function CompanyVehiclesPage({
       <Card className="mb-4">
         <CardHeader
           title="จัดการรถแทนลูกค้า"
-          description="เพิ่ม แก้ไข และปิดใช้งานรถได้เหมือนที่แอดมินของลูกค้าทำ — ทุกการเปลี่ยนแปลงมีผลกับข้อมูลจริงของลูกค้า"
+          description="แก้แทนแอดมินลูกค้าได้ทุกอย่าง และมีผลกับข้อมูลจริงของลูกค้าทันที"
         />
       </Card>
       <VehiclesClient

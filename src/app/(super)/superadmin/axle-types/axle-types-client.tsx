@@ -319,7 +319,7 @@ export function AxleTypesClient({ axleTypes }: { axleTypes: AxleTypeRow[] }) {
             label="ประเภทรถ"
             required
             error={fieldErrors.category}
-            hint="ช่างจะเลือกหมวดนี้ก่อน แล้วจึงเห็นเฉพาะประเภทเพลาในหมวดที่เลือก"
+            hint="ช่างเลือกหมวดก่อน แล้วค่อยเห็นประเภทเพลาในหมวดนั้น"
           >
             <div className="flex gap-2">
               {(Object.keys(CATEGORY_LABEL) as AxleCategory[]).map((value) => (
@@ -343,7 +343,7 @@ export function AxleTypesClient({ axleTypes }: { axleTypes: AxleTypeRow[] }) {
           <Field
             label="รูปผังล้อสำหรับช่าง"
             error={fieldErrors.image_url}
-            hint="ช่างเห็นรูปนี้ตอนเลือกตำแหน่งล้อ — เว้นว่างได้ถ้ายังไม่มีรูป"
+            hint="ช่างเห็นรูปนี้ตอนเลือกตำแหน่งล้อ ยังไม่มีรูปก็เว้นว่างไว้ได้"
           >
             <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
               <button

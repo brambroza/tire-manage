@@ -1197,7 +1197,7 @@ export function ServiceWizard({
 
       {/* -------------------------------------- ขั้นที่ 7: ชนิดยางที่ใส่ */}
       {step === 'mount-kind' && (
-        <StepCard title="ใส่ยาง" description={`${wheelName(position)} — เลือกชนิดยางที่จะใส่`}>
+        <StepCard title="ใส่ยาง" description={`${wheelName(position)} เลือกยางที่จะใส่`}>
           <div className="grid grid-cols-2 gap-3">
             {([
               { value: 'new' as const, label: 'ยางใหม่' },

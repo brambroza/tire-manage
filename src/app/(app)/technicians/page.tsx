@@ -20,7 +20,7 @@ export default async function TechniciansPage() {
     <>
       <PageHeader
         title="ช่างและผู้ใช้งานของบริษัท"
-        subtitle={`จัดการบัญชีเข้าใช้งานของ ${company?.name ?? 'บริษัท'}`}
+        subtitle={`บัญชีเข้าระบบของ ${company?.name ?? 'บริษัท'} สร้างใหม่ ตั้งรหัสผ่าน หรือปิดการใช้งานได้ที่นี่`}
       />
       <TechniciansClient members={(data ?? []) as Profile[]} currentUserId={userId} />
     </>

@@ -76,7 +76,7 @@ export function CompanyUsersClient({
           <EmptyState
             icon={<Users className="size-6" />}
             title="ยังไม่มีบัญชีผู้ใช้"
-            description="สร้างบัญชีแอดมินคนแรกให้ลูกค้าเพื่อเริ่มใช้งาน"
+            description="สร้างบัญชีแอดมินคนแรกให้ลูกค้าก่อน"
           />
         ) : (
           <TableWrap>
@@ -113,7 +113,7 @@ export function CompanyUsersClient({
         open={open}
         onClose={() => setOpen(false)}
         title="สร้างบัญชีผู้ใช้ให้ลูกค้า"
-        description="ระบบจะยืนยันอีเมลให้อัตโนมัติ ผู้ใช้เข้าสู่ระบบได้ทันที"
+        description="ไม่ต้องรอยืนยันอีเมล ล็อกอินได้ทันทีด้วยรหัสผ่านนี้"
         footer={
           <>
             <Button variant="secondary" onClick={() => setOpen(false)}>ยกเลิก</Button>

@@ -19,7 +19,7 @@ export default async function ReasonsPage() {
     <>
       <PageHeader
         title="สาเหตุการถอดยาง"
-        subtitle="ตัวเลือกที่ช่างจะเห็นตอนบันทึกการถอดยาง กำหนดได้เองทั้งหมด"
+        subtitle="สาเหตุที่ช่างเลือกได้ตอนถอดยาง"
       />
       <ReasonsClient reasons={(data ?? []) as RemovalReason[]} />
     </>

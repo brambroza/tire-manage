@@ -139,7 +139,7 @@ export default async function CompanyOverviewPage({
             <EmptyState
               icon={<Users className="size-6" />}
               title="ยังไม่มีการบันทึกถอด-ใส่ยาง"
-              description="ข้อมูลจะปรากฏเมื่อช่างของลูกค้าเริ่มบันทึกงาน"
+              description="ช่างของลูกค้ายังไม่ได้บันทึกงาน"
             />
           ) : (
             <RecentEventsTable events={events} />

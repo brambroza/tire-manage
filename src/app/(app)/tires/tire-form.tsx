@@ -183,7 +183,7 @@ export function TireFormModal({
         <Field
           label="เลขยาง (ซีเรียล)"
           required
-          hint="ตัวเลขและตัวอักษรภาษาอังกฤษเท่านั้น (ระบบแปลงเป็นตัวพิมพ์ใหญ่ให้)"
+          hint="พิมพ์ตัวเลขกับตัวอักษรอังกฤษได้ ตัวเล็กจะกลายเป็นตัวใหญ่ให้เอง"
           error={fieldErrors.serial_no}
         >
           <Input
@@ -225,7 +225,7 @@ export function TireFormModal({
         {!canCustom && tire && !tire.tire_model_id && !form.tire_model_id && (
           <p className="rounded-xl bg-surface-alt px-4 py-3 text-sm text-ink-600 ring-1 ring-inset ring-line">
             ข้อมูลเดิม: {tireSpecLabel({ size: tire.size, brandName: tire.brand_name, modelName: tire.model_name })}
-            {' '}— เลือกรุ่นจากแคตตาล็อกด้านล่างเพื่อเปลี่ยน หรือเว้นไว้เพื่อคงค่าเดิม
+            {' '}จะเปลี่ยนก็เลือกรุ่นจากแคตตาล็อกด้านล่าง ไม่เลือกก็ใช้ค่าเดิม
           </p>
         )}
 
@@ -269,8 +269,8 @@ export function TireFormModal({
               hint={
                 models.length === 0
                   ? canCustom
-                    ? 'ยังไม่มีรุ่นยางที่เปิดสิทธิ์ให้บริษัทนี้ — ใช้โหมดพิมพ์เองได้'
-                    : 'ยังไม่มีรุ่นยางที่เปิดสิทธิ์ให้บริษัทนี้ — แจ้งผู้ดูแลระบบให้เปิดสิทธิ์'
+                    ? 'ยังไม่มีรุ่นยางที่เปิดสิทธิ์ให้บริษัทนี้ พิมพ์ยี่ห้อ/รุ่นเองได้'
+                    : 'ยังไม่มีรุ่นยางที่เปิดสิทธิ์ให้บริษัทนี้ แจ้ง Dreammaker เปิดสิทธิ์ก่อน'
                   : selectedModel && isSuperAdmin
                     ? `ดอกยางตอนใหม่จากแคตตาล็อก: ${selectedModel.new_tread_mm ?? EMPTY.new_tread_mm} มม.`
                     : undefined

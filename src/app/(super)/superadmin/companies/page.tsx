@@ -57,7 +57,7 @@ export default async function CompaniesPage({
     <>
       <PageHeader
         title="ข้อมูลลูกค้า"
-        subtitle="เพิ่ม แก้ไข และดูภาพรวมการใช้งานของลูกค้าแต่ละราย"
+        subtitle="รายชื่อลูกค้า แพ็กเกจ และสถานะการใช้งาน"
       />
       <CompaniesClient companies={companies} />
     </>

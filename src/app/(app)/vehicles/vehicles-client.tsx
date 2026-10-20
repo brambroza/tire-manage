@@ -182,7 +182,7 @@ export function VehiclesClient({
             <EmptyState
               icon={<Truck className="size-6" />}
               title="ยังไม่มีรถในระบบ"
-              description="เพิ่มรถคันแรกเพื่อเริ่มบันทึกการถอด-ใส่ยาง"
+              description="เพิ่มรถคันแรกก่อน แล้วค่อยบันทึกถอด-ใส่ยาง"
               action={<Button onClick={openCreate}><Plus className="size-4.5" />เพิ่มรถใหม่</Button>}
             />
           )

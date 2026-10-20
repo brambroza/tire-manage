@@ -179,7 +179,7 @@ export function LifetimeAlertCard({
         <EmptyState
           icon={<Gauge className="size-6" />}
           title="ยังไม่มียางที่ครบระยะสะสม"
-          description={`ระบบจะแจ้งเตือนเมื่อยางเส้นใดวิ่งครบ ${formatNumber(threshold)} กม. และจะบอกล่วงหน้าเมื่อใกล้ครบภายใน ${soonDays} วัน`}
+          description={`เตือนเมื่อยางวิ่งครบ ${formatNumber(threshold)} กม. และเตือนล่วงหน้าถ้าจะครบภายใน ${soonDays} วัน`}
         />
       ) : (
         <TableWrap>
