@@ -97,7 +97,7 @@ export function toTireExportRows(
       : removal?.position_code
         ? positionLabel(removal.position_code)
         : ''
-    const displayStatus = tireDisplayStatus(t.status, t.lifetime_km)
+    const displayStatus = tireDisplayStatus(t.status, t.lifetime_km, t.has_been_mounted)
     const locationLabel = mounted
       ? [plateNo, position].filter(Boolean).join(' · ')
       : removal

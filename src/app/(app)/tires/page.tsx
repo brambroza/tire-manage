@@ -79,11 +79,11 @@ export default async function TiresPage({
         (t.current_run_km >= t.alert_km || (t.tread_mm !== null && t.tread_mm <= t.alert_tread_mm)),
     )
   } else if (status === 'new') {
-    // ยางใหม่ = อยู่ในคลังและยังไม่เคยวิ่ง (คลังยางใหม่)
-    tires = tires.filter((t) => tireDisplayStatus(t.status, t.lifetime_km) === 'new')
+    // ยางใหม่ = อยู่ในคลัง ยังไม่เคยวิ่ง และไม่เคยถูกใส่/ถอด (คลังยางใหม่)
+    tires = tires.filter((t) => tireDisplayStatus(t.status, t.lifetime_km, t.has_been_mounted) === 'new')
   } else if (status === 'in_stock') {
-    // คลังยางเคยใช้ = อยู่ในคลังแต่เคยวิ่งแล้ว ไม่รวมยางใหม่
-    tires = tires.filter((t) => tireDisplayStatus(t.status, t.lifetime_km) === 'in_stock')
+    // คลังยางเคยใช้ = อยู่ในคลังแต่เคยติดรถแล้ว (รวมยางที่ถอดเก็บโดยระยะสะสมยังเป็น 0) ไม่รวมยางใหม่
+    tires = tires.filter((t) => tireDisplayStatus(t.status, t.lifetime_km, t.has_been_mounted) === 'in_stock')
   } else if (status && status !== 'all') {
     tires = tires.filter((t) => t.status === status)
   }

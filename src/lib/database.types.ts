@@ -239,6 +239,8 @@ export type TireOverview = {
   alert_lifetime_km: number | null
   /** อีกกี่วันถึงเกณฑ์ระยะสะสม (0 = ถึงแล้ว, null = คำนวณไม่ได้) */
   days_to_lifetime_alert: number | null
+  /** true = เคยมี event ใส่/ถอดอย่างน้อย 1 ครั้ง — ยางที่ถอดเก็บต้องไม่แสดงเป็น "ยางใหม่" (migration 015) */
+  has_been_mounted: boolean
 }
 
 /** view: public.vehicle_observed_monthly_km — ค่าเฉลี่ยที่คำนวณจากประวัติ ใช้แนะนำตอนกรอกฟอร์ม */

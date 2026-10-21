@@ -660,7 +660,14 @@ select
     when coalesce(r.avg_km_per_month, 0) <= 0 then null
     else ceil((r.alert_lifetime_km - (r.total_distance_km + r.estimated_run_km))::numeric
               / (r.avg_km_per_month::numeric / 30.44))::integer
-  end as days_to_lifetime_alert
+  end as days_to_lifetime_alert,
+  -- เคยติดรถแล้วหรือยัง (มี event ใส่/ถอดอย่างน้อย 1 ครั้ง)
+  -- ใช้ตัดสิน "ยางใหม่" แทนระยะสะสม = 0 เพราะยางที่ถอดเก็บอาจมีระยะสะสม 0 ได้
+  -- (ถอดยางที่ไม่มีข้อมูลในระบบโดยไม่รู้เลขไมล์ตอนใส่, ใส่แล้วถอดที่เลขไมล์เดียวกัน)
+  exists (
+    select 1 from public.tire_events e
+    where e.tire_id = r.id and e.event_type in ('mount', 'unmount')
+  ) as has_been_mounted
 from run r;
 
 -- ------------------------------------------------------------

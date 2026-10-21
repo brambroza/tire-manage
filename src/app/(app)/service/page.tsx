@@ -41,7 +41,7 @@ export default async function ServicePage({
     supabase
       .from('tire_overview')
       .select('id, serial_no, brand_name, model_name, size, status, tread_mm, new_tread_mm, ' +
-        'lifetime_km, current_run_km, vehicle_id, position_code, plate_no, image_url')
+        'lifetime_km, current_run_km, has_been_mounted, vehicle_id, position_code, plate_no, image_url')
       .neq('status', 'scrapped')
       .order('serial_no')
       .limit(3000),

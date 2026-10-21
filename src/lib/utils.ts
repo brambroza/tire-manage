@@ -199,9 +199,11 @@ export const TIRE_STATUS_TONE: Record<TireStatus, 'sky' | 'emerald' | 'rose' | '
 
 /**
  * สถานะสำหรับแสดงผล — แยก "ยางใหม่" ออกจากยางในคลังที่เคยใช้แล้ว
- * ยางใหม่ = status in_stock และยังไม่เคยวิ่ง (ระยะสะสม 0) เช่น ยางที่นำเข้าจากไฟล์หรือคีย์/สแกนซีรีย์เข้ามา
+ * ยางใหม่ = status in_stock, ยังไม่เคยวิ่ง (ระยะสะสม 0) และไม่เคยมี event ใส่/ถอดเลย
+ * เช่น ยางที่นำเข้าจากไฟล์หรือคีย์/สแกนซีรีย์เข้ามา
  * ในฐานข้อมูลยังเป็น in_stock เหมือนเดิม เพื่อให้หน้าช่าง/ฟังก์ชันติดตั้งยางทำงานได้โดยไม่ต้องแก้ enum
- * พอใส่รถแล้วถอดกลับมา (ระยะสะสม > 0) จะกลายเป็น "อยู่ในคลัง" (คลังยางเคยใช้) อัตโนมัติ
+ * พอใส่รถแล้วถอดกลับมาจะกลายเป็น "อยู่ในคลัง" (คลังยางเคยใช้) ทันที
+ * แม้ระยะสะสมจะเป็น 0 (ถอดยางที่ไม่มีข้อมูลในระบบโดยไม่รู้เลขไมล์ตอนใส่ หรือใส่แล้วถอดที่เลขไมล์เดียวกัน)
  */
 export type TireDisplayStatus = TireStatus | 'new'
 
@@ -209,9 +211,15 @@ export type TireDisplayStatus = TireStatus | 'new'
  * หาสถานะสำหรับแสดงผลของยาง 1 เส้น
  * @param status สถานะในฐานข้อมูล
  * @param lifetimeKm ระยะสะสมตลอดอายุยาง (กม.)
+ * @param hasBeenMounted เคยมี event ใส่/ถอดแล้ว (tire_overview.has_been_mounted) —
+ *   ยางที่ถอดเก็บต้องไม่ใช่ยางใหม่แม้ระยะสะสมเป็น 0; ไม่ส่งมา (ก่อน apply migration 015) = ถือว่าไม่เคย
  */
-export function tireDisplayStatus(status: TireStatus, lifetimeKm: number): TireDisplayStatus {
-  return status === 'in_stock' && lifetimeKm === 0 ? 'new' : status
+export function tireDisplayStatus(
+  status: TireStatus,
+  lifetimeKm: number,
+  hasBeenMounted: boolean | null | undefined = false,
+): TireDisplayStatus {
+  return status === 'in_stock' && lifetimeKm === 0 && !hasBeenMounted ? 'new' : status
 }
 
 export const TIRE_DISPLAY_LABEL: Record<TireDisplayStatus, string> = {

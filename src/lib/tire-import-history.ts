@@ -40,6 +40,8 @@ export interface ImportedTireView {
   status: TireStatus
   plateNo: string | null
   totalDistanceKm: number
+  /** เคยมี event ใส่/ถอดแล้ว — ยางที่ถอดเก็บต้องไม่แสดงเป็น "ยางใหม่" แม้ระยะสะสมเป็น 0 */
+  hasBeenMounted: boolean
   note: string | null
   createdAt: string
   /** รอบที่นำเข้า (null = หารอบไม่เจอ) */
@@ -86,8 +88,9 @@ const TIRE_COLUMNS =
  * แปลงแถวยางจากฐานข้อมูลเป็นรูปแบบที่หน้าจอใช้
  * @param t แถวยาง
  * @param batchId รอบที่ยางนี้อยู่
+ * @param everMounted ชุด id ของยางในคลังที่เคยถูกใส่/ถอดแล้ว
  */
-function toTireView(t: TireRow, batchId: string | null): ImportedTireView {
+function toTireView(t: TireRow, batchId: string | null, everMounted: Set<string>): ImportedTireView {
   return {
     id: t.id,
     serial: t.serial_no,
@@ -97,10 +100,33 @@ function toTireView(t: TireRow, batchId: string | null): ImportedTireView {
     status: t.status,
     plateNo: t.vehicles?.plate_no ?? null,
     totalDistanceKm: t.total_distance_km,
+    hasBeenMounted: everMounted.has(t.id),
     note: t.note,
     createdAt: t.created_at,
     batchId,
   }
+}
+
+/**
+ * id ของยางในคลัง (in_stock) ที่เคยมี event ใส่/ถอดแล้ว — ใช้กันไม่ให้ยางที่ถอดเก็บถูกนับเป็นยางใหม่
+ * ดึงเฉพาะ in_stock เพราะสถานะอื่นไม่มีทางแสดงเป็น "ยางใหม่" อยู่แล้ว (ชุดนี้จึงเล็ก)
+ * ถ้ายังไม่ได้ apply migration 015 (ไม่มีคอลัมน์ has_been_mounted) คืนชุดว่าง = พฤติกรรมเดิม
+ * @param supabase client ของผู้ใช้
+ * @param companyId บริษัท
+ */
+async function loadEverMountedStockIds(supabase: Supabase, companyId: string): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from('tire_overview')
+    .select('id')
+    .eq('company_id', companyId)
+    .eq('status', 'in_stock')
+    .eq('has_been_mounted', true)
+    .limit(IMPORT_HISTORY_TIRE_LIMIT)
+  if (error) {
+    if (isMissingImportSchema(error)) return new Set()
+    throw error
+  }
+  return new Set((data ?? []).map((row) => row.id))
 }
 
 /**
@@ -128,20 +154,25 @@ export async function loadImportHistory(supabase: Supabase, companyId: string): 
     createdAt: b.created_at,
   }))
 
-  const { data: tireRows, error: tireError } = await supabase
-    .from('tires')
-    .select(`${TIRE_COLUMNS}, import_id`)
-    .eq('company_id', companyId)
-    .not('import_id', 'is', null)
-    .order('created_at', { ascending: false })
-    .order('serial_no')
-    .limit(IMPORT_HISTORY_TIRE_LIMIT + 1)
+  const [{ data: tireRows, error: tireError }, everMounted] = await Promise.all([
+    supabase
+      .from('tires')
+      .select(`${TIRE_COLUMNS}, import_id`)
+      .eq('company_id', companyId)
+      .not('import_id', 'is', null)
+      .order('created_at', { ascending: false })
+      .order('serial_no')
+      .limit(IMPORT_HISTORY_TIRE_LIMIT + 1),
+    loadEverMountedStockIds(supabase, companyId),
+  ])
   if (tireError) throw tireError
 
   const rows = (tireRows ?? []) as unknown as TireRow[]
   return {
     batches,
-    tires: rows.slice(0, IMPORT_HISTORY_TIRE_LIMIT).map((t) => toTireView(t, t.import_id ?? null)),
+    tires: rows
+      .slice(0, IMPORT_HISTORY_TIRE_LIMIT)
+      .map((t) => toTireView(t, t.import_id ?? null, everMounted)),
     hasImportLog: true,
     truncated: rows.length > IMPORT_HISTORY_TIRE_LIMIT,
   }
@@ -153,14 +184,17 @@ export async function loadImportHistory(supabase: Supabase, companyId: string): 
  * @param companyId บริษัท
  */
 async function loadFromNotes(supabase: Supabase, companyId: string): Promise<ImportHistory> {
-  const { data, error } = await supabase
-    .from('tires')
-    .select(TIRE_COLUMNS)
-    .eq('company_id', companyId)
-    .or('note.ilike.%นำเข้าจากไฟล์%,note.ilike.%คีย์/สแกน ·%')
-    .order('created_at', { ascending: false })
-    .order('serial_no')
-    .limit(IMPORT_HISTORY_TIRE_LIMIT + 1)
+  const [{ data, error }, everMounted] = await Promise.all([
+    supabase
+      .from('tires')
+      .select(TIRE_COLUMNS)
+      .eq('company_id', companyId)
+      .or('note.ilike.%นำเข้าจากไฟล์%,note.ilike.%คีย์/สแกน ·%')
+      .order('created_at', { ascending: false })
+      .order('serial_no')
+      .limit(IMPORT_HISTORY_TIRE_LIMIT + 1),
+    loadEverMountedStockIds(supabase, companyId),
+  ])
   if (error) throw error
 
   const rows = ((data ?? []) as unknown as TireRow[]).slice(0, IMPORT_HISTORY_TIRE_LIMIT)
@@ -187,7 +221,7 @@ async function loadFromNotes(supabase: Supabase, companyId: string): Promise<Imp
     }
     batch.insertedCount += 1
     batch.rowCount += 1
-    tires.push(toTireView(t, batch.id))
+    tires.push(toTireView(t, batch.id, everMounted))
   }
 
   return {

@@ -371,7 +371,7 @@ export function TiresClient({
                   const level = alertLevel(
                     t.status === 'mounted', t.current_run_km, t.alert_km, t.tread_mm, t.alert_tread_mm,
                   )
-                  const displayStatus = tireDisplayStatus(t.status as TireStatus, t.lifetime_km)
+                  const displayStatus = tireDisplayStatus(t.status as TireStatus, t.lifetime_km, t.has_been_mounted)
                   const chip = TIRE_STATUS_CHIP[displayStatus]
                   // ยางในคลัง/ตัดจำหน่าย: บอกที่มาว่าถอดจากรถคันไหน ที่เลขไมล์เท่าไร
                   const removal = t.status !== 'mounted' ? lastRemovals[t.id] : undefined

@@ -21,10 +21,11 @@ const STATUS_OPTIONS: TireDisplayStatus[] = ['new', 'in_stock', 'mounted', 'retr
 const COLLAPSED_BATCHES = 3
 
 /**
- * สถานะแสดงผลของยางที่นำเข้า (ยางใหม่ = ยังอยู่ในคลังและยังไม่เคยวิ่ง)
+ * สถานะแสดงผลของยางที่นำเข้า (ยางใหม่ = ยังอยู่ในคลัง ยังไม่เคยวิ่ง และไม่เคยถูกใส่/ถอด)
  * @param t ยาง
  */
-const displayOf = (t: ImportedTireView) => tireDisplayStatus(t.status, t.totalDistanceKm)
+const displayOf = (t: ImportedTireView) =>
+  tireDisplayStatus(t.status, t.totalDistanceKm, t.hasBeenMounted)
 
 /**
  * ข้อความค้นหาของยาง 1 เส้น (ตัวพิมพ์เล็ก) — ค้นได้ทั้งซีรีย์ ยี่ห้อ รุ่น ขนาด ทะเบียน และหมายเหตุ

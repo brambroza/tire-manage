@@ -68,7 +68,7 @@ export default async function TireDetailPage({ params }: { params: Promise<{ id:
           />
         )}
         action={(() => {
-          const ds = tireDisplayStatus(t.status, t.lifetime_km)
+          const ds = tireDisplayStatus(t.status, t.lifetime_km, t.has_been_mounted)
           return <Badge tone={TIRE_DISPLAY_TONE[ds]}>{TIRE_DISPLAY_LABEL[ds]}</Badge>
         })()}
       />

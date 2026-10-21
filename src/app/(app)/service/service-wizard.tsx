@@ -44,6 +44,8 @@ export interface TireLite {
   new_tread_mm: number | null
   lifetime_km: number
   current_run_km: number
+  /** เคยมี event ใส่/ถอดแล้ว — ยางที่ถอดเก็บไม่ใช่ยางใหม่แม้ระยะสะสมเป็น 0 (undefined ก่อน apply migration 015) */
+  has_been_mounted?: boolean | null
   vehicle_id: string | null
   position_code: string | null
   plate_no: string | null
@@ -139,9 +141,9 @@ function isAvailableStock(tire: TireLite): boolean {
   return tire.status === 'in_stock' && tire.vehicle_id === null
 }
 
-/** ยางเส้นนี้ยังไม่เคยวิ่ง = ยางใหม่ในคลัง (นำเข้าจากไฟล์หรือ super admin เพิ่มให้) */
+/** ยางเส้นนี้ยังไม่เคยวิ่งและไม่เคยถูกใส่/ถอด = ยางใหม่ในคลัง (นำเข้าจากไฟล์หรือ super admin เพิ่มให้) */
 function isFreshTire(tire: TireLite): boolean {
-  return tire.lifetime_km === 0
+  return tire.lifetime_km === 0 && !tire.has_been_mounted
 }
 
 /** ป้ายสถานะของยางในคลัง: ใหม่ / เคยใช้พร้อมระยะสะสม */
