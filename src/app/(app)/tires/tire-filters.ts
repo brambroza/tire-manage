@@ -1,4 +1,5 @@
 import { isWithinDateRange, type DateRange } from '@/app/(app)/dashboard/removal-report-types'
+import { tireDisplayStatus } from '@/lib/utils'
 import type { Tire, TireOverview } from '@/lib/database.types'
 
 /** ฟิลด์วันที่ที่ใช้กรองคลังยางแบบช่วง (between) */
@@ -91,4 +92,28 @@ export function computeTireStats(tires: TireOverview[]): TireStats {
         (t.current_run_km >= t.alert_km || (t.tread_mm !== null && t.tread_mm <= t.alert_tread_mm)),
     ).length,
   }
+}
+
+/**
+ * กรองยางตามตัวกรองสถานะใน query string (?status=)
+ * ใช้ร่วมกันระหว่างหน้าคลังยางของลูกค้าและหน้าจัดการคลังยางของ super admin
+ * - alert = ยางบนรถที่ถึงเกณฑ์เตือน (ระยะรอบ หรือดอกยาง)
+ * - new = คลังยางใหม่ (อยู่ในคลัง ยังไม่เคยวิ่ง และไม่เคยถูกใส่/ถอด)
+ * - in_stock = คลังยางเคยใช้ (อยู่ในคลังแต่เคยติดรถแล้ว) ไม่รวมยางใหม่
+ * @param tires รายการยาง
+ * @param status ค่าตัวกรอง (ว่าง/all = ไม่กรอง)
+ */
+export function filterTiresByStatus(tires: TireOverview[], status: string | undefined): TireOverview[] {
+  if (!status || status === 'all') return tires
+  if (status === 'alert') {
+    return tires.filter(
+      (t) =>
+        t.status === 'mounted' &&
+        (t.current_run_km >= t.alert_km || (t.tread_mm !== null && t.tread_mm <= t.alert_tread_mm)),
+    )
+  }
+  if (status === 'new' || status === 'in_stock') {
+    return tires.filter((t) => tireDisplayStatus(t.status, t.lifetime_km, t.has_been_mounted) === status)
+  }
+  return tires.filter((t) => t.status === status)
 }

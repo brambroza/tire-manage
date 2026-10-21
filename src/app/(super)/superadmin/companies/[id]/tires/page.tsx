@@ -6,7 +6,7 @@ import { Card, CardHeader } from '@/components/ui'
 import { TiresClient } from '@/app/(app)/tires/tires-client'
 import type { ModelOption } from '@/app/(app)/tires/tire-form'
 import { fetchLastRemovals } from '@/lib/tire-events'
-import { computeTireStats, filterTiresByDate, parseTireDateFilter } from '@/app/(app)/tires/tire-filters'
+import { computeTireStats, filterTiresByDate, filterTiresByStatus, parseTireDateFilter } from '@/app/(app)/tires/tire-filters'
 import type { AxleType, Tire, TireOverview } from '@/lib/database.types'
 
 export const metadata = { title: 'จัดการคลังยางของลูกค้า · Dream Tire Admin' }
@@ -69,15 +69,8 @@ export default async function CompanyTiresPage({
     )
   }
 
-  if (status === 'alert') {
-    tires = tires.filter(
-      (t) =>
-        t.status === 'mounted' &&
-        (t.current_run_km >= t.alert_km || (t.tread_mm !== null && t.tread_mm <= t.alert_tread_mm)),
-    )
-  } else if (status && status !== 'all') {
-    tires = tires.filter((t) => t.status === status)
-  }
+  // ใช้ตัวกรองเดียวกับหน้าคลังยางของลูกค้า — แยกยางใหม่ออกจากคลังยางเคยใช้
+  tires = filterTiresByStatus(tires, status)
 
   const rawTires: Record<string, Tire> = {}
   for (const t of (rawData ?? []) as Tire[]) rawTires[t.id] = t

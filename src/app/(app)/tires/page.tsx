@@ -1,14 +1,13 @@
 import Link from 'next/link'
 import { Upload } from 'lucide-react'
 import { requireSession } from '@/lib/auth'
-import { tireDisplayStatus } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/server'
 import { featureLockedMessage, hasFeature } from '@/lib/plan'
 import { PageHeader } from '@/components/app-shell'
 import { TiresClient } from './tires-client'
 import type { ModelOption } from './tire-form'
 import { fetchLastRemovals } from '@/lib/tire-events'
-import { computeTireStats, filterTiresByDate, parseTireDateFilter } from './tire-filters'
+import { computeTireStats, filterTiresByDate, filterTiresByStatus, parseTireDateFilter } from './tire-filters'
 import type { Tire, TireOverview } from '@/lib/database.types'
 
 export const metadata = { title: 'คลังยาง · Dream Tire' }
@@ -72,21 +71,7 @@ export default async function TiresPage({
     )
   }
 
-  if (status === 'alert') {
-    tires = tires.filter(
-      (t) =>
-        t.status === 'mounted' &&
-        (t.current_run_km >= t.alert_km || (t.tread_mm !== null && t.tread_mm <= t.alert_tread_mm)),
-    )
-  } else if (status === 'new') {
-    // ยางใหม่ = อยู่ในคลัง ยังไม่เคยวิ่ง และไม่เคยถูกใส่/ถอด (คลังยางใหม่)
-    tires = tires.filter((t) => tireDisplayStatus(t.status, t.lifetime_km, t.has_been_mounted) === 'new')
-  } else if (status === 'in_stock') {
-    // คลังยางเคยใช้ = อยู่ในคลังแต่เคยติดรถแล้ว (รวมยางที่ถอดเก็บโดยระยะสะสมยังเป็น 0) ไม่รวมยางใหม่
-    tires = tires.filter((t) => tireDisplayStatus(t.status, t.lifetime_km, t.has_been_mounted) === 'in_stock')
-  } else if (status && status !== 'all') {
-    tires = tires.filter((t) => t.status === status)
-  }
+  tires = filterTiresByStatus(tires, status)
 
   const rawTires: Record<string, Tire> = {}
   for (const t of (rawData ?? []) as Tire[]) rawTires[t.id] = t

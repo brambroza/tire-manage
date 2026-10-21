@@ -146,6 +146,20 @@ function isFreshTire(tire: TireLite): boolean {
   return tire.lifetime_km === 0 && !tire.has_been_mounted
 }
 
+/**
+ * ยางในคลังเส้นนี้เป็นรุ่นเดียวกับรุ่นในแคตตาล็อกหรือไม่ (เทียบขนาด + ยี่ห้อ + รุ่น ไม่สนตัวพิมพ์)
+ * view ยางไม่มี tire_model_id จึงต้องเทียบจากชื่อ — ใช้กรองซีรีย์ตามรุ่นที่ช่างเลือกตอนใส่ยาง
+ * @param tire ยางในคลัง
+ * @param model รุ่นในแคตตาล็อก
+ */
+function stockMatchesModel(tire: TireLite, model: TireModelLite): boolean {
+  return (
+    (model.size ?? '').toLowerCase() === (tire.size ?? '').toLowerCase() &&
+    model.brand_name.toLowerCase() === (tire.brand_name ?? '').toLowerCase() &&
+    model.model_name.toLowerCase() === (tire.model_name ?? '').toLowerCase()
+  )
+}
+
 /** ป้ายสถานะของยางในคลัง: ใหม่ / เคยใช้พร้อมระยะสะสม */
 function StockBadge({ tire }: { tire: TireLite }) {
   return isFreshTire(tire)
@@ -377,57 +391,6 @@ export function ServiceWizard({
     [models],
   )
 
-  /**
-   * ยางในคลัง = ทุกเส้นที่ว่างอยู่ในคลัง ทั้งยางใหม่ที่นำเข้าจากไฟล์ (ยังไม่เคยวิ่ง)
-   * และยางถอดเก็บ — เรียงตามขนาด แล้วยางใหม่ขึ้นก่อน ตามด้วยดอกยางมากไปน้อย
-   * ถ้าเส้นที่ถืออยู่หน้างานไม่มีในรายการ ช่างพิมพ์คีย์เข้าไปใหม่ได้
-   */
-  const stockOptions = React.useMemo<TireOption[]>(
-    () =>
-      tires
-        .filter(isAvailableStock)
-        .sort(
-          (a, b) =>
-            (a.size ?? '').localeCompare(b.size ?? '') ||
-            Number(isFreshTire(b)) - Number(isFreshTire(a)) ||
-            (b.tread_mm ?? 0) - (a.tread_mm ?? 0),
-        )
-        .map((tire) => ({
-          kind: 'stock' as const,
-          id: tire.id,
-          size: tire.size ?? 'ไม่ระบุขนาด',
-          detail: [
-            tire.serial_no,
-            tire.model_name || null,
-            tire.tread_mm !== null ? `ดอกยาง ${tire.tread_mm} มม.` : null,
-          ]
-            .filter(Boolean)
-            .join(' · '),
-          tire,
-          fresh: isFreshTire(tire),
-        })),
-    [tires],
-  )
-
-  /**
-   * ตัวเลือกตอนใส่ยางเก่า = ยางในคลังก่อน ตามด้วยรุ่นในแคตตาล็อก
-   * (ต้องมีแคตตาล็อกต่อท้าย ไม่งั้นรุ่นที่ช่างเพิ่งกด "ใช้คำนี้เลย" จะไม่อยู่ในรายการ
-   *  ทำให้ช่องค้นหากลับมาว่างเหมือนเพิ่มไม่สำเร็จ)
-   */
-  const mountUsedOptions = React.useMemo<TireOption[]>(
-    () => [...stockOptions, ...catalogOptions],
-    [stockOptions, catalogOptions],
-  )
-
-  /**
-   * ตัวเลือกตอนใส่ยางใหม่ = ยางใหม่ที่นำเข้าไว้ในคลัง (ยังไม่เคยวิ่ง) ก่อน ตามด้วยแคตตาล็อก
-   * เพื่อให้ช่างหยิบซีรีย์ที่แอดมินนำเข้าไว้ล่วงหน้าได้ โดยไม่ต้องคีย์ซ้ำ
-   */
-  const mountNewOptions = React.useMemo<TireOption[]>(
-    () => [...stockOptions.filter((o) => o.kind === 'stock' && o.fresh), ...catalogOptions],
-    [stockOptions, catalogOptions],
-  )
-
   const findTire = React.useCallback(
     (serial: string) => {
       const key = serial.trim().toLowerCase()
@@ -442,12 +405,7 @@ export function ServiceWizard({
     const stock = tires.find((t) => t.id === pick.stockTireId) ?? null
     if (stock) {
       // ยางในคลังมีข้อมูลครบอยู่แล้ว ใช้ของเดิมทั้งชุด
-      const model = models.find(
-        (m) =>
-          (m.size ?? '').toLowerCase() === (stock.size ?? '').toLowerCase() &&
-          m.brand_name.toLowerCase() === (stock.brand_name ?? '').toLowerCase() &&
-          m.model_name.toLowerCase() === (stock.model_name ?? '').toLowerCase(),
-      ) ?? null
+      const model = models.find((m) => stockMatchesModel(stock, m)) ?? null
       return {
         model,
         size: stock.size ?? '',
@@ -1229,29 +1187,16 @@ export function ServiceWizard({
           title={mountKind === 'new' ? 'ใส่ยางใหม่' : 'ใส่ยางเก่า'}
           description={wheelName(position)}
         >
-          <TirePickFields
+          {/* เลือกยี่ห้อ/รุ่นก่อน แล้วระบบกรองซีรีย์ในคลังของรุ่นนั้นให้เลือก (หรือคีย์ซีรีย์ใหม่) */}
+          <MountPickFields
             key={position ?? 'none'}
             pick={mnPick}
             onChange={setMnPick}
-            options={mountKind === 'used' ? mountUsedOptions : mountNewOptions}
-            // ใส่ยางใหม่: โชว์ยางใหม่ในคลังก่อนอย่างเดียว แคตตาล็อกขึ้นเมื่อพิมพ์ค้นหา
-            stockOnlyUntilSearch={mountKind === 'new'}
-            emptyText={
-              mountKind === 'used'
-                ? 'ยังไม่มียางในคลัง — เลือกรุ่นจากแคตตาล็อกแล้วคีย์ซีเรียลเข้าไปใหม่ได้เลย'
-                : CATALOG_EMPTY_TEXT
-            }
-            selectionLabel={mountKind === 'used' ? 'เลือกยางในคลัง' : 'เลือกยางใหม่'}
-            selectionHint={
-              mountKind === 'used'
-                ? 'ยางในคลังขึ้นก่อน (ใหม่/เคยใช้) — ถ้าเส้นที่ถืออยู่ไม่มีในรายการ เลือกรุ่นจากแคตตาล็อกแล้วคีย์ซีเรียลเอง'
-                : 'แสดงยางใหม่ที่นำเข้าไว้ในคลังก่อน — ถ้าเส้นที่ถืออยู่ไม่มีในรายการ พิมพ์ขนาดเพื่อค้นรุ่นจากแคตตาล็อก (ไม่ทราบยี่ห้อ เลือก “อื่นๆ” ตามขนาดยาง)'
-            }
-            withTread={mountKind === 'used'}
-            treadLabel="ดอกยาง (มม.)"
+            mountKind={mountKind === 'used' ? 'used' : 'new'}
+            models={models}
+            catalogOptions={catalogOptions}
+            tires={tires}
             serialError={mountBlocked ?? undefined}
-            // พิมพ์ซีรีย์แล้วหยิบจากคลังได้เลย — เส้นที่ติดรถอยู่จะโชว์แต่กดไม่ได้
-            stockTires={tires}
             mountedText={(tire) =>
               `ติดอยู่ที่ ${tire.plate_no ?? 'รถคันอื่น'} ${positionLabel(tire.position_code, null, axleTypes)} — ต้องถอดก่อน`
             }
@@ -1444,6 +1389,8 @@ function TireAutocomplete({
   emptyText,
   fallbackLabel,
   stockOnlyUntilSearch,
+  selectBy = 'any',
+  trailing,
 }: {
   pick: TirePick
   onChange: (pick: TirePick) => void
@@ -1457,6 +1404,13 @@ function TireAutocomplete({
    * ใช้ตอนใส่ยางใหม่ ไม่ให้รายการแคตตาล็อกกลบยางใหม่ที่นำเข้าไว้
    */
   stockOnlyUntilSearch?: boolean
+  /**
+   * 'model' = ช่องนี้เลือกเฉพาะรุ่น ใช้ modelId เป็นรายการที่เลือกเสมอ
+   * (แม้จะหยิบซีรีย์จากคลังไว้แล้ว รุ่นที่เลือกต้องยังโชว์อยู่) — ค่าเริ่มต้น 'any' = คลังก่อน รุ่นทีหลัง
+   */
+  selectBy?: 'any' | 'model'
+  /** ส่วนท้ายของแต่ละรายการ เช่น ป้ายจำนวนยางในคลังของรุ่นนั้น */
+  trailing?: (option: TireOption) => React.ReactNode
 }) {
   const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState('')
@@ -1464,7 +1418,8 @@ function TireAutocomplete({
   const pressingRef = React.useRef(false)
   const inputRef = React.useRef<HTMLInputElement>(null)
 
-  const selectedId = pick.stockTireId || pick.modelId
+  // โหมดรุ่น: รุ่นที่เลือกมาก่อน — ถ้าหยิบเส้นในคลังที่ไม่ตรงรุ่นใด ให้โชว์สเปกของเส้นนั้นผ่าน fallbackLabel แทน
+  const selectedId = selectBy === 'model' ? pick.modelId || pick.stockTireId : pick.stockTireId || pick.modelId
   const selected = options.find((o) => o.id === selectedId) ?? null
   /** มีรายการที่เลือกไว้ (ในหรือนอก options) → โชว์ปุ่มล้าง */
   const hasSelection = Boolean(selected) || (Boolean(selectedId) && Boolean(fallbackLabel))
@@ -1510,7 +1465,13 @@ function TireAutocomplete({
         treadMm: option.tire.tread_mm !== null ? String(option.tire.tread_mm) : pick.treadMm,
       })
     } else {
-      onChange({ ...pick, modelId: option.id, stockTireId: '' })
+      onChange({
+        ...pick,
+        modelId: option.id,
+        stockTireId: '',
+        // เปลี่ยนจากเส้นในคลังมาเป็นรุ่น — ซีรีย์/ดอกยางของเส้นเดิมต้องไม่ค้าง
+        ...(pick.stockTireId ? { serialNo: '', treadMm: '' } : {}),
+      })
     }
     setQuery('')
     setOpen(false)
@@ -1626,6 +1587,7 @@ function TireAutocomplete({
                 </span>
                 <span className="block truncate text-sm text-ink-500">{option.detail}</span>
               </span>
+              {trailing?.(option)}
               {option.id === selectedId && <Check className="size-5 shrink-0 text-brand-600" />}
             </button>
           ))}
@@ -1771,6 +1733,174 @@ function TirePickFields({
   )
 }
 
+/**
+ * ชุดช่องใส่ยาง — เลือกยี่ห้อ/รุ่นก่อน แล้วค่อยเลือกซีรีย์
+ *
+ * ซีรีย์ที่ขึ้นให้เลือกกรองเฉพาะยางในคลังของรุ่นนั้น
+ * (ใส่ยางใหม่ = เฉพาะเส้นที่ยังไม่เคยใส่/ถอด, ใส่ยางเก่า = เฉพาะเส้นที่เคยใส่/ถอดแล้ว)
+ * ถ้าเส้นที่ถืออยู่ไม่มีในระบบ ช่างพิมพ์ซีรีย์เข้าไปใหม่ได้
+ */
+function MountPickFields({
+  pick,
+  onChange,
+  mountKind,
+  models,
+  catalogOptions,
+  tires,
+  serialError,
+  mountedText,
+}: {
+  pick: TirePick
+  onChange: (pick: TirePick) => void
+  /** ชนิดยางที่ใส่ — กำหนดว่าซีรีย์ในคลังชุดไหนหยิบได้ และต้องกรอกดอกยางหรือไม่ */
+  mountKind: 'new' | 'used'
+  /** รุ่นในแคตตาล็อกของบริษัทนี้ */
+  models: TireModelLite[]
+  /** รุ่นเดียวกับ models ในรูปตัวเลือกของช่องค้นหา */
+  catalogOptions: TireOption[]
+  /** ยางทั้งหมดของบริษัท (ไม่รวมตัดจำหน่าย) — ใช้กรองซีรีย์ตามรุ่น และเตือนเส้นที่ติดรถอยู่ */
+  tires: TireLite[]
+  serialError?: string
+  /** ข้อความของเส้นที่ติดรถอยู่ (เลือกไม่ได้) */
+  mountedText?: (tire: TireLite) => string
+}) {
+  const selectedModel = models.find((m) => m.id === pick.modelId) ?? null
+  const stockPicked = pick.stockTireId ? tires.find((t) => t.id === pick.stockTireId) ?? null : null
+  /** หยิบเส้นในคลังแล้ว = ซีรีย์มาจากเส้นจริง ไม่ให้แก้ (กดล้างเพื่อเลือกใหม่) */
+  const serialLocked = pick.stockTireId !== ''
+
+  /**
+   * ยางในคลังที่หยิบไปใส่ได้ตามชนิดที่เลือก — แยกขาดกัน
+   * ยางใหม่ = เส้นที่ยังไม่เคยใส่/ถอด, ยางเก่า = เส้นที่เคยใส่/ถอดแล้ว (ยางใหม่ไม่โผล่ในรายการยางเก่า)
+   */
+  const pickable = React.useMemo(
+    () => tires.filter((t) => isAvailableStock(t) && (mountKind === 'used' ? !isFreshTire(t) : isFreshTire(t))),
+    [tires, mountKind],
+  )
+
+  /** จำนวนเส้นที่หยิบได้ต่อรุ่น — โชว์ท้ายรายการรุ่นให้ช่างเห็นว่ารุ่นไหนมีของ */
+  const stockCountByModel = React.useMemo(() => {
+    const map = new Map<string, number>()
+    for (const model of models) {
+      const count = pickable.filter((t) => stockMatchesModel(t, model)).length
+      if (count > 0) map.set(model.id, count)
+    }
+    return map
+  }, [models, pickable])
+
+  /** ซีรีย์ในคลังของรุ่นที่เลือก — ใหม่ก่อนเคยใช้ แล้วดอกยางมากไปน้อย */
+  const suggested = React.useMemo(() => {
+    if (!selectedModel) return []
+    return pickable
+      .filter((t) => stockMatchesModel(t, selectedModel))
+      .sort(
+        (a, b) =>
+          Number(isFreshTire(b)) - Number(isFreshTire(a)) ||
+          (b.tread_mm ?? 0) - (a.tread_mm ?? 0) ||
+          a.serial_no.localeCompare(b.serial_no),
+      )
+  }, [pickable, selectedModel])
+
+  /** หยิบเส้นในคลัง — เติมซีรีย์/ดอกยาง และคงรุ่นที่เลือกไว้ถ้าเส้นนั้นเป็นรุ่นเดียวกัน */
+  function pickStock(tire: TireLite) {
+    const sameModel = selectedModel !== null && stockMatchesModel(tire, selectedModel)
+    onChange({
+      modelId: sameModel ? pick.modelId : '',
+      stockTireId: tire.id,
+      serialNo: tire.serial_no,
+      treadMm: tire.tread_mm !== null ? String(tire.tread_mm) : pick.treadMm,
+    })
+  }
+
+  /** ยกเลิกเส้นในคลังที่หยิบไว้ กลับไปเลือกซีรีย์ใหม่ของรุ่นเดิม */
+  function clearStock() {
+    onChange({ ...pick, stockTireId: '', serialNo: '', treadMm: '' })
+  }
+
+  const kindLabel = mountKind === 'new' ? 'ยางใหม่' : 'ยางเก่า'
+  const serialHint = serialLocked
+    ? 'ซีเรียลของยางเส้นที่เลือกจากคลัง — กด × เพื่อเลือกเส้นอื่น'
+    : suggested.length > 0
+      ? `${kindLabel}ของรุ่นนี้มี ${suggested.length} เส้น แตะช่องเพื่อเลือก หรือพิมพ์ซีรีย์เพื่อกรอง — ถ้าเส้นที่ถืออยู่ไม่มีในรายการ พิมพ์ซีรีย์เข้าไปใหม่ได้ (ระบบแปลงเป็นตัวพิมพ์ใหญ่ให้)`
+      : `ไม่มี${kindLabel}ของรุ่นนี้ในคลัง — คีย์ซีรีย์ของเส้นที่ถืออยู่เข้าไปใหม่ (ระบบแปลงเป็นตัวพิมพ์ใหญ่ให้)`
+
+  return (
+    <>
+      <Field
+        label="ยี่ห้อ / รุ่นยาง"
+        required
+        hint="พิมพ์ขนาดหรือยี่ห้อเพื่อค้น เช่น 11R22.5 — ตัวเลข “ในคลัง” คือจำนวนเส้นที่หยิบใส่ได้ของรุ่นนั้น (ไม่ทราบยี่ห้อ เลือก “อื่นๆ” ตามขนาดยาง)"
+      >
+        <TireAutocomplete
+          pick={pick}
+          onChange={onChange}
+          options={catalogOptions}
+          emptyText={CATALOG_EMPTY_TEXT}
+          selectBy="model"
+          fallbackLabel={
+            stockPicked
+              ? [stockPicked.size ?? 'ไม่ระบุขนาด', stockPicked.brand_name || null, stockPicked.model_name || null]
+                  .filter(Boolean)
+                  .join(' · ')
+              : undefined
+          }
+          trailing={(option) => {
+            const count = stockCountByModel.get(option.id)
+            return count ? <Badge tone="sky">ในคลัง {count}</Badge> : null
+          }}
+        />
+      </Field>
+
+      {selectedModel || stockPicked ? (
+        <Field label="ซีรีย์ยาง" required error={serialError} hint={serialHint}>
+          {serialLocked ? (
+            <div className="relative">
+              <Input
+                value={pick.serialNo}
+                readOnly
+                className="h-14 pr-12 text-lg uppercase"
+              />
+              <button
+                type="button"
+                onClick={clearStock}
+                aria-label="ล้างซีรีย์ที่เลือก"
+                className="absolute right-1 top-1 flex size-12 items-center justify-center rounded-lg text-ink-400 hover:bg-slate-100 hover:text-ink-700"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+          ) : (
+            <SerialAutocomplete
+              value={pick.serialNo}
+              onInput={(value) => onChange({ ...pick, serialNo: value })}
+              onPickStock={pickStock}
+              stockTires={tires}
+              mountedText={mountedText}
+              suggested={suggested}
+              suggestedTitle={`${kindLabel}ของรุ่นที่เลือก`}
+            />
+          )}
+        </Field>
+      ) : (
+        <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-ink-500 ring-1 ring-inset ring-line">
+          เลือกยี่ห้อ/รุ่นก่อน — ระบบจะกรองซีรีย์{kindLabel}ของรุ่นนั้นให้เลือก ถ้าไม่มีค่อยคีย์ซีรีย์เอง
+        </p>
+      )}
+
+      {mountKind === 'used' && (
+        <Field label="ดอกยาง (มม.)" required>
+          <Select value={pick.treadMm} onChange={(e) => onChange({ ...pick, treadMm: e.target.value })}>
+            <option value="">— เลือกดอกยาง —</option>
+            {TREAD_OPTIONS.map((mm) => (
+              <option key={mm} value={mm}>{mm} มม.</option>
+            ))}
+          </Select>
+        </Field>
+      )}
+    </>
+  )
+}
+
 /** จำนวนรายการแนะนำซีรีย์สูงสุดใน dropdown */
 const SERIAL_SUGGEST_LIMIT = 8
 /** พิมพ์กี่ตัวถึงเริ่มแนะนำ */
@@ -1789,12 +1919,22 @@ function SerialAutocomplete({
   onPickStock,
   stockTires,
   mountedText,
+  suggested,
+  suggestedTitle = 'ซีรีย์ในคลังของรุ่นที่เลือก',
 }: {
   value: string
   onInput: (value: string) => void
   onPickStock: (tire: TireLite) => void
   stockTires: TireLite[]
   mountedText?: (tire: TireLite) => string
+  /**
+   * ยางในคลังที่กรองตามยี่ห้อ/รุ่นที่เลือกไว้ — แตะช่องแล้วขึ้นให้เลือกทั้งชุดทันทีโดยไม่ต้องพิมพ์
+   * พิมพ์แล้วค้นเฉพาะในชุดนี้เท่านั้น (ส่งมาแล้วแม้ชุดว่าง = ไม่แนะนำซีรีย์รุ่นอื่นเลย ช่างคีย์ซีรีย์ใหม่ไปตรง ๆ)
+   * ไม่ส่ง (undefined) = พฤติกรรมเดิม ต้องพิมพ์ 2 ตัวก่อนจึงแนะนำจากคลังทั้งหมด
+   */
+  suggested?: TireLite[]
+  /** หัวรายการเมื่อผลค้นมาจากชุดที่กรองตามรุ่น */
+  suggestedTitle?: string
 }) {
   const [open, setOpen] = React.useState(false)
   /** true ระหว่างนิ้ว/เมาส์กดค้างอยู่ในรายการ — กัน blur ปิดรายการก่อนคลิกทำงาน (Safari) */
@@ -1802,23 +1942,33 @@ function SerialAutocomplete({
 
   const query = value.trim().toUpperCase()
 
-  const matches = React.useMemo(() => {
-    if (query.length < SERIAL_SUGGEST_MIN) return []
+  const { matches, fromSuggested } = React.useMemo(() => {
+    const byPrefixThenName = (a: TireLite, b: TireLite) =>
+      Number(b.serial_no.toUpperCase().startsWith(query)) - Number(a.serial_no.toUpperCase().startsWith(query)) ||
+      a.serial_no.localeCompare(b.serial_no)
+
+    // โหมดกรองตามรุ่น: ค้นเฉพาะในชุดที่ส่งมา ไม่ถอยไปคลังทั้งหมด (รุ่นที่เลือกไม่มีซีรีย์ = ไม่แนะนำอะไรเลย)
+    if (suggested) {
+      if (query.length === 0) {
+        // ยังไม่พิมพ์ = โชว์ทั้งชุด (เรียงตามที่ส่งมา: ใหม่ก่อน ดอกยางมากก่อน)
+        return { matches: suggested.slice(0, SERIAL_SUGGEST_LIMIT * 3), fromSuggested: true }
+      }
+      const hit = suggested.filter((t) => t.serial_no.toUpperCase().includes(query))
+      return { matches: [...hit].sort(byPrefixThenName).slice(0, SERIAL_SUGGEST_LIMIT), fromSuggested: true }
+    }
+
+    if (query.length < SERIAL_SUGGEST_MIN) return { matches: [] as TireLite[], fromSuggested: false }
     const hit = stockTires.filter((t) => t.serial_no.toUpperCase().includes(query))
     // ว่างในคลังขึ้นก่อน (ใหม่ก่อนเคยใช้) แล้วค่อยเส้นที่ติดรถอยู่ — ซีรีย์ที่ขึ้นต้นตรงกันมาก่อน
     const rank = (t: TireLite) =>
       (isAvailableStock(t) ? 0 : t.status === 'mounted' ? 2 : 3) + (isAvailableStock(t) && !isFreshTire(t) ? 0.5 : 0)
-    return hit
-      .sort(
-        (a, b) =>
-          rank(a) - rank(b) ||
-          Number(b.serial_no.toUpperCase().startsWith(query)) - Number(a.serial_no.toUpperCase().startsWith(query)) ||
-          a.serial_no.localeCompare(b.serial_no),
-      )
-      .slice(0, SERIAL_SUGGEST_LIMIT)
-  }, [stockTires, query])
+    return {
+      matches: hit.sort((a, b) => rank(a) - rank(b) || byPrefixThenName(a, b)).slice(0, SERIAL_SUGGEST_LIMIT),
+      fromSuggested: false,
+    }
+  }, [stockTires, query, suggested])
 
-  const showList = open && query.length >= SERIAL_SUGGEST_MIN && matches.length > 0
+  const showList = open && matches.length > 0
 
   return (
     <div
@@ -1861,7 +2011,9 @@ function SerialAutocomplete({
           onPointerCancel={() => { pressingRef.current = false }}
           className="absolute z-30 mt-1 max-h-72 w-full overflow-auto overscroll-contain rounded-xl border border-line bg-white py-1 shadow-lg"
         >
-          <p className="px-4 pb-1 pt-2 text-xs font-medium text-ink-400">ซีรีย์ในคลังที่ตรงกับที่พิมพ์</p>
+          <p className="px-4 pb-1 pt-2 text-xs font-medium text-ink-400">
+            {fromSuggested ? suggestedTitle : 'ซีรีย์ในคลังที่ตรงกับที่พิมพ์'}
+          </p>
           {matches.map((tire) => {
             const available = isAvailableStock(tire)
             const spec = [tire.size ?? 'ไม่ระบุขนาด', tire.brand_name || null, tire.model_name || null]
