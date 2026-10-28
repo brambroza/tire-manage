@@ -56,9 +56,10 @@ export default async function FleetReportPage({
   ] = await Promise.all([
     supabase
       .from('vehicles')
-      .select('id, plate_no, province, axle_type, branch, current_mileage, mileage_updated_at')
+      .select('id, plate_no, nickname, province, axle_type, branch, current_mileage, mileage_updated_at')
       .eq('is_active', true)
-      .order('plate_no')
+      .order('plate_no', { nullsFirst: false })
+      .order('nickname')
       .limit(VEHICLE_LIMIT),
     supabase.from('axle_types').select('code, name, axle_kinds').order('sort_order').order('name'),
     supabase

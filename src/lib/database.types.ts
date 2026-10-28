@@ -12,7 +12,7 @@ export type AxleKind = 'single' | 'dual'
 export type CompanyPlan = 'standard' | 'premium'
 
 /** หมวดของประเภทเพลาที่ช่างเลือกหน้างาน */
-export type AxleCategory = 'head' | 'trailer'
+export type AxleCategory = 'head' | 'trailer' | 'bus'
 
 export type Company = {
   id: string
@@ -122,8 +122,11 @@ export type CompanyAxleType = {
 export type Vehicle = {
   id: string
   company_id: string
-  plate_no: string
-  province: string
+  /** ทะเบียน — null ได้เมื่อรถมีชื่อเรียก (migration 017) */
+  plate_no: string | null
+  nickname: string | null
+  /** จังหวัดของทะเบียน — null เมื่อไม่มีทะเบียน */
+  province: string | null
   brand: string | null
   model: string | null
   axle_type: string
@@ -135,6 +138,8 @@ export type Vehicle = {
   /** สาขา/หน่วยงานที่รถสังกัด — null = ไม่ระบุสาขา */
   branch: string | null
   note: string | null
+  /** object path ของรูปรถใน bucket vehicle-images (private) — null = ไม่มีรูป (migration 019) */
+  image_path: string | null
   is_active: boolean
   created_at: string
   updated_at: string
@@ -213,6 +218,7 @@ export type TireOverview = {
   position_code: string | null
   vehicle_id: string | null
   plate_no: string | null
+  nickname: string | null
   province: string | null
   current_mileage: number | null
   current_run_km: number
@@ -257,8 +263,9 @@ export type VehicleObservedMonthlyKm = {
 export type VehicleChangeAlert = {
   vehicle_id: string
   company_id: string
-  plate_no: string
-  province: string
+  plate_no: string | null
+  nickname: string | null
+  province: string | null
   axle_type: string
   is_active: boolean
   /** เกณฑ์จำนวนครั้ง (companies.alert_change_count) */
@@ -339,9 +346,9 @@ export interface Database {
       }
       vehicles: {
         Row: Vehicle
-        Insert: Insert<Vehicle, Timestamps | 'brand' | 'model'
+        Insert: Insert<Vehicle, Timestamps | 'nickname' | 'brand' | 'model'
           | 'current_mileage' | 'avg_km_per_month' | 'mileage_updated_at'
-          | 'branch' | 'note' | 'is_active'>
+          | 'branch' | 'note' | 'image_path' | 'is_active'>
         Update: Partial<Vehicle>
         Relationships: [FK<'company_id', 'companies'>, FK<'axle_type', 'axle_types', 'code'>]
       }

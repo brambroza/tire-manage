@@ -1,5 +1,6 @@
 'use client'
 
+import { vehicleLabel } from '@/lib/vehicle-display'
 import * as React from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -212,7 +213,7 @@ export function TiresClient({
       {/* ตัวกรอง */}
       <Card className="mb-4">
         <div className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center">
-          <SearchInput placeholder="ค้นหาเลขยาง, ยี่ห้อ, รุ่น, ทะเบียนรถ..." className="lg:max-w-md" />
+          <SearchInput placeholder="ค้นหาเลขยาง, ยี่ห้อ, รุ่น, ชื่อเรียก, ทะเบียนรถ..." className="lg:max-w-md" />
 
           <div className="flex flex-wrap gap-2">
             {FILTERS.map((f) => (
@@ -386,7 +387,7 @@ export function TiresClient({
                     tireBrandModelLabel(t.brand_name, '', ''),
                     t.dot ? `DOT ${t.dot}` : '',
                   ].filter(Boolean).join(' · ')
-                  const removedPlate = removal?.plate_no ?? 'รถที่ถูกลบแล้ว'
+                  const removedPlate = vehicleLabel(removal, 'รถที่ถูกลบแล้ว')
                   return (
                     <tr
                       key={t.id}
@@ -445,10 +446,10 @@ export function TiresClient({
                             <span className={LINE1}>
                               {enableLinks ? (
                                 <Link href={`/vehicles/${t.vehicle_id}`} className="text-[17px] font-bold text-ink-900 hover:text-brand-700">
-                                  {t.plate_no}
+                                  {vehicleLabel(t)}
                                 </Link>
                               ) : (
-                                <span className="text-[17px] font-bold text-ink-900">{t.plate_no}</span>
+                                <span className="text-[17px] font-bold text-ink-900">{vehicleLabel(t)}</span>
                               )}
                               <span className="text-ink-500"> · {positionLabel(t.position_code)}</span>
                             </span>

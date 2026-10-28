@@ -1,3 +1,4 @@
+import { vehicleLabel } from '@/lib/vehicle-display'
 import { createClient } from '@/lib/supabase/server'
 import type { Company, TireOverview, TireStatus } from '@/lib/database.types'
 
@@ -22,8 +23,10 @@ export interface TireAlert {
 /** รถที่ถอดยางถี่ผิดปกติ (จาก view vehicle_change_alerts) */
 export interface VehicleChangeAlertItem {
   vehicleId: string
+  /** ป้ายรถ (ชื่อเรียก · ทะเบียน) */
   plateNo: string
-  province: string
+  /** null = รถไม่มีทะเบียน */
+  province: string | null
   changeCount: number
   lastEventDate: string
 }
@@ -82,13 +85,13 @@ export const LIFETIME_SOON_DAYS = 30
 
 /** คอลัมน์ที่การ์ด/กระดิ่ง "ครบระยะสะสม" ต้องใช้ — ดึงเท่าที่ใช้ ไม่ให้ payload บวม */
 const LIFETIME_COLUMNS =
-  'id, serial_no, brand_name, model_name, size, status, plate_no, position_code, vehicle_id, ' +
+  'id, serial_no, brand_name, model_name, size, status, plate_no, nickname, position_code, vehicle_id, ' +
   'current_mileage, days_since_mileage, avg_km_per_month, estimated_lifetime_km, ' +
   'is_estimated, is_mileage_stale, days_to_lifetime_alert, image_url'
 
 type LifetimeRow = Pick<
   TireOverview,
-  'id' | 'serial_no' | 'brand_name' | 'model_name' | 'size' | 'status' | 'plate_no'
+  'id' | 'serial_no' | 'brand_name' | 'model_name' | 'size' | 'status' | 'plate_no' | 'nickname'
   | 'position_code' | 'vehicle_id' | 'current_mileage' | 'days_since_mileage'
   | 'avg_km_per_month' | 'estimated_lifetime_km' | 'is_estimated' | 'is_mileage_stale'
   | 'days_to_lifetime_alert' | 'image_url'
@@ -102,7 +105,7 @@ function toLifetimeAlert(row: LifetimeRow, axleType: string | null): LifetimeAle
     brandName: row.brand_name,
     modelName: row.model_name,
     size: row.size,
-    plateNo: row.plate_no,
+    plateNo: vehicleLabel(row, '') || null,
     positionCode: row.position_code,
     vehicleAxleType: axleType,
     status: row.status,
@@ -204,7 +207,7 @@ export async function getVehicleChangeAlerts(
 ): Promise<VehicleChangeAlertItem[]> {
   const { data } = await supabase
     .from('vehicle_change_alerts')
-    .select('vehicle_id, plate_no, province, change_count, last_event_date')
+    .select('vehicle_id, plate_no, nickname, province, change_count, last_event_date')
     .eq('company_id', companyId)
     .eq('is_active', true)
     .order('change_count', { ascending: false })
@@ -213,7 +216,7 @@ export async function getVehicleChangeAlerts(
 
   return (data ?? []).map((row) => ({
     vehicleId: row.vehicle_id,
-    plateNo: row.plate_no,
+    plateNo: vehicleLabel(row, ''),
     province: row.province,
     changeCount: row.change_count,
     lastEventDate: row.last_event_date,
@@ -276,7 +279,7 @@ export async function getTireAlerts(company: Company | null): Promise<Notificati
       brandName: t.brand_name,
       modelName: t.model_name,
       size: t.size,
-      plateNo: t.plate_no,
+      plateNo: vehicleLabel(t, '') || null,
       positionCode: t.position_code,
       vehicleAxleType: t.vehicle_id ? axleTypeByVehicle[t.vehicle_id] ?? null : null,
       currentRunKm: t.current_run_km,

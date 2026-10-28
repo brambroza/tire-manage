@@ -18,7 +18,7 @@ export interface TireEventRow {
   tread_mm: number | null
   distance_km: number | null
   note: string | null
-  vehicles: { plate_no: string; province: string; axle_type: string } | null
+  vehicles: { nickname: string | null; plate_no: string | null; province: string | null; axle_type: string } | null
   removal_reasons: { name: string } | null
   profiles: { full_name: string } | null
 }
@@ -41,7 +41,7 @@ export interface VehicleEventRow {
 /** select string ของมุมมองยาง — ใช้ให้ตรงกันทุกที่ที่ query ประวัติของยาง */
 export const TIRE_EVENT_SELECT =
   'id, event_type, event_date, position_code, odometer, tread_mm, distance_km, note, ' +
-  'vehicles(plate_no, province, axle_type), removal_reasons(name), profiles(full_name)'
+  'vehicles(nickname, plate_no, province, axle_type), removal_reasons(name), profiles(full_name)'
 
 /** select string ของมุมมองรถ */
 export const VEHICLE_EVENT_SELECT =
@@ -57,6 +57,7 @@ export interface LastRemoval {
   vehicle_id: string | null
   /** ทะเบียนรถที่ถอดออกมา (null = รถถูกลบไปแล้ว) */
   plate_no: string | null
+  nickname: string | null
   province: string | null
   /** ตำแหน่งล้อตอนถอด */
   position_code: string | null
@@ -104,7 +105,7 @@ export async function fetchLastRemovals(
         .from('tire_events')
         .select(
           'tire_id, event_type, vehicle_id, position_code, odometer, distance_km, event_date, note, ' +
-            'vehicles(plate_no, province), removal_reasons(name)',
+            'vehicles(nickname, plate_no, province), removal_reasons(name)',
         )
         .in('event_type', ['mount', 'unmount'])
         .in('tire_id', ids)
@@ -126,7 +127,7 @@ export async function fetchLastRemovals(
       distance_km: number | null
       event_date: string
       note: string | null
-      vehicles: { plate_no: string; province: string } | null
+      vehicles: { nickname: string | null; plate_no: string | null; province: string | null } | null
       removal_reasons: { name: string } | null
     }>) {
       // แถวเรียงใหม่สุดมาก่อน (ต่อ tire): แถวแรกที่เจอต้องเป็น unmount ล่าสุด
@@ -135,6 +136,7 @@ export async function fetchLastRemovals(
         result[row.tire_id] = {
           vehicle_id: row.vehicles ? row.vehicle_id : null,
           plate_no: row.vehicles?.plate_no ?? null,
+          nickname: row.vehicles?.nickname ?? null,
           province: row.vehicles?.province ?? null,
           position_code: row.position_code,
           odometer: row.odometer,

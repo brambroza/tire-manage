@@ -165,7 +165,7 @@ export function ImportHistoryClient({
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="ค้นหาซีรีย์, ยี่ห้อ, รุ่น, ขนาด, ทะเบียนรถ..."
+                placeholder="ค้นหาซีรีย์, ยี่ห้อ, รุ่น, ขนาด, ชื่อเรียก, ทะเบียนรถ..."
                 className="pl-10"
                 aria-label="ค้นหายางที่นำเข้า"
               />

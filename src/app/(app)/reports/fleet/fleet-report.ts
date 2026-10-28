@@ -2,6 +2,7 @@
  * การคำนวณของ "รายงานรถและการตรวจยาง" — ฟังก์ชันล้วน ไม่แตะ React/DB
  * page.tsx ดึงข้อมูลแล้วส่งมาคำนวณที่นี่ เพื่อให้เขียน unit test ได้โดยไม่ต้องต่อ Supabase
  */
+import { vehicleLabel } from '@/lib/vehicle-display'
 import { positionLabel, type AxleTypeLayoutSource } from '@/lib/axle-layouts'
 import { diffDays } from '@/lib/utils'
 
@@ -46,8 +47,9 @@ export interface FleetFilters {
 /** ฟิลด์ของรถที่รายงานใช้ (ดึงจากตาราง vehicles) */
 export interface FleetVehicle {
   id: string
-  plate_no: string
-  province: string
+  plate_no: string | null
+  nickname: string | null
+  province: string | null
   axle_type: string
   branch: string | null
   current_mileage: number
@@ -540,7 +542,7 @@ export function buildTrend(vehicles: FleetVehicle[], events: FleetEvent[], month
 export interface StaleVehicleRow {
   vehicleId: string
   plateNo: string
-  province: string
+  province: string | null
   branch: string | null
   axleTypeName: string
   /** YYYY-MM-DD หรือ null = ไม่เคยบันทึก */
@@ -584,7 +586,7 @@ export function buildStaleVehicles(
     else between31And60++
     rows.push({
       vehicleId: v.id,
-      plateNo: v.plate_no,
+      plateNo: vehicleLabel(v),
       province: v.province,
       branch: v.branch,
       axleTypeName: axleTypeName(v.axle_type, axleTypes),
@@ -740,7 +742,7 @@ export interface LowTreadRow {
   serialNo: string
   vehicleId: string
   plateNo: string
-  province: string
+  province: string | null
   branch: string | null
   positionLabel: string
   brandName: string | null
@@ -784,7 +786,7 @@ export function buildLowTread(
       tireId: t.id,
       serialNo: t.serial_no,
       vehicleId: v.id,
-      plateNo: v.plate_no,
+      plateNo: vehicleLabel(v),
       province: v.province,
       branch: v.branch,
       positionLabel: positionLabel(t.position_code, v.axle_type, axleTypes),

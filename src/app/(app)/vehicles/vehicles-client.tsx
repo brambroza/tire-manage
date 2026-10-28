@@ -1,5 +1,6 @@
 'use client'
 
+import { vehicleLabel } from '@/lib/vehicle-display'
 import * as React from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
@@ -23,6 +24,8 @@ export interface VehicleRow extends Vehicle {
   mounted_count: number
   /** จำนวนครั้งที่ถอดยางในช่วงที่ตั้งไว้ — มีค่าเฉพาะคันที่ถึงเกณฑ์ "เปลี่ยนบ่อย" */
   frequent_change_count?: number | null
+  /** signed URL ของรูปรถ (อายุสั้น สร้างฝั่ง server) — null = ไม่มีรูป */
+  photo_url?: string | null
 }
 
 /**
@@ -90,7 +93,7 @@ export function VehiclesClient({
   /** มีตัวกรอง (คำค้น/สาขา) อยู่ — ใช้เลือกข้อความ empty state ให้ตรงสถานการณ์ */
   const isFiltering = Boolean(searchParams.get('q') || searchParams.get('branch'))
   const [formOpen, setFormOpen] = React.useState(false)
-  const [editing, setEditing] = React.useState<Vehicle | null>(null)
+  const [editing, setEditing] = React.useState<VehicleRow | null>(null)
   const [confirm, setConfirm] = React.useState<VehicleRow | null>(null)
   /** รถที่กำลังเปิดดูประวัติ (null = ปิด modal) */
   const [history, setHistory] = React.useState<VehicleRow | null>(null)
@@ -127,7 +130,7 @@ export function VehiclesClient({
     setFormOpen(true)
   }
 
-  function openEdit(v: Vehicle) {
+  function openEdit(v: VehicleRow) {
     setEditing(v)
     setFormOpen(true)
   }
@@ -144,7 +147,7 @@ export function VehiclesClient({
   return (
     <>
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <SearchInput placeholder="ค้นหาทะเบียนรถ, ยี่ห้อ, รุ่น..." className="sm:max-w-md" />
+        <SearchInput placeholder="ค้นหาชื่อเรียก, ทะเบียนรถ, ยี่ห้อ, รุ่น..." className="sm:max-w-md" />
         {branches.length > 0 && (
           <div className="sm:w-52">
             <BranchFilter branches={branches} />
@@ -191,7 +194,7 @@ export function VehiclesClient({
             <Table>
               <thead>
                 <tr>
-                  <Th>ทะเบียนรถ</Th>
+                  <Th>ชื่อเรียก / ทะเบียนรถ</Th>
                   <Th className="hidden lg:table-cell">ยี่ห้อ / รุ่น</Th>
                   <Th className="hidden lg:table-cell">สาขา</Th>
                   <Th className="hidden md:table-cell">ประเภทเพลา</Th>
@@ -205,41 +208,72 @@ export function VehiclesClient({
                 {vehicles.map((v) => {
                   const layout = getLayout(v.axle_type, axleTypes)
                   const frequent = v.frequent_change_count ?? null
+                  const nickname = v.nickname?.trim()
+                  const brandModel = [v.brand, v.model].filter(Boolean).join(' ')
+                  const identity = (
+                    <>
+                      <span className="block text-base font-semibold leading-snug text-ink-900 [overflow-wrap:anywhere] group-hover:text-brand-700 sm:text-[17px]">
+                        {nickname || v.plate_no || '-'}
+                      </span>
+                      <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                        {nickname && v.plate_no && (
+                          <span className="inline-flex rounded-md border border-line bg-white px-2 py-0.5 text-sm font-medium tabular-nums text-ink-700 [overflow-wrap:anywhere]">
+                            {v.plate_no}
+                          </span>
+                        )}
+                        <span className="text-xs font-normal text-ink-500">{v.plate_no ? v.province : 'ไม่มีทะเบียน'}</span>
+                      </span>
+                    </>
+                  )
                   return (
                     <tr key={v.id} className={frequent !== null ? ALERT_ROW.danger : ALERT_ROW.none}>
-                      <Td>
-                        {enableLinks ? (
-                          <Link
-                            href={`/vehicles/${v.id}`}
-                            className="font-medium text-ink-900 hover:text-brand-600"
-                          >
-                            {v.plate_no}
-                          </Link>
-                        ) : enableHistory ? (
-                          <button
-                            type="button"
-                            onClick={() => setHistory(v)}
-                            className="font-medium text-ink-900 underline decoration-dotted underline-offset-4 hover:text-brand-600"
-                          >
-                            {v.plate_no}
-                          </button>
-                        ) : (
-                          <span className="font-medium text-ink-900">{v.plate_no}</span>
-                        )}
-                        {frequent !== null && (
-                          <Badge tone="rose" className="ml-2 align-middle" title={changeAlertLabel}>
-                            <Repeat className="size-3" />
-                            เปลี่ยนบ่อย {frequent} ครั้ง
-                          </Badge>
-                        )}
-                        <p className="text-xs text-ink-400">
-                          {v.province}
-                          <span className="lg:hidden">
-                            {[  v.model , v.brand].filter(Boolean).join(' ')
-                              ? ` · ${[ v.model , v.brand ].filter(Boolean).join(' ')}`
-                              : ''}
-                          </span>
-                        </p>
+                      <Td className="min-w-48">
+                        <div className="flex items-start gap-3">
+                          {v.photo_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={v.photo_url}
+                              alt=""
+                              loading="lazy"
+                              className="size-12 shrink-0 rounded-xl object-cover ring-1 ring-inset ring-line"
+                            />
+                          ) : (
+                            <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 ring-1 ring-inset ring-brand-100" aria-hidden="true">
+                              <Truck className="size-5" strokeWidth={1.75} />
+                            </span>
+                          )}
+                          <div className="min-w-0 max-w-72 space-y-2">
+                            {enableLinks ? (
+                              <Link
+                                href={`/vehicles/${v.id}`}
+                                aria-label={`ดูข้อมูลรถ ${vehicleLabel(v)} ${v.province}`}
+                                className="group block rounded-lg text-left"
+                              >
+                                {identity}
+                              </Link>
+                            ) : enableHistory ? (
+                              <button
+                                type="button"
+                                onClick={() => setHistory(v)}
+                                aria-label={`ดูประวัติรถ ${vehicleLabel(v)} ${v.province}`}
+                                className="group block w-full rounded-lg text-left"
+                              >
+                                {identity}
+                              </button>
+                            ) : (
+                              <span className="block">{identity}</span>
+                            )}
+                            {brandModel && (
+                              <p className="text-xs text-ink-500 [overflow-wrap:anywhere] lg:hidden">{brandModel}</p>
+                            )}
+                            {frequent !== null && (
+                              <Badge tone="rose" className="gap-1.5" title={changeAlertLabel}>
+                                <Repeat className="size-3 shrink-0" aria-hidden="true" />
+                                เปลี่ยนบ่อย {frequent} ครั้ง
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
                       </Td>
                       <Td className="hidden lg:table-cell">
                         {[v.brand, v.model].filter(Boolean).join(' ') || '-'}
@@ -316,11 +350,12 @@ export function VehiclesClient({
         companyId={companyId}
         axleTypes={axleTypes}
         branches={branches}
+        onPhotoError={setMessage}
       />
 
       <VehicleHistoryModal
         vehicleId={history?.id ?? null}
-        plateNo={history?.plate_no ?? ''}
+        plateNo={vehicleLabel(history, '')}
         subtitle={history ? getLayout(history.axle_type, axleTypes).name : undefined}
         axleType={history?.axle_type}
         axleTypes={axleTypes}
@@ -336,8 +371,8 @@ export function VehiclesClient({
         confirmLabel={confirm?.is_active ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}
         message={
           confirm?.is_active
-            ? `รถทะเบียน ${confirm?.plate_no} จะไม่แสดงในรายการเลือกของช่าง แต่ประวัติทั้งหมดยังคงอยู่`
-            : `รถทะเบียน ${confirm?.plate_no} จะกลับมาใช้งานได้ตามปกติ`
+            ? `รถทะเบียน ${vehicleLabel(confirm)} จะไม่แสดงในรายการเลือกของช่าง แต่ประวัติทั้งหมดยังคงอยู่`
+            : `รถทะเบียน ${vehicleLabel(confirm)} จะกลับมาใช้งานได้ตามปกติ`
         }
       />
     </>

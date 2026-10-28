@@ -63,7 +63,7 @@ export default async function CompanyTiresPage({
   const term = q?.trim().toLowerCase()
   if (term) {
     tires = tires.filter((t) =>
-      [t.serial_no, t.brand_name, t.model_name, t.size, t.plate_no, t.dot, lastRemovals[t.id]?.plate_no]
+      [t.serial_no, t.brand_name, t.model_name, t.size, t.nickname, t.plate_no, t.dot, lastRemovals[t.id]?.nickname, lastRemovals[t.id]?.plate_no]
         .filter(Boolean)
         .some((field) => String(field).toLowerCase().includes(term)),
     )

@@ -1,5 +1,6 @@
 'use server'
 
+import { vehicleLabel } from '@/lib/vehicle-display'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { resolveCompanyScope } from '@/lib/company-scope'
@@ -174,19 +175,19 @@ async function loadExistingSerials(
     const chunk = unique.slice(i, i + 200)
     const { data, error } = await supabase
       .from('tires')
-      .select('serial_no, status, vehicle_id, vehicles(plate_no)')
+      .select('serial_no, status, vehicle_id, vehicles(nickname, plate_no)')
       .eq('company_id', companyId)
       .in('serial_no', chunk)
     if (error) return { error }
     for (const t of (data ?? []) as unknown as Array<{
       serial_no: string
       status: TireStatus
-      vehicles: { plate_no: string } | null
+      vehicles: { nickname: string | null; plate_no: string | null } | null
     }>) {
       found.set(t.serial_no.toUpperCase(), {
         serial_no: t.serial_no,
         status: t.status,
-        plate_no: t.vehicles?.plate_no ?? null,
+        plate_no: vehicleLabel(t.vehicles, '') || null,
       })
     }
   }

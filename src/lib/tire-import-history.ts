@@ -5,6 +5,7 @@
  * ถ้ายังไม่ได้ apply migration 014 จะถอยไปหาจากหมายเหตุ "นำเข้าจากไฟล์ ..." ที่บันทึกกับยาง
  * (แบบนี้อาจตกหล่นยางยี่ห้อปกติที่ผู้ใช้กรอกหมายเหตุเอง)
  */
+import { vehicleLabel } from '@/lib/vehicle-display'
 import type { createClient } from '@/lib/supabase/server'
 import type { TireStatus } from '@/lib/database.types'
 
@@ -78,11 +79,11 @@ interface TireRow {
   note: string | null
   created_at: string
   import_id?: string | null
-  vehicles: { plate_no: string } | null
+  vehicles: { nickname: string | null; plate_no: string } | null
 }
 
 const TIRE_COLUMNS =
-  'id, serial_no, brand_name, model_name, size, status, total_distance_km, note, created_at, vehicles(plate_no)'
+  'id, serial_no, brand_name, model_name, size, status, total_distance_km, note, created_at, vehicles(nickname, plate_no)'
 
 /**
  * แปลงแถวยางจากฐานข้อมูลเป็นรูปแบบที่หน้าจอใช้
@@ -98,7 +99,7 @@ function toTireView(t: TireRow, batchId: string | null, everMounted: Set<string>
     model: t.model_name,
     size: t.size,
     status: t.status,
-    plateNo: t.vehicles?.plate_no ?? null,
+    plateNo: vehicleLabel(t.vehicles, '') || null,
     totalDistanceKm: t.total_distance_km,
     hasBeenMounted: everMounted.has(t.id),
     note: t.note,

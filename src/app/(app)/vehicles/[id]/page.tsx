@@ -1,6 +1,7 @@
+import { vehicleLabel } from '@/lib/vehicle-display'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, Wrench } from 'lucide-react'
+import { ArrowLeft, Truck, Wrench } from 'lucide-react'
 import { requireSession } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/app-shell'
@@ -11,6 +12,7 @@ import { Card, CardBody, CardHeader, EmptyState, Table, TableWrap, Td, Th } from
 import { getLayout, positionLabel } from '@/lib/axle-layouts'
 import { VEHICLE_EVENT_SELECT, type VehicleEventRow } from '@/lib/tire-events'
 import { formatKm } from '@/lib/utils'
+import { signVehiclePhotoUrls } from '@/lib/vehicle-photos'
 import type { AxleType, TireOverview, Vehicle } from '@/lib/database.types'
 
 export default async function VehicleDetailPage({
@@ -28,7 +30,7 @@ export default async function VehicleDetailPage({
   const v = vehicle as Vehicle
   const alertKm = company?.alert_km ?? 10000
 
-  const [{ data: tireData }, { data: historyData }, { data: axleTypeData }] = await Promise.all([
+  const [{ data: tireData }, { data: historyData }, { data: axleTypeData }, photoUrls] = await Promise.all([
     supabase.from('tire_overview').select('*').eq('vehicle_id', id).eq('status', 'mounted'),
     supabase
       .from('tire_events')
@@ -38,7 +40,9 @@ export default async function VehicleDetailPage({
       .order('created_at', { ascending: false })
       .limit(50),
     supabase.from('axle_types').select('*').order('sort_order').order('name'),
+    signVehiclePhotoUrls([v.image_path]),
   ])
+  const photoUrl = v.image_path ? photoUrls.get(v.image_path) ?? null : null
 
   const tires = (tireData ?? []) as TireOverview[]
   const history = (historyData ?? []) as unknown as VehicleEventRow[]
@@ -68,7 +72,7 @@ export default async function VehicleDetailPage({
       </Link>
 
       <PageHeader
-        title={`${v.plate_no} ${v.province}`}
+        title={`${vehicleLabel(v)} ${v.province}`}
         subtitle={[v.brand, v.model].filter(Boolean).join(' ') || 'ไม่ระบุยี่ห้อ/รุ่น'}
         action={
           <Link
@@ -97,9 +101,27 @@ export default async function VehicleDetailPage({
         <div className="space-y-4 lg:col-span-3">
           <Card>
             <CardHeader title="ข้อมูลรถ" />
+            <CardBody className="pb-0">
+              {photoUrl ? (
+                <a href={photoUrl} target="_blank" rel="noopener noreferrer" className="block">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={photoUrl}
+                    alt={`รูปรถ ${vehicleLabel(v)}`}
+                    className="aspect-[16/9] w-full rounded-xl bg-ink-50 object-contain ring-1 ring-inset ring-line"
+                  />
+                </a>
+              ) : (
+                <div className="flex aspect-[16/9] w-full flex-col items-center justify-center gap-1 rounded-xl bg-brand-50 text-brand-400 ring-1 ring-inset ring-brand-100">
+                  <Truck className="size-10" strokeWidth={1.5} />
+                  <span className="text-sm text-ink-500">ยังไม่มีรูปรถ · แอดมินเพิ่มได้ที่หน้าจัดการรถ</span>
+                </div>
+              )}
+            </CardBody>
             <CardBody className="grid grid-cols-2 gap-y-4 sm:grid-cols-3">
-              <Info label="ทะเบียน" value={v.plate_no} />
-              <Info label="จังหวัด" value={v.province} />
+              <Info label="ชื่อเรียกรถ" value={v.nickname ?? '-'} />
+              <Info label="ทะเบียน" value={v.plate_no ?? 'ไม่มีทะเบียน'} />
+              <Info label="จังหวัด" value={v.province ?? '-'} />
               <Info label="ประเภทเพลา" value={layout.name} />
               <Info label="ยี่ห้อ" value={v.brand ?? '-'} />
               <Info label="รุ่น" value={v.model ?? '-'} />

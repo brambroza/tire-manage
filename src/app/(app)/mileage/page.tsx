@@ -23,9 +23,10 @@ export default async function MileagePage({
   // รายการรถทั้งหมดของบริษัท (RLS กรองให้) — ใช้ค้นทะเบียนฝั่ง client เหมือนหน้าช่าง
   const { data: vehicleData } = await supabase
     .from('vehicles')
-    .select('id, plate_no, province, brand, model, current_mileage')
+    .select('id, plate_no, nickname, province, brand, model, current_mileage')
     .eq('is_active', true)
-    .order('plate_no')
+    .order('plate_no', { nullsFirst: false })
+    .order('nickname')
 
   // ยางที่ติดตั้งอยู่ต่อคัน — โชว์ให้เห็นว่าบันทึกไมล์แล้วกระทบยางกี่เส้น
   const { data: mountedRows } = await supabase

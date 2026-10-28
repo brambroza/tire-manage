@@ -497,8 +497,8 @@ const axleTypeSchema = z.object({
     .array(z.enum(['single', 'dual']))
     .min(1, 'ต้องมีอย่างน้อย 1 เพลา')
     .max(8, 'กำหนดได้ไม่เกิน 8 เพลา'),
-  /** หมวดที่ช่างเลือกหน้างาน — หัว หรือ หาง */
-  category: z.enum(['head', 'trailer'], { message: 'กรุณาเลือกประเภท หัว หรือ หาง' }),
+  /** หมวดที่ช่างเลือกหน้างาน — หัว หาง หรือ บัส */
+  category: z.enum(['head', 'trailer', 'bus'], { message: 'กรุณาเลือกประเภท หัว หาง หรือ บัส' }),
   /** รูปผังล้อที่ช่างใช้อ้างอิง (ว่างได้) */
   image_url: optionalText,
   sort_order: z.number().int().min(0, 'ลำดับต้องไม่ติดลบ').default(0),

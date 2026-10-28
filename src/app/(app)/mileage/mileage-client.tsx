@@ -1,5 +1,7 @@
 'use client'
 
+import { VehicleSearch } from '@/components/vehicle-search'
+import { vehicleLabel } from '@/lib/vehicle-display'
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertCircle, ArrowLeft, Check, Gauge, Truck } from 'lucide-react'
@@ -13,8 +15,9 @@ import { updateMileage } from '../vehicles/actions'
 
 export interface MileageVehicle {
   id: string
-  plate_no: string
-  province: string
+  plate_no: string | null
+  nickname: string | null
+  province: string | null
   brand: string | null
   model: string | null
   current_mileage: number
@@ -79,10 +82,14 @@ export function MileageClient({
     }
 
     const key = plateNo.toLowerCase()
-    const found =
-      vehicles.find((v) => v.plate_no.toLowerCase() === key) ??
-      vehicles.find((v) => v.plate_no.replace(/[\s-]/g, '').toLowerCase() === key.replace(/-/g, '')) ??
-      null
+    // รถที่ไม่มีทะเบียนหาได้จากช่องค้นหาชื่อเรียกด้านบนเท่านั้น
+    const candidates = vehicles.filter((v) =>
+      v.plate_no?.replace(/[\s-]/g, '').toLowerCase() === key.replace(/-/g, ''))
+    if (candidates.length > 1) {
+      setError('พบทะเบียนนี้หลายจังหวัด กรุณาค้นหาและเลือกรถจากรายการด้านบน')
+      return
+    }
+    const found = candidates[0] ?? null
 
     if (!found) {
       setError(`ไม่พบทะเบียน ${plateNo} ในระบบ — บันทึกไมล์ได้เฉพาะรถที่มีอยู่แล้ว (เพิ่มรถได้จากหน้าบันทึกถอด-ใส่ยาง)`)
@@ -116,7 +123,7 @@ export function MileageClient({
       return
     }
 
-    setToast(`บันทึก ${result.data!.plate_no} เป็น ${formatKm(result.data!.current_mileage)} แล้ว`)
+    setToast(`บันทึก ${vehicleLabel(vehicle)} เป็น ${formatKm(result.data!.current_mileage)} แล้ว`)
     reset()
     router.refresh()
   }
@@ -134,10 +141,17 @@ export function MileageClient({
       {step === 'plate' && (
         <section className="rounded-2xl border border-line bg-white p-4 sm:p-5">
           <header className="mb-4">
-            <p className="text-xl font-semibold text-ink-900">ใส่ทะเบียนรถ</p>
+            <p className="text-xl font-semibold text-ink-900">เลือกรถ</p>
             <p className="mt-0.5 text-sm text-ink-500">เฉพาะรถที่มีในระบบแล้ว</p>
           </header>
           <div className="space-y-4">
+            <VehicleSearch vehicles={vehicles} onSelect={(selected) => {
+              setVehicle(selected)
+              setError(null)
+              setOdometer('')
+              setStep('odometer')
+            }} />
+            <p className="text-sm text-ink-500">หรือกรอกทะเบียนรถ</p>
             <div className="flex items-center gap-2">
               <Input
                 ref={platePrefixRef}
@@ -197,9 +211,9 @@ export function MileageClient({
               <ArrowLeft className="size-5" />
             </button>
             <div className="min-w-0 flex-1">
-              <p className="flex items-center gap-2 text-[15px] font-semibold text-ink-900">
+              <p className="flex flex-wrap items-center gap-2 break-words text-[15px] font-semibold text-ink-900">
                 <Truck className="size-4.5 text-brand-600" />
-                {vehicle.plate_no}
+                {vehicleLabel(vehicle)}
                 <span className="font-normal text-ink-400">{vehicle.province}</span>
               </p>
               <p className="truncate text-sm text-ink-500">

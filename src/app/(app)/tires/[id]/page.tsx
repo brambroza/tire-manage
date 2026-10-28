@@ -1,3 +1,4 @@
+import { vehicleLabel } from '@/lib/vehicle-display'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ArrowLeft, Gauge, MapPin, Ruler, Wallet } from 'lucide-react'
@@ -138,7 +139,7 @@ export default async function TireDetailPage({ params }: { params: Promise<{ id:
               value={
                 t.status === 'mounted' && t.vehicle_id ? (
                   <Link href={`/vehicles/${t.vehicle_id}`} className="text-brand-600 hover:underline">
-                    {t.plate_no} · {positionLabel(t.position_code)}
+                    {vehicleLabel(t)} · {positionLabel(t.position_code)}
                   </Link>
                 ) : (
                   'อยู่ในคลัง'

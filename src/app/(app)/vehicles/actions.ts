@@ -1,5 +1,8 @@
 'use server'
 
+import {
+  normalizeVehicleIdentity, refineVehicleIdentity, vehicleIdentityFields, vehicleUniqueViolation,
+} from '@/lib/vehicle-schema'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { requireSession } from '@/lib/auth'
@@ -8,10 +11,11 @@ import { createClient } from '@/lib/supabase/server'
 import { ActionResult, fail, optionalNumber, optionalText, zodFail } from '@/lib/action-result'
 import { HISTORY_LIMIT, VEHICLE_EVENT_SELECT, type VehicleEventRow } from '@/lib/tire-events'
 import { ODOMETER_MAX, ODOMETER_MAX_MESSAGE, PLATE_PATTERN, PLATE_PATTERN_MESSAGE } from '@/lib/utils'
+import { removeVehiclePhotoFile, storeVehiclePhoto } from '@/lib/vehicle-photos'
 
-const vehicleSchema = z.object({
-  plate_no: z.string().trim().min(1, 'กรุณากรอกทะเบียนรถ').max(20),
-  province: z.string().trim().min(1, 'กรุณาเลือกจังหวัด'),
+/** ช่องข้อมูลรถทั้งหมด — ทะเบียน/ชื่อเรียก/จังหวัด ใช้กฎร่วมจาก vehicle-schema (ต้องมีทะเบียนหรือชื่อเรียกอย่างน้อยหนึ่งอย่าง) */
+const vehicleFields = z.object({
+  ...vehicleIdentityFields,
   brand: optionalText,
   model: optionalText,
   axle_type: z.string().trim().min(1, 'กรุณาเลือกประเภทเพลา').max(30),
@@ -30,10 +34,15 @@ const vehicleSchema = z.object({
   note: optionalText,
 })
 
-/** รถใหม่ต้องใช้ทะเบียนตามรูปแบบมาตรฐาน (รถเดิมที่บันทึกไว้ก่อนกฎนี้ยังแก้ข้อมูลอื่นได้) */
-const newVehicleSchema = vehicleSchema.extend({
-  plate_no: vehicleSchema.shape.plate_no.regex(PLATE_PATTERN, PLATE_PATTERN_MESSAGE),
-})
+/** แก้ไขรถเดิม: ตรวจรูปแบบทะเบียนที่เปลี่ยนใน updateVehicle (ทะเบียนเก่าที่บันทึกก่อนกฎนี้คงไว้ได้) */
+const vehicleSchema = vehicleFields
+  .superRefine(refineVehicleIdentity(false))
+  .transform(normalizeVehicleIdentity)
+
+/** รถใหม่ต้องใช้ทะเบียนตามรูปแบบมาตรฐาน (ถ้ากรอกทะเบียน) */
+const newVehicleSchema = vehicleFields
+  .superRefine(refineVehicleIdentity(true))
+  .transform(normalizeVehicleIdentity)
 
 export type VehicleInput = z.input<typeof vehicleSchema>
 
@@ -41,6 +50,12 @@ export type VehicleInput = z.input<typeof vehicleSchema>
 function revalidateVehicle(companyId: string, vehicleId?: string) {
   revalidatePath('/vehicles')
   revalidatePath('/service')
+  revalidatePath('/mileage')
+  revalidatePath('/dashboard')
+  revalidatePath('/reports/fleet')
+  revalidatePath('/tires')
+  revalidatePath('/tires/[id]', 'page')
+  revalidatePath(`/superadmin/companies/${companyId}/tires`)
   if (vehicleId) revalidatePath(`/vehicles/${vehicleId}`)
   revalidatePath(`/superadmin/companies/${companyId}`)
   revalidatePath(`/superadmin/companies/${companyId}/vehicles`)
@@ -132,6 +147,8 @@ export async function createVehicle(
     .select('id')
     .single()
 
+  const duplicate = vehicleUniqueViolation(error)
+  if (duplicate) return { ok: false, ...duplicate }
   if (error) return fail(error)
   revalidateVehicle(scope.companyId, data.id)
   return { ok: true, data: { id: data.id } }
@@ -163,8 +180,9 @@ export async function updateVehicle(id: string, input: VehicleInput): Promise<Ac
   }
   if (axleTypeResult.error) return fail(axleTypeResult.error)
 
-  // ทะเบียนที่เปลี่ยนใหม่ต้องเป็นรูปแบบมาตรฐาน (ทะเบียนเดิมที่บันทึกไว้ก่อนกฎนี้คงไว้ได้)
+  // ทะเบียนที่เปลี่ยนใหม่ต้องเป็นรูปแบบมาตรฐาน (ทะเบียนเดิมที่บันทึกไว้ก่อนกฎนี้คงไว้ได้ · ลบทะเบียนออกได้เมื่อมีชื่อเรียก)
   if (
+    parsed.data.plate_no !== null &&
     currentResult.data.plate_no !== parsed.data.plate_no &&
     !PLATE_PATTERN.test(parsed.data.plate_no)
   ) {
@@ -206,6 +224,8 @@ export async function updateVehicle(id: string, input: VehicleInput): Promise<Ac
     .select('company_id')
     .maybeSingle()
 
+  const duplicate = vehicleUniqueViolation(error)
+  if (duplicate) return { ok: false, ...duplicate }
   if (error) return fail(error)
   if (!data) return { ok: false, error: 'ไม่พบรถที่ต้องการแก้ไข หรือคุณไม่มีสิทธิ์' }
 
@@ -273,7 +293,7 @@ const mileageSchema = z.object({
 })
 
 export interface UpdateMileageResult {
-  plate_no: string
+  plate_no: string | null
   previous_mileage: number
   current_mileage: number
 }
@@ -404,4 +424,86 @@ export async function getObservedMonthlyKm(
       lastDate: data.last_date,
     },
   }
+}
+
+const vehicleIdSchema = z.string().uuid('รหัสรถไม่ถูกต้อง')
+
+/**
+ * อ่านรถที่ผู้ใช้มีสิทธิ์แก้ (ผ่าน RLS) เพื่อใช้ company_id จากฐานข้อมูล ไม่เชื่อค่าจาก browser
+ * @param id รหัสรถ
+ */
+async function loadVehicleForPhoto(id: string) {
+  await requireSession(['admin', 'super_admin'])
+  const parsedId = vehicleIdSchema.safeParse(id)
+  if (!parsedId.success) return { ok: false as const, error: 'รหัสรถไม่ถูกต้อง' }
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('vehicles')
+    .select('id, company_id, image_path')
+    .eq('id', parsedId.data)
+    .maybeSingle()
+  if (error) {
+    const failed = fail(error)
+    return { ok: false as const, error: failed.ok ? 'เกิดข้อผิดพลาด' : failed.error }
+  }
+  if (!data) return { ok: false as const, error: 'ไม่พบรถ หรือคุณไม่มีสิทธิ์' }
+  return { ok: true as const, supabase, vehicle: data }
+}
+
+/**
+ * อัปโหลดหรือเปลี่ยนรูปรถ — รูปเดิมถูกลบหลังบันทึกรูปใหม่สำเร็จ
+ * @param id รหัสรถ
+ * @param formData ต้องมี field ชื่อ "file"
+ */
+export async function uploadVehiclePhoto(id: string, formData: FormData): Promise<ActionResult> {
+  const loaded = await loadVehicleForPhoto(id)
+  if (!loaded.ok) return { ok: false, error: loaded.error }
+  const { supabase, vehicle } = loaded
+
+  const stored = await storeVehiclePhoto(formData.get('file'), vehicle.company_id, vehicle.id)
+  if (!stored.ok) return stored
+  const path = stored.data!.path
+
+  const { data, error } = await supabase
+    .from('vehicles')
+    .update({ image_path: path })
+    .eq('id', vehicle.id)
+    .select('id')
+    .maybeSingle()
+
+  if (error || !data) {
+    // บันทึกไม่ผ่าน (เช่น ยังไม่ได้รัน migration 019 หรือไม่มีสิทธิ์แก้) — ลบไฟล์ใหม่ทิ้ง ไม่ให้ค้างใน storage
+    await removeVehiclePhotoFile(path, vehicle.company_id, vehicle.id)
+    return error ? fail(error) : { ok: false, error: 'ไม่พบรถ หรือคุณไม่มีสิทธิ์' }
+  }
+
+  if (vehicle.image_path && vehicle.image_path !== path) {
+    await removeVehiclePhotoFile(vehicle.image_path, vehicle.company_id, vehicle.id)
+  }
+  revalidateVehicle(vehicle.company_id, vehicle.id)
+  return { ok: true }
+}
+
+/**
+ * ลบรูปรถ — ล้างค่าในฐานข้อมูลก่อน แล้วค่อยลบไฟล์
+ * @param id รหัสรถ
+ */
+export async function removeVehiclePhoto(id: string): Promise<ActionResult> {
+  const loaded = await loadVehicleForPhoto(id)
+  if (!loaded.ok) return { ok: false, error: loaded.error }
+  const { supabase, vehicle } = loaded
+  if (!vehicle.image_path) return { ok: true }
+
+  const { data, error } = await supabase
+    .from('vehicles')
+    .update({ image_path: null })
+    .eq('id', vehicle.id)
+    .select('id')
+    .maybeSingle()
+  if (error) return fail(error)
+  if (!data) return { ok: false, error: 'ไม่พบรถ หรือคุณไม่มีสิทธิ์' }
+
+  await removeVehiclePhotoFile(vehicle.image_path, vehicle.company_id, vehicle.id)
+  revalidateVehicle(vehicle.company_id, vehicle.id)
+  return { ok: true }
 }

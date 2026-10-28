@@ -1,5 +1,8 @@
 'use server'
 
+import {
+  normalizeVehicleIdentity, refineVehicleIdentity, vehicleIdentityFields, vehicleUniqueViolation,
+} from '@/lib/vehicle-schema'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { requireSession } from '@/lib/auth'
@@ -8,7 +11,7 @@ import { ActionResult, fail, optionalNumber, optionalText, zodFail } from '@/lib
 import { ensureBrandModelFor, insertStockTire } from '@/lib/tire-stock'
 import { isOtherBrand } from '@/lib/tire-import'
 import {
-  ODOMETER_DIGITS, ODOMETER_MAX, ODOMETER_MAX_MESSAGE, PLATE_PATTERN, PLATE_PATTERN_MESSAGE,
+  ODOMETER_DIGITS, ODOMETER_MAX, ODOMETER_MAX_MESSAGE,
   SERIAL_MAX, SERIAL_PATTERN, SERIAL_PATTERN_MESSAGE,
 } from '@/lib/utils'
 
@@ -567,23 +570,22 @@ export async function applyServiceBatchAction(
  * หน้าช่าง: คีย์ทะเบียนแล้วเริ่มงานได้เลย
  * ============================================================ */
 
+/** รถใหม่จากหน้าช่าง: ต้องมีทะเบียน (ตามรูปแบบมาตรฐาน + จังหวัด) หรือชื่อเรียกอย่างใดอย่างหนึ่ง · เลือกรถเดิมด้วย vehicle_id ไม่ต้องตรวจ */
 const serviceVehicleSchema = z.object({
-  plate_no: z
-    .string()
-    .trim()
-    .min(1, 'กรุณากรอกทะเบียนรถ')
-    .max(20)
-    .regex(PLATE_PATTERN, PLATE_PATTERN_MESSAGE),
-  province: z.string().trim().min(1, 'กรุณาเลือกจังหวัด').max(60),
+  vehicle_id: z.string().uuid().optional(),
+  ...vehicleIdentityFields,
   axle_type: z.string().trim().min(1, 'กรุณาเลือกประเภทรถ').max(30),
-})
+}).superRefine((data, ctx) => {
+  if (!data.vehicle_id) refineVehicleIdentity(true)(data, ctx)
+}).transform(normalizeVehicleIdentity)
 
 export type ServiceVehicleInput = z.input<typeof serviceVehicleSchema>
 
 export interface ServiceVehicleResult {
   id: string
-  plate_no: string
-  province: string
+  plate_no: string | null
+  nickname: string | null
+  province: string | null
   axle_type: string
   current_mileage: number
   /** true = เพิ่งสร้างรถคันนี้ให้จากหน้าช่าง */
@@ -591,12 +593,12 @@ export interface ServiceVehicleResult {
 }
 
 /**
- * หา (หรือสร้าง) รถจากทะเบียนที่ช่างคีย์หน้างาน แล้วตั้งประเภทรถให้ตรงกับที่เลือก
+ * หา (หรือสร้าง) รถจากทะเบียน หรือชื่อเรียก (รถไม่มีทะเบียน) ที่ช่างคีย์หน้างาน แล้วตั้งประเภทรถให้ตรงกับที่เลือก
  *
  * ช่างทำงานกับรถที่แอดมินยังไม่ได้บันทึกไว้ได้ ระบบจะสร้างให้อัตโนมัติ
  * เพื่อไม่ให้ต้องรอแอดมินหน้างาน (RLS จำกัดให้อยู่ในบริษัทของช่างเองอยู่แล้ว)
  *
- * @param input ทะเบียน จังหวัด และรหัสประเภทเพลาที่ช่างเลือก
+ * @param input รหัสรถเดิม หรือทะเบียน+จังหวัด หรือชื่อเรียก พร้อมรหัสประเภทเพลาที่ช่างเลือก
  */
 export async function ensureServiceVehicleAction(
   input: ServiceVehicleInput,
@@ -620,12 +622,23 @@ export async function ensureServiceVehicleAction(
     return { ok: false, error: 'ประเภทรถนี้ถูกปิดใช้งานแล้ว — แจ้งแอดมินเพื่อเปิดใช้งาน' }
   }
 
-  const { data: existing, error: findError } = await supabase
-    .from('vehicles')
-    .select('id, plate_no, province, axle_type, current_mileage')
-    .eq('plate_no', data.plate_no)
-    .maybeSingle()
+  let vehicleQuery = supabase.from('vehicles')
+    .select('id, plate_no, nickname, province, axle_type, current_mileage, is_active')
+    .eq('company_id', company.id)
+  if (data.vehicle_id) {
+    vehicleQuery = vehicleQuery.eq('id', data.vehicle_id)
+  } else if (data.plate_no) {
+    vehicleQuery = vehicleQuery.eq('plate_no', data.plate_no).eq('province', data.province ?? '')
+  } else {
+    // รถไม่มีทะเบียน: ชื่อเรียกไม่ซ้ำกันในบริษัท (ไม่สนตัวพิมพ์เล็ก–ใหญ่) — escape อักขระพิเศษของ LIKE
+    const literal = (data.nickname ?? '').replace(/[\\%_]/g, '\\$&')
+    vehicleQuery = vehicleQuery.is('plate_no', null).ilike('nickname', literal)
+  }
+  const { data: existing, error: findError } = await vehicleQuery.maybeSingle()
   if (findError) return fail(findError)
+
+  if (data.vehicle_id && !existing) return { ok: false, error: 'ไม่พบรถที่เลือก หรือคุณไม่มีสิทธิ์' }
+  if (existing && !existing.is_active) return { ok: false, error: 'รถคันนี้ถูกปิดใช้งานแล้ว' }
 
   if (existing) {
     // เปลี่ยนประเภทรถได้เฉพาะตอนที่ยังไม่มียางติดตั้งอยู่ ไม่งั้นตำแหน่งล้อเดิมจะเพี้ยน
@@ -664,17 +677,17 @@ export async function ensureServiceVehicleAction(
     .insert({
       company_id: company.id,
       plate_no: data.plate_no,
+      nickname: data.nickname,
       province: data.province,
       axle_type: data.axle_type,
       current_mileage: 0,
     })
-    .select('id, plate_no, province, axle_type, current_mileage')
+    .select('id, plate_no, nickname, province, axle_type, current_mileage, is_active')
     .single()
 
   if (createError) {
-    if (createError.code === '23505') {
-      return { ok: false, error: 'ทะเบียนนี้มีอยู่ในระบบแล้ว — ลองค้นหาใหม่อีกครั้ง' }
-    }
+    const duplicate = vehicleUniqueViolation(createError)
+    if (duplicate) return { ok: false, error: `${duplicate.error} — ลองค้นหาใหม่อีกครั้ง` }
     return fail(createError)
   }
 

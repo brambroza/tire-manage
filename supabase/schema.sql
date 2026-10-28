@@ -148,7 +148,7 @@ create table if not exists public.axle_types (
   code        text not null unique,
   name        text not null,
   axle_kinds  text[] not null,
-  -- head = รถหัวลาก/รถบรรทุก, trailer = หางพ่วง
+  -- head = รถหัวลาก/รถบรรทุก, trailer = หางพ่วง, bus = รถบัส
   category    text not null default 'head',
   -- รูปผังล้อที่ช่างใช้อ้างอิงตอนเลือกตำแหน่งล้อ
   image_url   text,
@@ -156,7 +156,7 @@ create table if not exists public.axle_types (
   is_active   boolean not null default true,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now(),
-  constraint axle_types_category_valid check (category in ('head', 'trailer')),
+  constraint axle_types_category_valid check (category in ('head', 'trailer', 'bus')),
   constraint axle_types_code_format check (
     code = upper(code) and code ~ '^[A-Z0-9_]{1,30}$'
   ),
@@ -186,8 +186,9 @@ create index if not exists company_axle_types_axle_idx
 create table if not exists public.vehicles (
   id              uuid primary key default gen_random_uuid(),
   company_id      uuid not null references public.companies(id) on delete cascade,
-  plate_no        text not null,                    -- ทะเบียนรถ
-  province        text not null,                    -- จังหวัด
+  plate_no        text,                             -- ทะเบียนรถ (ว่างได้เมื่อมีชื่อเรียก) — migration 017
+  nickname        text check (char_length(nickname) <= 100), -- ชื่อเรียกรถ (ซ้ำได้เมื่อมีทะเบียน)
+  province        text,                             -- จังหวัด (มาคู่กับทะเบียนเท่านั้น)
   brand           text,                             -- ยี่ห้อรถ
   model           text,                             -- รุ่นรถ
   axle_type       text not null
@@ -201,15 +202,28 @@ create table if not exists public.vehicles (
   -- สาขา/หน่วยงานที่รถสังกัด — null = ไม่ระบุสาขา (ใช้แยกกลุ่มในรายงาน)
   branch          text,
   note            text,
+  -- object path ของรูปรถใน bucket vehicle-images (private) — migration 019
+  image_path      text,
   is_active       boolean not null default true,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now(),
-  unique (company_id, plate_no, province)
+  unique (company_id, plate_no, province),
+  -- ต้องมีทะเบียนหรือชื่อเรียกอย่างน้อยหนึ่งอย่าง และจังหวัดมาคู่กับทะเบียนเท่านั้น — migration 017
+  constraint vehicles_identity_check check (
+    (plate_no is null or btrim(plate_no) <> '')
+    and (nickname is null or btrim(nickname) <> '')
+    and (plate_no is not null or nickname is not null)
+    and ((plate_no is null) = (province is null))
+  )
 );
 create index if not exists vehicles_company_branch_idx on public.vehicles(company_id, branch);
 create index if not exists vehicles_company_idx on public.vehicles(company_id);
 create index if not exists vehicles_axle_type_idx on public.vehicles(axle_type);
+create index if not exists vehicles_nickname_trgm on public.vehicles using gin (nickname gin_trgm_ops);
 create index if not exists vehicles_plate_trgm on public.vehicles using gin (plate_no gin_trgm_ops);
+-- รถที่ไม่มีทะเบียนต้องชื่อไม่ซ้ำกันในบริษัท — migration 017
+create unique index if not exists vehicles_nickname_only_unique
+  on public.vehicles (company_id, lower(btrim(nickname))) where plate_no is null;
 
 -- ------------------------------------------------------------
 -- tire_imports : ประวัติการนำเข้าซีรีย์ยางใหม่จากไฟล์ (1 แถว = 1 รอบ) — migration 014
@@ -571,6 +585,7 @@ with base as (
     t.position_code,
     v.id              as vehicle_id,
     v.plate_no,
+    v.nickname,
     v.province,
     v.current_mileage,
     -- ระยะวิ่งของรอบติดตั้งปัจจุบัน (วัดจริง)
@@ -667,7 +682,8 @@ select
   exists (
     select 1 from public.tire_events e
     where e.tire_id = r.id and e.event_type in ('mount', 'unmount')
-  ) as has_been_mounted
+  ) as has_been_mounted,
+  r.nickname
 from run r;
 
 -- ------------------------------------------------------------
@@ -711,7 +727,8 @@ select
   c.alert_change_count         as threshold,
   c.alert_change_days          as window_days,
   count(e.id)::integer         as change_count,
-  max(e.event_date)::date      as last_event_date
+  max(e.event_date)::date      as last_event_date,
+  v.nickname
 from public.vehicles v
 join public.companies c on c.id = v.company_id
 join public.tire_events e
@@ -900,3 +917,16 @@ create policy tire_images_public_read on storage.objects
 
 -- การอัปโหลด/ลบทำผ่าน server action ที่ใช้ service role เท่านั้น
 -- จึงไม่ต้องเปิด policy insert/update/delete ให้ผู้ใช้ทั่วไป
+
+-- ------------------------------------------------------------
+-- Storage: bucket สำหรับรูปรถ (private) — migration 019
+-- ------------------------------------------------------------
+-- รูปรถมักเห็นป้ายทะเบียน จึงไม่เปิดอ่านสาธารณะ แอปเปิดดูผ่าน signed URL อายุสั้น
+-- อ่าน/เขียน/ลบผ่าน service role เท่านั้น จึงไม่มี policy บน storage.objects สำหรับ bucket นี้
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('vehicle-images', 'vehicle-images', false, 3145728,
+        array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do update set
+  public = false,
+  file_size_limit = 3145728,
+  allowed_mime_types = array['image/jpeg', 'image/png', 'image/webp'];

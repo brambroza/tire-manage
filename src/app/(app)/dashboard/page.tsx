@@ -1,3 +1,4 @@
+import { vehicleLabel } from '@/lib/vehicle-display'
 import Link from 'next/link'
 import {
   AlertTriangle, ArrowRight, Ban, Check, CircleDot, Gauge, Package, Repeat, Truck,
@@ -50,7 +51,7 @@ interface RemovalEventRow {
     model_name: string | null
     size: string | null
   } | null
-  vehicles: { plate_no: string; province: string; axle_type: string } | null
+  vehicles: { nickname: string | null; plate_no: string | null; province: string | null; axle_type: string } | null
   removal_reasons: { name: string } | null
 }
 
@@ -108,7 +109,7 @@ export default async function DashboardPage({
       supabase
         .from('tire_events')
         .select('id, event_date, position_code, odometer, tread_mm, distance_km, reason_id, note, ' +
-          'tires(serial_no, brand_name, model_name, size), vehicles(plate_no, province, axle_type), ' +
+          'tires(serial_no, brand_name, model_name, size), vehicles(nickname, plate_no, province, axle_type), ' +
           'removal_reasons(name)')
         .eq('event_type', 'unmount'),
     )
@@ -172,7 +173,7 @@ export default async function DashboardPage({
       brandName: event.tires?.brand_name ?? null,
       modelName: event.tires?.model_name ?? null,
       size: event.tires?.size ?? null,
-      plateNo: event.vehicles?.plate_no ?? null,
+      plateNo: vehicleLabel(event.vehicles, '') || null,
       province: event.vehicles?.province ?? null,
       axleType: event.vehicles?.axle_type ?? null,
       positionCode: event.position_code,
@@ -194,7 +195,7 @@ export default async function DashboardPage({
     modelName: t.model_name,
     size: t.size,
     status: t.status,
-    plateNo: t.plate_no,
+    plateNo: vehicleLabel(t, '') || null,
     positionCode: t.position_code,
     lifetimeKm: t.lifetime_km,
   }))
@@ -368,7 +369,7 @@ export default async function DashboardPage({
                           </span>
                         </div>
                       </Td>
-                      <Td className={cn(TD_LG, 'text-lg font-bold text-ink-900')}>{t.plate_no ?? '-'}</Td>
+                      <Td className={cn(TD_LG, 'text-lg font-bold text-ink-900')}>{vehicleLabel(t)}</Td>
                       <Td className={cn(TD_LG, 'hidden md:table-cell')}>{positionLabel(t.position_code)}</Td>
                       <Td className={cn(TD_LG, 'text-right font-semibold', !isDanger && 'text-lg font-bold text-orange-700')}>
                         {formatKm(t.current_run_km)}

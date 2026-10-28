@@ -1,4 +1,5 @@
 import { requireSession } from '@/lib/auth'
+import { signVehiclePhotoUrls } from '@/lib/vehicle-photos'
 import { createClient } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/app-shell'
 import { ServiceWizard, type TireLite, type TireModelLite, type VehicleLite } from './service-wizard'
@@ -35,13 +36,15 @@ export default async function ServicePage({
   ] = await Promise.all([
     supabase
       .from('vehicles')
-      .select('id, plate_no, province, brand, model, axle_type, current_mileage')
+      // ใช้ * เพื่อให้หน้าไม่พังก่อนรัน migration 019 (ยังไม่มีคอลัมน์ image_path)
+      .select('*')
       .eq('is_active', true)
-      .order('plate_no'),
+      .order('plate_no', { nullsFirst: false })
+      .order('nickname'),
     supabase
       .from('tire_overview')
       .select('id, serial_no, brand_name, model_name, size, status, tread_mm, new_tread_mm, ' +
-        'lifetime_km, current_run_km, has_been_mounted, vehicle_id, position_code, plate_no, image_url')
+        'lifetime_km, current_run_km, has_been_mounted, vehicle_id, position_code, plate_no, nickname, image_url')
       .neq('status', 'scrapped')
       .order('serial_no')
       .limit(3000),
@@ -78,6 +81,21 @@ export default async function ServicePage({
     new_tread_mm: m.new_tread_mm,
   }))
 
+  const vehicleList = (vehicleData ?? []) as Vehicle[]
+  // ลิงก์รูปอายุสั้น — เซ็นเฉพาะรถที่ดึงผ่าน RLS ได้แล้ว
+  const photoUrls = await signVehiclePhotoUrls(vehicleList.map((v) => v.image_path))
+  const vehicles: VehicleLite[] = vehicleList.map((v) => ({
+    id: v.id,
+    plate_no: v.plate_no,
+    nickname: v.nickname,
+    province: v.province,
+    brand: v.brand,
+    model: v.model,
+    axle_type: v.axle_type,
+    current_mileage: v.current_mileage,
+    photo_url: v.image_path ? photoUrls.get(v.image_path) ?? null : null,
+  }))
+
   return (
     <>
       <PageHeader
@@ -85,7 +103,7 @@ export default async function ServicePage({
         subtitle=""
       />
       <ServiceWizard
-        vehicles={(vehicleData ?? []) as Pick<Vehicle, keyof VehicleLite>[] as VehicleLite[]}
+        vehicles={vehicles}
         tires={(tireData ?? []) as unknown as TireLite[]}
         reasons={reasonData ?? []}
         axleTypes={(axleTypeData ?? []) as AxleType[]}

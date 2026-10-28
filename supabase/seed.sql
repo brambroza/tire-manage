@@ -20,7 +20,10 @@ insert into public.axle_types (code, name, axle_kinds, category, image_url, sort
   ('10W',       'รถ 10 ล้อ (หน้าเดี่ยว หลังคู่ 2 เพลา)',        array['single', 'dual', 'dual'],           'head',    '/assets/images/10w.jpg',  3),
   ('12W',       'รถ 12 ล้อ (หน้าเดี่ยว 2 เพลา หลังคู่ 2 เพลา)', array['single', 'single', 'dual', 'dual'], 'head',    null,                      4),
   ('TRAILER_2', 'หางพ่วง 2 เพลา (8 ล้อ)',                       array['dual', 'dual'],                     'trailer', null,                      5),
-  ('TRAILER_3', 'หางพ่วง 3 เพลา (12 ล้อ)',                      array['dual', 'dual', 'dual'],             'trailer', null,                      6)
+  ('TRAILER_3', 'หางพ่วง 3 เพลา (12 ล้อ)',                      array['dual', 'dual', 'dual'],             'trailer', null,                      6),
+  ('BUS_6W',    'รถบัส 6 ล้อ ชั้นเดียว (หน้าเดี่ยว หลังคู่)',                 array['single', 'dual'],                   'bus',     null,                      7),
+  ('BUS_8W',    'รถบัส 8 ล้อ 2 ชั้น (หน้าเดี่ยว กลางคู่ หลังเดี่ยว)',          array['single', 'dual', 'single'],         'bus',     null,                      8),
+  ('BUS_10W',   'รถบัส 10 ล้อ 2 ชั้น ใหญ่พิเศษ (หน้าเดี่ยว กลางคู่ หลังคู่)', array['single', 'dual', 'dual'],           'bus',     null,                      9)
 on conflict (code) do nothing;
 
 -- ยี่ห้อยางกลาง ------------------------------------------------

@@ -25,6 +25,7 @@ const LINE = '#E3EDF9'
 /** แถวข้อมูลรถหนึ่งคันหลังแปลงค่าให้พร้อมแสดงผล (ใช้ร่วมกันทั้ง Excel และ PDF) */
 interface VehicleExportRow {
   plateNo: string
+  nickname: string
   province: string
   /** สาขา/หน่วยงานที่รถสังกัด (ว่าง = ไม่ระบุ) */
   branch: string
@@ -64,7 +65,8 @@ export function toVehicleExportRows(
   return vehicles.map((v) => {
     const layout = getLayout(v.axle_type, axleTypes)
     return {
-      plateNo: v.plate_no,
+      plateNo: v.plate_no ?? '',
+      nickname: v.nickname ?? '',
       province: v.province ?? '',
       branch: v.branch ?? '',
       brand: v.brand ?? '',
@@ -169,7 +171,7 @@ export function buildVehiclesExcelSheets(
   ]
 
   const headers = [
-    'ทะเบียนรถ', 'จังหวัด', 'สาขา', 'ยี่ห้อ', 'รุ่น', 'ประเภทเพลา', 'จำนวนตำแหน่ง',
+    'ทะเบียนรถ', 'ชื่อเรียกรถ', 'จังหวัด', 'สาขา', 'ยี่ห้อ', 'รุ่น', 'ประเภทเพลา', 'จำนวนตำแหน่ง',
     'ยางที่ติดตั้ง', 'เลขไมล์ล่าสุด (กม.)', 'อัปเดตไมล์ล่าสุด', 'เปลี่ยนยางบ่อย (ครั้ง)', 'สถานะ', 'หมายเหตุ',
   ]
   const detailData: SheetData = [
@@ -193,7 +195,8 @@ export function buildVehiclesExcelSheets(
       }
       const updatedAt = new Date(row.mileageUpdatedAt)
       return [
-        { ...base, value: row.plateNo, type: String, fontWeight: 'bold' },
+        { ...base, value: row.plateNo || '-', type: String, fontWeight: 'bold' },
+        { ...base, value: row.nickname || '-', type: String },
         { ...base, value: row.province || '-', type: String },
         { ...base, value: row.branch || BRANCH_NONE_LABEL, type: String },
         { ...base, value: row.brand || '-', type: String },
@@ -226,7 +229,7 @@ export function buildVehiclesExcelSheets(
       data: detailData,
       sheet: 'รายการรถ',
       // เลขไมล์ 8 หลักพร้อมคั่นหลัก (เช่น 12,345,678) ต้องการประมาณ 12 ตัวอักษร — กว้าง 18 พอ
-      columns: [16, 16, 20, 16, 16, 26, 14, 14, 18, 18, 18, 12, 34].map((width) => ({ width })),
+      columns: [16, 24, 16, 20, 16, 16, 26, 14, 14, 18, 18, 18, 12, 34].map((width) => ({ width })),
       stickyRowsCount: 1,
       showGridLines: false,
       orientation: 'landscape',
@@ -309,7 +312,7 @@ function createPdfPage(
     ? '<tr><td colspan="9" class="empty">ไม่พบข้อมูล</td></tr>'
     : rows.map((row) => `
       <tr>
-        <td><b>${escapeHtml(row.plateNo)}</b><br><span class="sub">${escapeHtml(row.province || '-')}</span></td>
+        <td>${row.nickname ? `<b>${escapeHtml(row.nickname)}</b><br>` : ''}<b>${escapeHtml(row.plateNo || '-')}</b><br><span class="sub">${escapeHtml(row.province || '-')}</span></td>
         <td>${escapeHtml(row.branch || BRANCH_NONE_LABEL)}</td>
         <td>${escapeHtml([row.brand, row.model].filter(Boolean).join(' ') || '-')}</td>
         <td>${escapeHtml(row.axleTypeName)}</td>

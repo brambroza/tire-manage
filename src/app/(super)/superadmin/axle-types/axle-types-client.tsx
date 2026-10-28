@@ -43,6 +43,13 @@ const KIND_LABEL: Record<AxleKind, string> = {
 const CATEGORY_LABEL: Record<AxleCategory, string> = {
   head: 'หัว',
   trailer: 'หาง',
+  bus: 'บัส',
+}
+
+const CATEGORY_TONE: Record<AxleCategory, 'slate' | 'amber' | 'sky'> = {
+  head: 'slate',
+  trailer: 'amber',
+  bus: 'sky',
 }
 
 /** CRUD ประเภทเพลา พร้อมตัวแก้ผังแบบเรียงเพลาหน้าไปหลัง */
@@ -207,7 +214,7 @@ export function AxleTypesClient({ axleTypes }: { axleTypes: AxleTypeRow[] }) {
                       <Td className="text-center text-ink-400">{type.sort_order}</Td>
                       <Td><Badge tone="brand">{type.code}</Badge></Td>
                       <Td>
-                        <Badge tone={type.category === 'trailer' ? 'amber' : 'slate'}>
+                        <Badge tone={CATEGORY_TONE[type.category]}>
                           {CATEGORY_LABEL[type.category]}
                         </Badge>
                       </Td>

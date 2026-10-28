@@ -1,9 +1,11 @@
 'use client'
 
+import { VehiclePhotoThumb, VehicleSearch } from '@/components/vehicle-search'
+import { vehicleLabel } from '@/lib/vehicle-display'
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  AlertCircle, ArrowLeft, Check, ChevronRight, Gauge, MapPin, Truck, X,
+  AlertCircle, ArrowLeft, Bus, Check, ChevronRight, Gauge, MapPin, Truck, X,
 } from 'lucide-react'
 import { Badge, Button, Field, Input, Select, Textarea } from '@/components/ui'
 import { Modal } from '@/components/ui/modal'
@@ -24,12 +26,16 @@ import type { AxleCategory, AxleType } from '@/lib/database.types'
 
 export interface VehicleLite {
   id: string
-  plate_no: string
-  province: string
+  /** null = รถไม่มีทะเบียน (ระบุด้วยชื่อเรียก) */
+  plate_no: string | null
+  nickname: string | null
+  province: string | null
   brand: string | null
   model: string | null
   axle_type: string
   current_mileage: number
+  /** signed URL ของรูปรถ (สร้างฝั่ง server) — null = ไม่มีรูป */
+  photo_url?: string | null
 }
 
 export interface TireLite {
@@ -49,6 +55,7 @@ export interface TireLite {
   vehicle_id: string | null
   position_code: string | null
   plate_no: string | null
+  nickname: string | null
   /** รูปยางจากแคตตาล็อก (ถ้ารุ่นนั้นมีรูป) */
   image_url: string | null
 }
@@ -167,7 +174,10 @@ function StockBadge({ tire }: { tire: TireLite }) {
     : <Badge tone="amber">เคยใช้ · วิ่งสะสม {formatKm(tire.lifetime_km)}</Badge>
 }
 
-const CATEGORY_LABEL: Record<AxleCategory, string> = { head: 'หัว', trailer: 'หาง' }
+const CATEGORY_LABEL: Record<AxleCategory, string> = { head: 'หัว', trailer: 'หาง', bus: 'บัส' }
+
+/** ลำดับปุ่มหมวดในขั้นเลือกประเภทรถ */
+const CATEGORY_ORDER: AxleCategory[] = ['head', 'trailer', 'bus']
 
 /** ตัวเลือกดอกยางในรายการ dropdown (มม.) */
 const TREAD_OPTIONS = Array.from({ length: 21 }, (_, i) => i)
@@ -280,8 +290,11 @@ export function ServiceWizard({
   const [vehicle, setVehicle] = React.useState<VehicleLite | null>(initialVehicle)
   /** true = ทะเบียนนี้ยังไม่มีในระบบ ต้องเลือกจังหวัดเพื่อสร้างรถใหม่ */
   const [isNewVehicle, setIsNewVehicle] = React.useState(false)
+  const [newNickname, setNewNickname] = React.useState('')
 
   const [category, setCategory] = React.useState<AxleCategory | null>(null)
+  /** ข้ามขั้นเลือกประเภทรถเพราะรถเดิมเป็นรถบัส — ปุ่มย้อนกลับจากเลขไมล์จะกลับไปหน้าเลือกรถ */
+  const [skippedTypeStep, setSkippedTypeStep] = React.useState(false)
   const [axleTypeCode, setAxleTypeCode] = React.useState<string | null>(
     initialVehicle?.axle_type ?? null,
   )
@@ -304,6 +317,10 @@ export function ServiceWizard({
   }, [toast])
 
   const plateNo = `${platePrefix.trim()}-${plateNumber.trim()}`
+  /** กำลังเพิ่มรถใหม่ด้วยชื่อเรียกอย่างเดียว (ไม่มีทะเบียน) */
+  const nameOnly = isNewVehicle && platePrefix.trim() === '' && plateNumber.trim() === ''
+  /** ป้ายชื่อรถที่กำลังทำงาน — รถเดิม / ทะเบียนที่คีย์ / ชื่อเรียกที่คีย์ */
+  const pendingLabel = vehicle ? vehicleLabel(vehicle) : nameOnly ? newNickname.trim() : plateNo
   const axleType = axleTypes.find((t) => t.code === axleTypeCode) ?? null
   const layout = getLayout(axleTypeCode, axleTypes)
 
@@ -478,7 +495,7 @@ export function ServiceWizard({
     // ยางใหม่ = ซีรีย์ต้องไม่เคยมีในระบบ ยกเว้นยางใหม่ที่นำเข้าไว้ในคลัง (ยังไม่เคยวิ่ง)
     if (d.mountKind === 'new' && candidate && !(isAvailableStock(candidate) && isFreshTire(candidate))) {
       return candidate.status === 'mounted'
-        ? `ซีรีย์ ${candidate.serial_no} ติดตั้งอยู่ที่ ${candidate.plate_no ?? 'รถคันอื่น'} — ต้องถอดออกก่อน`
+        ? `ซีรีย์ ${candidate.serial_no} ติดตั้งอยู่ที่ ${vehicleLabel(candidate, 'รถคันอื่น')} — ต้องถอดออกก่อน`
         : `ซีรีย์ ${candidate.serial_no} มีอยู่ในระบบแล้วและเคยใช้งาน — เลือก “ยางเก่า” แทน หรือตรวจซีรีย์อีกครั้ง`
     }
 
@@ -505,7 +522,7 @@ export function ServiceWizard({
 
     // ยางเก่า: ซ้ำได้เฉพาะกรณีซีรีย์นั้นยังติดตั้งอยู่ที่ล้อนี้อยู่แล้ว
     if (candidate.status === 'mounted' && candidate.id !== slotTireOf(code)?.id) {
-      return `ซีรีย์ ${candidate.serial_no} ติดตั้งอยู่ที่ ${candidate.plate_no ?? 'รถคันอื่น'} — ต้องถอดออกก่อน`
+      return `ซีรีย์ ${candidate.serial_no} ติดตั้งอยู่ที่ ${vehicleLabel(candidate, 'รถคันอื่น')} — ต้องถอดออกก่อน`
     }
     return null
   }
@@ -551,6 +568,47 @@ export function ServiceWizard({
 
   /* ------------------------------------------------------------- actions */
 
+  /**
+   * ชื่อประเภทรถของรถคันนั้น เช่น "บัส · รถบัส 8 ล้อ 2 ชั้น (...)" ใช้แสดงตอนค้นหา/เลือกรถ
+   * @param target รถที่ต้องการ
+   */
+  function describeVehicleType(target: Pick<VehicleLite, 'axle_type'>): string {
+    const type = axleTypes.find((t) => t.code === target.axle_type)
+    const typeLayout = getLayout(target.axle_type, axleTypes)
+    const name = type?.name ?? typeLayout.name
+    return [type ? CATEGORY_LABEL[type.category] : null, name, `${typeLayout.wheelCount} ล้อ`]
+      .filter(Boolean)
+      .join(' · ')
+  }
+
+  function chooseVehicle(selected: VehicleLite) {
+    setError(null)
+    const plate = selected.plate_no ?? ''
+    const separator = plate.indexOf('-')
+    setPlatePrefix(separator < 0 ? plate : plate.slice(0, separator))
+    setPlateNumber(separator < 0 ? '' : plate.slice(separator + 1))
+    setVehicle(selected)
+    setProvince(selected.province ?? PROVINCES[0])
+    setIsNewVehicle(false)
+    setNewNickname('')
+    setOdometer('')
+
+    // รถบัสมีแบบรถตายตัวอยู่แล้ว — ใช้แบบเดิม ข้ามขั้นเลือกประเภทไปกรอกเลขไมล์เลย
+    const currentType = axleTypes.find((t) => t.code === selected.axle_type)
+    if (currentType?.category === 'bus') {
+      setCategory('bus')
+      setAxleTypeCode(selected.axle_type)
+      setSkippedTypeStep(true)
+      setStep('odometer')
+      return
+    }
+
+    setSkippedTypeStep(false)
+    setCategory(null)
+    setAxleTypeCode(null)
+    setStep('category')
+  }
+
   /** ยืนยันทะเบียน — หาในระบบก่อน ถ้าไม่พบให้เตรียมสร้างรถใหม่ */
   function submitPlate() {
     setError(null)
@@ -564,29 +622,64 @@ export function ServiceWizard({
     }
 
     const key = plateNo.toLowerCase()
-    const found =
-      vehicles.find((v) => v.plate_no.toLowerCase() === key) ??
-      vehicles.find((v) => v.plate_no.replace(/[\s-]/g, '').toLowerCase() === key.replace(/-/g, '')) ??
-      null
+    const candidates = vehicles.filter((v) =>
+      v.plate_no?.replace(/[\s-]/g, '').toLowerCase() === key.replace(/-/g, ''))
+    if (candidates.length > 1) {
+      setError('พบทะเบียนนี้หลายจังหวัด กรุณาค้นหาและเลือกรถจากรายการด้านบน')
+      return
+    }
+    const found = candidates[0] ?? null
+    if (found) {
+      chooseVehicle(found)
+      return
+    }
 
     setVehicle(found)
     setIsNewVehicle(!found)
-    // ทะเบียนเดิมที่เคยทำก็เริ่มใหม่หมด — ไม่ดึงประเภทรถ/แบบรถ/เลขไมล์เดิมขึ้นมา
-    // (จังหวัดของรถเดิมยังใช้ต่อเพราะเป็นคีย์ผูกทะเบียน ไม่ได้แสดงบนหน้าจอ)
-    if (found) setProvince(found.province)
+    setSkippedTypeStep(false)
+    // รถใหม่เริ่มเลือกประเภทและเลขไมล์ใหม่ทุกครั้ง
     setOdometer('')
     setCategory(null)
     setAxleTypeCode(null)
     setStep('category')
   }
 
-  /** เลือกแบบรถแล้วผูกกับทะเบียน (สร้างรถใหม่ให้ถ้ายังไม่มีในระบบ) */
+  /** เพิ่มรถที่ไม่มีทะเบียนด้วยชื่อเรียก — ถ้ามีรถไม่มีทะเบียนชื่อเดียวกันอยู่แล้วให้เลือกคันนั้นแทน */
+  function submitNickname() {
+    setError(null)
+    const name = newNickname.trim()
+    if (name === '') {
+      setError('กรุณากรอกชื่อเรียกรถ')
+      return
+    }
+    const existing = vehicles.find((v) =>
+      !v.plate_no && (v.nickname ?? '').trim().toLowerCase() === name.toLowerCase())
+    if (existing) {
+      chooseVehicle(existing)
+      return
+    }
+
+    setPlatePrefix('')
+    setPlateNumber('')
+    setNewNickname(name)
+    setVehicle(null)
+    setIsNewVehicle(true)
+    setSkippedTypeStep(false)
+    setOdometer('')
+    setCategory(null)
+    setAxleTypeCode(null)
+    setStep('category')
+  }
+
+  /** เลือกแบบรถแล้วผูกกับทะเบียนหรือชื่อเรียก (สร้างรถใหม่ให้ถ้ายังไม่มีในระบบ) */
   async function selectAxleType(code: string) {
     setError(null)
     setSaving(true)
     const result = await ensureServiceVehicleAction({
-      plate_no: plateNo,
-      province,
+      vehicle_id: vehicle?.id,
+      plate_no: vehicle ? vehicle.plate_no : nameOnly ? null : plateNo,
+      nickname: isNewVehicle ? newNickname : undefined,
+      province: vehicle ? vehicle.province : nameOnly ? null : province,
       axle_type: code,
     })
     setSaving(false)
@@ -601,11 +694,14 @@ export function ServiceWizard({
     setVehicle({
       id: data.id,
       plate_no: data.plate_no,
+      nickname: data.nickname,
       province: data.province,
       brand: null,
       model: null,
       axle_type: data.axle_type,
       current_mileage: data.current_mileage,
+      // รถเดิมคงรูปไว้ · รถที่เพิ่งสร้างยังไม่มีรูป
+      photo_url: vehicle?.id === data.id ? vehicle.photo_url ?? null : null,
     })
     setIsNewVehicle(false)
     setStep('odometer')
@@ -639,6 +735,21 @@ export function ServiceWizard({
   function startWheels() {
     if (positions.length === 0) return
     setError(null)
+    // ล้อที่ระบบบันทึกว่ามียางติดอยู่ → ตั้งค่าถอดเป็นยางเส้นนั้นให้เลย (เฉพาะล้อที่ยังไม่ได้กรอก)
+    // ดอกยางเว้นว่างไว้ให้ช่างวัดจริงตอนถอด เพราะค่าที่บันทึกไว้เป็นของตอนใส่
+    setDrafts((prev) => {
+      const next = { ...prev }
+      for (const code of positions) {
+        if (next[code]) continue
+        const mounted = slotTireOf(code)
+        if (!mounted) continue
+        next[code] = {
+          ...EMPTY_DRAFT,
+          unPick: { modelId: '', stockTireId: mounted.id, serialNo: mounted.serial_no, treadMm: '' },
+        }
+      }
+      return next
+    })
     setActiveIndex(0)
     setStep('unmount')
   }
@@ -778,6 +889,7 @@ export function ServiceWizard({
     setPlatePrefix('')
     setPlateNumber('')
     setVehicle(null)
+    setNewNickname('')
     setIsNewVehicle(false)
     setCategory(null)
     setAxleTypeCode(null)
@@ -812,7 +924,7 @@ export function ServiceWizard({
       'mount-kind': 'unmount',
       mount: 'mount-kind',
     }
-    const target = back[step]
+    const target = step === 'odometer' && skippedTypeStep ? 'plate' : back[step]
     if (target) setStep(target)
   }
 
@@ -835,9 +947,11 @@ export function ServiceWizard({
           )}
           <div className="min-w-0 flex-1">
             <p className="flex items-center gap-2 text-base font-semibold text-ink-900">
-              <Truck className="size-5 shrink-0 text-brand-500" />
+              {vehicle?.photo_url
+                ? <VehiclePhotoThumb src={vehicle.photo_url} size="xs" />
+                : <Truck className="size-5 shrink-0 text-brand-500" />}
               <span className="truncate">
-                {vehicle?.plate_no ?? (platePrefix || plateNumber ? plateNo : 'ยังไม่ได้เลือกรถ')}
+                {pendingLabel || 'ยังไม่ได้เลือกรถ'}
               </span>
             </p>
             <p className="truncate text-sm text-ink-500">
@@ -893,7 +1007,14 @@ export function ServiceWizard({
 
       {/* --------------------------------------------- ขั้นที่ 1: ทะเบียน */}
       {step === 'plate' && (
-        <StepCard title="ใส่ทะเบียนรถ" description="">
+        <StepCard title="เลือกรถ" description="ค้นหาชื่อเรียกหรือทะเบียน · กรอกทะเบียนเพื่อเพิ่มรถใหม่ · รถไม่มีทะเบียนเพิ่มด้วยชื่อเรียก">
+          <VehicleSearch
+            vehicles={vehicles}
+            onSelect={chooseVehicle}
+            describe={describeVehicleType}
+            photoOf={(v) => v.photo_url ?? null}
+          />
+          <p className="text-sm text-ink-500">หรือกรอกทะเบียนรถ</p>
           <div className="flex items-center gap-2">
             <Input
               ref={platePrefixRef}
@@ -932,6 +1053,16 @@ export function ServiceWizard({
           </div>
 
           <PrimaryButton onClick={submitPlate}>ตกลง</PrimaryButton>
+
+          <div className="space-y-2 rounded-xl border border-dashed border-line p-3">
+            <p className="text-sm text-ink-500">รถไม่มีทะเบียน? กรอกชื่อเรียกแทน (ต้องไม่ซ้ำกับรถไม่มีทะเบียนคันอื่น)</p>
+            <div className="flex gap-2">
+              <Input aria-label="ชื่อเรียกรถที่ไม่มีทะเบียน" value={newNickname}
+                onChange={(event) => setNewNickname(event.target.value)} maxLength={100}
+                placeholder="เช่น 32-002-BFn" className="flex-1" />
+              <Button type="button" variant="secondary" onClick={submitNickname}>เพิ่มด้วยชื่อเรียก</Button>
+            </div>
+          </div>
         </StepCard>
       )}
 
@@ -941,11 +1072,29 @@ export function ServiceWizard({
           title="เลือกประเภทรถ"
           description={
             isNewVehicle
-              ? `ทะเบียน ${plateNo} ยังไม่มีในระบบ — ระบบจะสร้างรถคันนี้ให้`
-              : `ทะเบียน ${plateNo}`
+              ? nameOnly
+                ? `ชื่อเรียก ${newNickname.trim()} ยังไม่มีในระบบ — ระบบจะสร้างรถคันนี้ให้ (ไม่มีทะเบียน)`
+                : `ทะเบียน ${plateNo} ยังไม่มีในระบบ — ระบบจะสร้างรถคันนี้ให้`
+              : vehicleLabel(vehicle)
           }
         >
-          {isNewVehicle && (
+          {vehicle && !isNewVehicle && (
+            <div className="flex items-center gap-3 rounded-2xl border border-line bg-white p-3">
+              <VehiclePhotoThumb src={vehicle.photo_url} />
+              <div className="min-w-0">
+                <p className="text-xs text-ink-400">ประเภทรถที่บันทึกไว้</p>
+                <p className="text-[15px] font-medium text-ink-900">{describeVehicleType(vehicle)}</p>
+              </div>
+            </div>
+          )}
+          {isNewVehicle && !nameOnly && (
+            <Field label="ชื่อเรียกรถ" hint="ไม่บังคับ · ใช้ค้นหารถครั้งต่อไปได้">
+              <Input aria-label="ชื่อเรียกรถ" value={newNickname}
+                onChange={(event) => setNewNickname(event.target.value)} maxLength={100}
+                placeholder="เช่น 32-002-BFn" />
+            </Field>
+          )}
+          {isNewVehicle && !nameOnly && (
             <Field label="จังหวัดของทะเบียน" required>
               <Select value={province} onChange={(e) => setProvince(e.target.value)}>
                 {PROVINCES.map((name) => (
@@ -955,8 +1104,8 @@ export function ServiceWizard({
             </Field>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
-            {(['head', 'trailer'] as AxleCategory[]).map((value) => (
+          <div className="grid grid-cols-3 gap-3">
+            {CATEGORY_ORDER.map((value) => (
               <button
                 key={value}
                 type="button"
@@ -968,7 +1117,7 @@ export function ServiceWizard({
                     : 'border-line bg-white text-ink-800 hover:border-brand-300 hover:bg-brand-50',
                 )}
               >
-                <Truck className="size-7" />
+                {value === 'bus' ? <Bus className="size-7" /> : <Truck className="size-7" />}
                 {CATEGORY_LABEL[value]}
               </button>
             ))}
@@ -1034,7 +1183,7 @@ export function ServiceWizard({
 
       {/* -------------------------------------------- ขั้นที่ 4: เลขไมล์ */}
       {step === 'odometer' && (
-        <StepCard title="ใส่เลขไมล์" description={`เลขไมล์ปัจจุบันของ ${vehicle?.plate_no ?? plateNo}`}>
+        <StepCard title="ใส่เลขไมล์" description={`เลขไมล์ปัจจุบันของ ${pendingLabel}`}>
           <Field
             label="เลขไมล์ (กม.)"
             required
@@ -1123,6 +1272,12 @@ export function ServiceWizard({
             withTread
             treadLabel="ดอกยางเหลือ (มม.)"
             serialError={unmountBlocked ?? undefined}
+            knownTire={slotTireOf(position)}
+            treadHint={
+              unPick.stockTireId && unPick.stockTireId === slotTireOf(position)?.id
+                ? `วัดดอกยางตอนถอด${slotTireOf(position)?.tread_mm != null ? ` · บันทึกครั้งก่อน ${slotTireOf(position)?.tread_mm} มม.` : ''}`
+                : undefined
+            }
           />
 
           <Field label="สาเหตุ" required>
@@ -1198,7 +1353,7 @@ export function ServiceWizard({
             tires={tires}
             serialError={mountBlocked ?? undefined}
             mountedText={(tire) =>
-              `ติดอยู่ที่ ${tire.plate_no ?? 'รถคันอื่น'} ${positionLabel(tire.position_code, null, axleTypes)} — ต้องถอดก่อน`
+              `ติดอยู่ที่ ${vehicleLabel(tire, 'รถคันอื่น')} ${positionLabel(tire.position_code, null, axleTypes)} — ต้องถอดก่อน`
             }
           />
 
@@ -1257,7 +1412,7 @@ export function ServiceWizard({
       {isNewVehicle && step === 'category' && (
         <p className="mt-3 flex items-center justify-center gap-1.5 text-xs text-ink-400">
           <MapPin className="size-3.5" />
-          รถใหม่จะถูกบันทึกเข้าระบบด้วยทะเบียนและจังหวัดที่เลือก
+          {nameOnly ? 'รถใหม่จะถูกบันทึกเข้าระบบด้วยชื่อเรียก (ไม่มีทะเบียน) แอดมินเพิ่มทะเบียนภายหลังได้' : 'รถใหม่จะถูกบันทึกเข้าระบบด้วยทะเบียนและจังหวัดที่เลือก'}
         </p>
       )}
 
@@ -1266,7 +1421,7 @@ export function ServiceWizard({
         open={confirmOpen}
         onClose={() => { if (!saving) setConfirmOpen(false) }}
         title="ยืนยันการบันทึก"
-        description={`${vehicle?.plate_no ?? plateNo} · เลขไมล์ ${formatKm(Number(odometer) || 0)}`}
+        description={`${pendingLabel} · เลขไมล์ ${formatKm(Number(odometer) || 0)}`}
         footer={
           <>
             <button
@@ -1620,9 +1775,18 @@ function TirePickFields({
   stockTires,
   mountedText,
   stockOnlyUntilSearch,
+  knownTire,
+  treadHint,
 }: {
   pick: TirePick
   onChange: (pick: TirePick) => void
+  /**
+   * ยางที่ระบบบันทึกว่าติดอยู่ล้อนี้ — ใช้แสดงชื่อเมื่อถูกตั้งเป็นค่าเริ่มต้นของการถอด
+   * (ไม่อยู่ใน options เพราะไม่ใช่ยางว่างในคลัง)
+   */
+  knownTire?: TireLite | null
+  /** คำแนะนำใต้ช่องดอกยาง */
+  treadHint?: string
   /** ส่งต่อให้ TireAutocomplete — ยังไม่ค้นหาโชว์เฉพาะยางในคลัง */
   stockOnlyUntilSearch?: boolean
   /** ยางที่เลือกได้ — แคตตาล็อกของบริษัทนี้ หรือยางว่างในคลัง */
@@ -1650,8 +1814,11 @@ function TirePickFields({
 
   /** ยางในคลังที่เลือกไว้ (อาจหยิบผ่านช่องซีรีย์ จึงอาจไม่อยู่ใน options ของช่องเลือกยาง) */
   const stockPicked = pick.stockTireId
-    ? stockTires?.find((t) => t.id === pick.stockTireId) ?? null
+    ? stockTires?.find((t) => t.id === pick.stockTireId) ??
+      (knownTire?.id === pick.stockTireId ? knownTire : null)
     : null
+  /** ค่าเริ่มต้นมาจากยางที่บันทึกว่าติดอยู่ล้อนี้ */
+  const fromMounted = Boolean(knownTire) && pick.stockTireId === knownTire?.id
 
   /** หยิบยางจากคลัง — เติมซีเรียล ดอกยาง และรุ่นให้เหมือนเลือกจากช่องเลือกยาง */
   function pickStock(tire: TireLite) {
@@ -1688,7 +1855,9 @@ function TirePickFields({
         required
         error={serialError}
         hint={
-          serialLocked
+          fromMounted
+            ? 'ยางที่บันทึกว่าติดอยู่ล้อนี้ — ถ้ายางจริงไม่ใช่เส้นนี้ ลบที่ช่องเลือกยางแล้วเลือกใหม่'
+            : serialLocked
             ? 'ซีเรียลของยางเส้นที่เลือกจากคลัง'
             : stockTires
               ? 'พิมพ์อย่างน้อย 2 ตัวเพื่อค้นซีรีย์ในคลัง — ถ้าเป็นยางที่ยังไม่มีในระบบ พิมพ์ต่อได้เลย (ระบบแปลงเป็นตัวพิมพ์ใหญ่ให้)'
@@ -1720,7 +1889,7 @@ function TirePickFields({
       </Field>
 
       {withTread && (
-        <Field label={treadLabel} required>
+        <Field label={treadLabel} required hint={treadHint}>
           <Select value={pick.treadMm} onChange={(e) => set('treadMm', e.target.value)}>
             <option value="">— เลือกดอกยาง —</option>
             {TREAD_OPTIONS.map((mm) => (
@@ -2049,7 +2218,7 @@ function SerialAutocomplete({
                     <span className="block truncate text-sm text-rose-600">
                       {mountedText
                         ? mountedText(tire)
-                        : `ติดอยู่ที่ ${tire.plate_no ?? 'รถคันอื่น'} — ต้องถอดก่อน`}
+                        : `ติดอยู่ที่ ${vehicleLabel(tire, 'รถคันอื่น')} — ต้องถอดก่อน`}
                     </span>
                   )}
                 </span>

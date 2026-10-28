@@ -1,8 +1,10 @@
+import { vehicleSearchFilter } from '@/lib/vehicle-display'
 import { requireSession } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { Card, CardHeader } from '@/components/ui'
 import { VehiclesClient, type VehicleRow } from '@/app/(app)/vehicles/vehicles-client'
 import { BRANCH_FILTER_NONE } from '@/app/(app)/vehicles/branch-filter'
+import { signVehiclePhotoUrls } from '@/lib/vehicle-photos'
 import type { AxleType, Vehicle } from '@/lib/database.types'
 
 export const metadata = { title: 'จัดการรถของลูกค้า · Dream Tire Admin' }
@@ -20,12 +22,9 @@ export default async function CompanyVehiclesPage({
   const { q, branch } = await searchParams
   const supabase = await createClient()
 
-  let query = supabase.from('vehicles').select('*').eq('company_id', id).order('plate_no')
+  let query = supabase.from('vehicles').select('*').eq('company_id', id).order('plate_no', { nullsFirst: false }).order('nickname')
   if (q?.trim()) {
-    const term = `%${q.trim()}%`
-    query = query.or(
-      `plate_no.ilike.${term},brand.ilike.${term},model.ilike.${term},province.ilike.${term}`,
-    )
+    query = query.or(vehicleSearchFilter(q))
   }
   if (branch === BRANCH_FILTER_NONE) query = query.is('branch', null)
   else if (branch?.trim()) query = query.eq('branch', branch.trim())
@@ -49,9 +48,14 @@ export default async function CompanyVehiclesPage({
     mountedCount.set(t.vehicle_id, (mountedCount.get(t.vehicle_id) ?? 0) + 1)
   }
 
-  const vehicles: VehicleRow[] = ((vehicleData ?? []) as Vehicle[]).map((v) => ({
+  const vehicleList = (vehicleData ?? []) as Vehicle[]
+  // ลิงก์รูปอายุสั้น — ดึงรถผ่าน RLS แล้วจึงเซ็นเฉพาะรูปของรถที่ผู้ใช้เห็นได้
+  const photoUrls = await signVehiclePhotoUrls(vehicleList.map((v) => v.image_path))
+
+  const vehicles: VehicleRow[] = vehicleList.map((v) => ({
     ...v,
     mounted_count: mountedCount.get(v.id) ?? 0,
+    photo_url: v.image_path ? photoUrls.get(v.image_path) ?? null : null,
   }))
 
   return (

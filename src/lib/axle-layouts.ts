@@ -93,6 +93,9 @@ export const DEFAULT_AXLE_TYPES: AxleTypeLayoutSource[] = [
   { code: '12W', name: 'รถ 12 ล้อ (หน้าเดี่ยว 2 เพลา หลังคู่ 2 เพลา)', axle_kinds: ['single', 'single', 'dual', 'dual'] },
   { code: 'TRAILER_2', name: 'หางพ่วง 2 เพลา (8 ล้อ)', axle_kinds: ['dual', 'dual'] },
   { code: 'TRAILER_3', name: 'หางพ่วง 3 เพลา (12 ล้อ)', axle_kinds: ['dual', 'dual', 'dual'] },
+  { code: 'BUS_6W', name: 'รถบัส 6 ล้อ ชั้นเดียว (หน้าเดี่ยว หลังคู่)', axle_kinds: ['single', 'dual'] },
+  { code: 'BUS_8W', name: 'รถบัส 8 ล้อ 2 ชั้น (หน้าเดี่ยว กลางคู่ หลังเดี่ยว)', axle_kinds: ['single', 'dual', 'single'] },
+  { code: 'BUS_10W', name: 'รถบัส 10 ล้อ 2 ชั้น ใหญ่พิเศษ (หน้าเดี่ยว กลางคู่ หลังคู่)', axle_kinds: ['single', 'dual', 'dual'] },
 ]
 
 export const AXLE_LAYOUTS: Record<string, AxleLayout> = Object.fromEntries(

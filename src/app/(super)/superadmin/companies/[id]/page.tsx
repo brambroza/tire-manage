@@ -50,7 +50,7 @@ export default async function CompanyOverviewPage({
     supabase
       .from('tire_events')
       .select('id, event_type, event_date, position_code, distance_km, ' +
-        'tires(serial_no), vehicles(plate_no, axle_type), removal_reasons(name), profiles(full_name)')
+        'tires(serial_no), vehicles(nickname, plate_no, axle_type), removal_reasons(name), profiles(full_name)')
       .eq('company_id', id)
       .order('event_date', { ascending: false })
       .order('created_at', { ascending: false })

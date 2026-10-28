@@ -1,3 +1,4 @@
+import { vehicleLabel } from '@/lib/vehicle-display'
 import { positionLabel } from '@/lib/axle-layouts'
 import { tireBrandModelLabel, tireSizeLabel } from '@/lib/tire-display'
 import {
@@ -91,7 +92,7 @@ export function toTireExportRows(
       : removal?.mounted_at
         ? diffDays(removal.mounted_at, removal.event_date)
         : null
-    const plateNo = mounted ? (t.plate_no ?? '') : (removal?.plate_no ?? '')
+    const plateNo = mounted ? vehicleLabel(t, '') : vehicleLabel(removal, '')
     const position = mounted
       ? positionLabel(t.position_code)
       : removal?.position_code
@@ -101,7 +102,7 @@ export function toTireExportRows(
     const locationLabel = mounted
       ? [plateNo, position].filter(Boolean).join(' · ')
       : removal
-        ? `${TIRE_STOCK_LOCATION[displayStatus]} · ถอดจาก ${removal.plate_no ?? 'รถที่ถูกลบแล้ว'} ${formatThaiDate(removal.event_date)}`
+        ? `${TIRE_STOCK_LOCATION[displayStatus]} · ถอดจาก ${vehicleLabel(removal, 'รถที่ถูกลบแล้ว')} ${formatThaiDate(removal.event_date)}`
         : TIRE_STOCK_LOCATION[displayStatus]
     const treadAlert = t.tread_mm !== null && t.tread_mm <= t.alert_tread_mm
     const runAlert = mounted && t.current_run_km >= t.alert_km

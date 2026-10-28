@@ -1,9 +1,11 @@
+import { vehicleSearchFilter } from '@/lib/vehicle-display'
 import { requireSession } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { getVehicleChangeAlerts } from '@/lib/notifications'
 import { PageHeader } from '@/components/app-shell'
 import { VehiclesClient, type VehicleRow } from './vehicles-client'
 import { BRANCH_FILTER_NONE } from './branch-filter'
+import { signVehiclePhotoUrls } from '@/lib/vehicle-photos'
 import type { AxleType, Vehicle } from '@/lib/database.types'
 
 export const metadata = { title: 'จัดการรถ · Dream Tire' }
@@ -18,12 +20,9 @@ export default async function VehiclesPage({
   const { q, branch } = await searchParams
   const supabase = await createClient()
 
-  let query = supabase.from('vehicles').select('*').order('plate_no')
+  let query = supabase.from('vehicles').select('*').order('plate_no', { nullsFirst: false }).order('nickname')
   if (q?.trim()) {
-    const term = `%${q.trim()}%`
-    query = query.or(
-      `plate_no.ilike.${term},brand.ilike.${term},model.ilike.${term},province.ilike.${term}`,
-    )
+    query = query.or(vehicleSearchFilter(q))
   }
   if (branch === BRANCH_FILTER_NONE) query = query.is('branch', null)
   else if (branch?.trim()) query = query.eq('branch', branch.trim())
@@ -46,10 +45,15 @@ export default async function VehiclesPage({
   // รถเปลี่ยนยางบ่อย: จำนวนครั้งต่อคัน (เฉพาะคันที่ถึงเกณฑ์)
   const changeCountByVehicle = new Map(changeAlerts.map((a) => [a.vehicleId, a.changeCount]))
 
-  const vehicles: VehicleRow[] = ((vehicleData ?? []) as Vehicle[]).map((v) => ({
+  const vehicleList = (vehicleData ?? []) as Vehicle[]
+  // ลิงก์รูปอายุสั้น — ดึงรถผ่าน RLS แล้วจึงเซ็นเฉพาะรูปของรถที่ผู้ใช้เห็นได้
+  const photoUrls = await signVehiclePhotoUrls(vehicleList.map((v) => v.image_path))
+
+  const vehicles: VehicleRow[] = vehicleList.map((v) => ({
     ...v,
     mounted_count: mountedCount.get(v.id) ?? 0,
     frequent_change_count: changeCountByVehicle.get(v.id) ?? null,
+    photo_url: v.image_path ? photoUrls.get(v.image_path) ?? null : null,
   }))
 
   return (

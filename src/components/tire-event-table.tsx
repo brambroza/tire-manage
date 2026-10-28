@@ -8,6 +8,7 @@
  * ใช้ร่วมกันระหว่างหน้ารายละเอียดฝั่งลูกค้าและ modal ประวัติฝั่ง super admin
  */
 
+import { vehicleLabel } from '@/lib/vehicle-display'
 import { Badge, EmptyState, Table, TableWrap, Td, Th } from '@/components/ui'
 import { positionLabel, type AxleTypeLayoutSource } from '@/lib/axle-layouts'
 import { formatKm, formatThaiDate } from '@/lib/utils'
@@ -77,7 +78,7 @@ export function TireEventTable({
               <Td className="whitespace-nowrap">{formatThaiDate(e.event_date)}</Td>
               <Td><EventBadge type={e.event_type} /></Td>
               <Td>
-                {e.vehicles?.plate_no ?? '-'}
+                {vehicleLabel(e.vehicles)}
                 <p className="text-xs text-ink-400">
                   {positionLabel(e.position_code, e.vehicles?.axle_type, axleTypes)}
                 </p>

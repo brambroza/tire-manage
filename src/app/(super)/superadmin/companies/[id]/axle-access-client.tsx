@@ -21,9 +21,10 @@ export interface AccessAxleType {
 const CATEGORY_LABEL: Record<AxleCategory, string> = {
   head: 'รถหัวลาก / รถบรรทุก',
   trailer: 'หางพ่วง',
+  bus: 'รถบัส',
 }
 
-const CATEGORY_ORDER: AxleCategory[] = ['head', 'trailer']
+const CATEGORY_ORDER: AxleCategory[] = ['head', 'trailer', 'bus']
 
 /**
  * สรุปผังล้อเป็นข้อความสั้น เช่น "3 เพลา · 10 ล้อ"

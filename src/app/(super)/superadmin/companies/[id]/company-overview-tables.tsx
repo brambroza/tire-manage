@@ -1,5 +1,6 @@
 'use client'
 
+import { vehicleLabel } from '@/lib/vehicle-display'
 import { Badge, Table, TableWrap, Td, Th } from '@/components/ui'
 import { Pagination, usePagination } from '@/components/ui/pagination'
 import { TireSpec } from '@/components/tire-spec'
@@ -14,7 +15,7 @@ export interface EventRow {
   position_code: string | null
   distance_km: number | null
   tires: { serial_no: string } | null
-  vehicles: { plate_no: string; axle_type: string } | null
+  vehicles: { nickname: string | null; plate_no: string | null; axle_type: string } | null
   removal_reasons: { name: string } | null
   profiles: { full_name: string } | null
 }
@@ -48,7 +49,7 @@ export function RecentEventsTable({ events }: { events: EventRow[] }) {
               </Td>
               <Td className="font-medium text-ink-900">{e.tires?.serial_no ?? '-'}</Td>
               <Td>
-                {e.vehicles?.plate_no ?? '-'}
+                {vehicleLabel(e.vehicles)}
                 <p className="text-xs text-ink-400">
                   {positionLabel(e.position_code, e.vehicles?.axle_type)}
                 </p>
@@ -95,7 +96,7 @@ export function TopTiresTable({ tires }: { tires: TireOverview[] }) {
               <Td><Badge tone={TIRE_STATUS_TONE[t.status]}>{TIRE_STATUS_LABEL[t.status]}</Badge></Td>
               <Td>
                 {t.status === 'mounted'
-                  ? `${t.plate_no} · ${positionLabel(t.position_code)}`
+                  ? `${vehicleLabel(t)} · ${positionLabel(t.position_code)}`
                   : 'คลังสินค้า'}
               </Td>
               <Td>{t.tread_mm !== null ? `${t.tread_mm} มม.` : '-'}</Td>

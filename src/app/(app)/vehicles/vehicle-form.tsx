@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertCircle } from 'lucide-react'
+import { AlertCircle, ImagePlus, Trash2, Truck } from 'lucide-react'
 import { Modal } from '@/components/ui/modal'
 import { Button, Field, Input, Select, Textarea } from '@/components/ui'
 import { getLayout } from '@/lib/axle-layouts'
@@ -11,7 +11,13 @@ import {
   ODOMETER_HINT, ODOMETER_MAX, PLATE_NUMBER_MAX, PLATE_PREFIX_MAX,
   formatNumber, formatThaiDate, sanitizePlateNumber, sanitizePlatePrefix,
 } from '@/lib/utils'
-import { createVehicle, getObservedMonthlyKm, updateVehicle, type VehicleInput } from './actions'
+import { vehicleLabel } from '@/lib/vehicle-display'
+import { VEHICLE_IDENTITY_MESSAGE } from '@/lib/vehicle-schema'
+import { resizePhoto } from '@/lib/resize-photo'
+import {
+  createVehicle, getObservedMonthlyKm, removeVehiclePhoto, updateVehicle, uploadVehiclePhoto,
+  type VehicleInput,
+} from './actions'
 import type { AxleType, Vehicle } from '@/lib/database.types'
 
 /** ค่าเฉลี่ยที่คำนวณได้จากประวัติถอด-ใส่ยาง ใช้แนะนำตอนกรอกฟอร์ม */
@@ -19,6 +25,7 @@ type ObservedAverage = { kmPerMonth: number; sampleEvents: number; lastDate: str
 
 const EMPTY: VehicleInput = {
   plate_no: '',
+  nickname: '',
   province: 'กรุงเทพมหานคร',
   brand: '',
   model: '',
@@ -58,16 +65,20 @@ export function VehicleFormModal({
   companyId,
   axleTypes,
   branches = [],
+  onPhotoError,
 }: {
   open: boolean
   onClose: () => void
-  vehicle?: Vehicle | null
+  /** photo_url = signed URL ของรูปปัจจุบัน (สร้างฝั่ง server) */
+  vehicle?: (Vehicle & { photo_url?: string | null }) | null
   /** ระบุเมื่อ super admin เพิ่มรถแทนลูกค้า */
   companyId?: string
   /** ประเภทเพลาจาก Supabase */
   axleTypes: AxleType[]
   /** รายชื่อสาขาของบริษัท (ตั้งที่หน้าข้อมูลบริษัท) */
   branches?: string[]
+  /** แจ้งเมื่อบันทึกรถแล้วแต่รูปบันทึกไม่สำเร็จ (modal ปิดไปแล้ว) */
+  onPhotoError?: (message: string) => void
 }) {
   const router = useRouter()
   const [form, setForm] = React.useState<VehicleInput>(EMPTY)
@@ -86,6 +97,13 @@ export function VehicleFormModal({
   // ค่าเฉลี่ยที่คำนวณได้จากประวัติถอด-ใส่ยาง ใช้แนะนำเท่านั้น ไม่เติมให้อัตโนมัติ
   const [observed, setObserved] = React.useState<ObservedAverage | null>(null)
 
+  // รูปรถ: ไฟล์ใหม่ที่ย่อแล้ว (รออัปโหลดตอนกดบันทึก) และสถานะขอลบรูปเดิม
+  const [photoFile, setPhotoFile] = React.useState<File | null>(null)
+  const [photoPreview, setPhotoPreview] = React.useState<string | null>(null)
+  const [removePhoto, setRemovePhoto] = React.useState(false)
+  const [photoBusy, setPhotoBusy] = React.useState(false)
+  const photoInputRef = React.useRef<HTMLInputElement>(null)
+
   // รีเซ็ตค่าในฟอร์มเมื่อเปิด modal ใหม่ (ปรับ state ระหว่าง render ตามแนวทางของ React)
   const formKey = open ? vehicle?.id ?? 'new' : null
   const [activeKey, setActiveKey] = React.useState<string | null>(null)
@@ -93,12 +111,13 @@ export function VehicleFormModal({
     setActiveKey(formKey)
     setError(null)
     setFieldErrors({})
-    setPlate(vehicle ? splitPlate(vehicle.plate_no) : ['', ''])
+    setPlate(vehicle ? splitPlate(vehicle.plate_no ?? '') : ['', ''])
     setForm(
       vehicle
         ? {
-            plate_no: vehicle.plate_no,
-            province: vehicle.province,
+            plate_no: vehicle.plate_no ?? '',
+            nickname: vehicle.nickname ?? '',
+            province: vehicle.province ?? EMPTY.province,
             brand: vehicle.brand ?? '',
             model: vehicle.model ?? '',
             axle_type: vehicle.axle_type,
@@ -110,7 +129,16 @@ export function VehicleFormModal({
         : { ...EMPTY, axle_type: defaultAxleType },
     )
     setObserved(null)
+    setPhotoFile(null)
+    setPhotoPreview(null)
+    setRemovePhoto(false)
   }
+
+  // คืนหน่วยความจำของ preview เมื่อเปลี่ยนรูปหรือปิดฟอร์ม
+  React.useEffect(() => {
+    if (!photoPreview) return
+    return () => URL.revokeObjectURL(photoPreview)
+  }, [photoPreview])
 
   const editingVehicleId = open ? vehicle?.id ?? null : null
   React.useEffect(() => {
@@ -150,27 +178,99 @@ export function VehicleFormModal({
     set('plate_no', joinPlate(next[0], next[1]))
   }
 
+  /**
+   * ย่อรูปที่เลือกแล้วแสดงตัวอย่าง — ยังไม่อัปโหลดจนกว่าจะกดบันทึก
+   * @param e เหตุการณ์เลือกไฟล์
+   */
+  async function handlePickPhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const picked = e.target.files?.[0]
+    if (photoInputRef.current) photoInputRef.current.value = ''
+    if (!picked) return
+    setError(null)
+    setPhotoBusy(true)
+    try {
+      const resized = await resizePhoto(picked)
+      setPhotoFile(resized)
+      setPhotoPreview(URL.createObjectURL(resized))
+      setRemovePhoto(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'อ่านไฟล์รูปไม่สำเร็จ')
+    } finally {
+      setPhotoBusy(false)
+    }
+  }
+
+  /** เอารูปออก: ล้างรูปใหม่ที่เพิ่งเลือก หรือทำเครื่องหมายลบรูปเดิมตอนบันทึก */
+  function handleClearPhoto() {
+    if (photoFile) {
+      setPhotoFile(null)
+      setPhotoPreview(null)
+      return
+    }
+    setRemovePhoto(true)
+  }
+
+  /**
+   * บันทึกรูปหลังบันทึกข้อมูลรถสำเร็จ
+   * @param vehicleId รหัสรถที่เพิ่งบันทึก
+   * @returns ข้อความผิดพลาด หรือ null เมื่อสำเร็จ/ไม่มีอะไรเปลี่ยน
+   */
+  async function savePhoto(vehicleId: string): Promise<string | null> {
+    if (photoFile) {
+      const formData = new FormData()
+      formData.append('file', photoFile)
+      const result = await uploadVehiclePhoto(vehicleId, formData)
+      return result.ok ? null : result.error
+    }
+    if (removePhoto && vehicle?.image_path) {
+      const result = await removeVehiclePhoto(vehicleId)
+      return result.ok ? null : result.error
+    }
+    return null
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setLoading(true)
     setError(null)
     setFieldErrors({})
+
+    // ตรวจฝั่ง client ก่อน: ต้องมีทะเบียนหรือชื่อเรียกอย่างน้อยหนึ่งอย่าง
+    if (!hasPlate && !(form.nickname ?? '').trim()) {
+      setError(VEHICLE_IDENTITY_MESSAGE)
+      setFieldErrors({ plate_no: VEHICLE_IDENTITY_MESSAGE, nickname: VEHICLE_IDENTITY_MESSAGE })
+      return
+    }
+
+    setLoading(true)
 
     const result = vehicle
       ? await updateVehicle(vehicle.id, form)
       : await createVehicle(form, companyId)
 
-    setLoading(false)
     if (!result.ok) {
+      setLoading(false)
       setError(result.error)
       setFieldErrors(result.fieldErrors ?? {})
       return
     }
 
+    // ข้อมูลรถบันทึกแล้ว — รูปแยกบันทึกทีหลัง ถ้ารูปพังไม่ย้อนข้อมูลรถ แต่แจ้งให้ลองเพิ่มรูปใหม่
+    const vehicleId = vehicle ? vehicle.id : (result.data as { id: string }).id
+    const photoError = await savePhoto(vehicleId)
+    setLoading(false)
     onClose()
+    if (photoError) onPhotoError?.(`บันทึกข้อมูลรถแล้ว แต่บันทึกรูปไม่สำเร็จ: ${photoError}`)
     router.refresh()
   }
 
+  /** รูปที่แสดงในฟอร์ม: รูปใหม่ที่เลือก > รูปเดิม (ถ้าไม่ได้ขอลบ) */
+  const shownPhoto = photoPreview ?? (removePhoto ? null : vehicle?.photo_url ?? null)
+  const hasStoredPhoto = Boolean(vehicle?.image_path) && !removePhoto
+
+  /** กรอกทะเบียนอย่างน้อยหนึ่งช่อง — จังหวัดแสดงและบังคับเฉพาะเมื่อมีทะเบียน */
+  const hasPlate = plate[0].trim() !== '' || plate[1].trim() !== ''
+  /** รถเดิมเคยมีทะเบียนแล้วถูกลบออกในฟอร์ม — เตือนก่อนบันทึก */
+  const clearingPlate = Boolean(vehicle?.plate_no) && !hasPlate
   const layout = getLayout(form.axle_type, axleTypes)
   const availableAxleTypes = axleTypes.filter(
     (type) => type.is_active || type.code === vehicle?.axle_type,
@@ -185,7 +285,11 @@ export function VehicleFormModal({
       onClose={onClose}
       size="lg"
       title={vehicle ? 'แก้ไขข้อมูลรถ' : 'เพิ่มรถใหม่'}
-      description={vehicle ? `${vehicle.plate_no} ${vehicle.province}` : 'กรอกข้อมูลทะเบียนและประเภทเพลาของรถ'}
+      description={
+        vehicle
+          ? [vehicleLabel(vehicle), vehicle.province].filter(Boolean).join(' ')
+          : 'กรอกทะเบียนหรือชื่อเรียกรถอย่างน้อยหนึ่งอย่าง พร้อมประเภทเพลา'
+      }
       footer={
         <>
           <Button type="button" variant="secondary" onClick={onClose}>ยกเลิก</Button>
@@ -206,8 +310,7 @@ export function VehicleFormModal({
         <div className="grid gap-5 sm:grid-cols-2">
           <Field
             label="ทะเบียนรถ"
-            required
-            hint="หมวด 1-2 ตัว · เลขไม่เกิน 4 หลัก"
+            hint="หมวด 1-2 ตัว · เลขไม่เกิน 4 หลัก · เว้นว่างได้ถ้ากรอกชื่อเรียก"
             error={fieldErrors.plate_no}
           >
             <div className="flex items-center gap-2">
@@ -234,11 +337,30 @@ export function VehicleFormModal({
             </div>
           </Field>
 
-          <Field label="จังหวัด" required error={fieldErrors.province}>
-            <Select value={form.province} onChange={(e) => set('province', e.target.value)}>
-              {PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
-            </Select>
+          {hasPlate ? (
+            <Field label="จังหวัด" required error={fieldErrors.province}>
+              <Select value={form.province ?? ''} onChange={(e) => set('province', e.target.value)}>
+                {PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
+              </Select>
+            </Field>
+          ) : (
+            <Field label="จังหวัด" hint="แสดงเมื่อกรอกทะเบียน">
+              <p className="flex h-10 items-center text-sm text-ink-500">ไม่มีทะเบียน · ไม่ต้องระบุจังหวัด</p>
+            </Field>
+          )}
+
+          <Field label="ชื่อเรียกรถ" error={fieldErrors.nickname} hint="ใช้แทนทะเบียนได้ถ้ารถไม่มีทะเบียน">
+            <Input aria-label="ชื่อเรียกรถ" value={form.nickname ?? ''}
+              onChange={(e) => set('nickname', e.target.value)} maxLength={100}
+              placeholder="เช่น 32-002-BFn หรือ 588-233-SG+" />
           </Field>
+
+          {clearingPlate && (
+            <div className="flex items-start gap-2.5 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-inset ring-amber-200 sm:col-span-2">
+              <AlertCircle className="mt-0.5 size-4 shrink-0" />
+              <span>ทะเบียนถูกลบออก รถคันนี้จะเหลือเฉพาะชื่อเรียก ประวัติถอด–ใส่ยางยังอยู่กับรถคันเดิม</span>
+            </div>
+          )}
 
           <Field label="ยี่ห้อรถ" error={fieldErrors.brand}>
             <Input
@@ -341,6 +463,54 @@ export function VehicleFormModal({
               </option>
             ))}
           </Select>
+        </Field>
+
+        <Field
+          label="รูปรถ"
+          hint="ถ่ายหรือเลือกรูป 1 รูป ระบบย่อรูปให้อัตโนมัติ · ไม่บังคับ"
+        >
+          <div className="flex flex-wrap items-center gap-4">
+            {shownPhoto ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={shownPhoto}
+                alt="รูปรถ"
+                className="h-28 w-40 shrink-0 rounded-xl object-cover ring-1 ring-inset ring-line"
+              />
+            ) : (
+              <span className="flex h-28 w-40 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-400 ring-1 ring-inset ring-brand-100">
+                <Truck className="size-9" strokeWidth={1.5} />
+              </span>
+            )}
+            <div className="flex flex-col gap-2">
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handlePickPhoto}
+                className="hidden"
+                aria-label="เลือกรูปรถ"
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                loading={photoBusy}
+                onClick={() => photoInputRef.current?.click()}
+              >
+                <ImagePlus className="size-4.5" />
+                {shownPhoto ? 'เปลี่ยนรูป' : 'เพิ่มรูป'}
+              </Button>
+              {(photoFile || hasStoredPhoto) && (
+                <Button type="button" variant="ghost" onClick={handleClearPhoto}>
+                  <Trash2 className="size-4.5" />
+                  เอารูปออก
+                </Button>
+              )}
+              {removePhoto && !photoFile && (
+                <p className="text-xs text-amber-700">รูปเดิมจะถูกลบเมื่อกดบันทึก</p>
+              )}
+            </div>
+          </div>
         </Field>
 
         <Field label="หมายเหตุ" error={fieldErrors.note}>
