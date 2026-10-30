@@ -293,7 +293,7 @@ export function ServiceWizard({
   const [newNickname, setNewNickname] = React.useState('')
 
   const [category, setCategory] = React.useState<AxleCategory | null>(null)
-  /** ข้ามขั้นเลือกประเภทรถเพราะรถเดิมเป็นรถบัส — ปุ่มย้อนกลับจากเลขไมล์จะกลับไปหน้าเลือกรถ */
+  /** ข้ามขั้นเลือกประเภทรถเพราะรถเดิมมีแบบรถบันทึกไว้แล้ว — ปุ่มย้อนกลับจากเลขไมล์จะกลับไปหน้าเลือกรถ */
   const [skippedTypeStep, setSkippedTypeStep] = React.useState(false)
   const [axleTypeCode, setAxleTypeCode] = React.useState<string | null>(
     initialVehicle?.axle_type ?? null,
@@ -593,10 +593,11 @@ export function ServiceWizard({
     setNewNickname('')
     setOdometer('')
 
-    // รถบัสมีแบบรถตายตัวอยู่แล้ว — ใช้แบบเดิม ข้ามขั้นเลือกประเภทไปกรอกเลขไมล์เลย
-    const currentType = axleTypes.find((t) => t.code === selected.axle_type)
-    if (currentType?.category === 'bus') {
-      setCategory('bus')
+    // รถเดิมมีแบบรถบันทึกไว้แล้ว (หัว/หาง/บัส) — ใช้แบบเดิม ข้ามขั้นเลือกประเภทไปกรอกเลขไมล์เลย
+    // ถ้าแบบรถเดิมไม่อยู่ในรายการที่บริษัทใช้ได้ ค่อยให้เลือกประเภทใหม่
+    const currentType = axleTypes.find((t) => t.code === selected.axle_type && t.is_active)
+    if (currentType) {
+      setCategory(currentType.category)
       setAxleTypeCode(selected.axle_type)
       setSkippedTypeStep(true)
       setStep('odometer')
@@ -1215,6 +1216,17 @@ export function ServiceWizard({
           >
             ถัดไป
           </PrimaryButton>
+
+          {/* ข้ามขั้นประเภทรถมา — เผื่อแบบรถที่บันทึกไว้ไม่ตรงกับรถจริง */}
+          {skippedTypeStep && (
+            <button
+              type="button"
+              onClick={() => { setError(null); setSkippedTypeStep(false); setStep('category') }}
+              className="w-full text-center text-sm text-brand-700 underline underline-offset-4"
+            >
+              ประเภทรถไม่ถูกต้อง? เปลี่ยนประเภทรถ
+            </button>
+          )}
         </StepCard>
       )}
 
