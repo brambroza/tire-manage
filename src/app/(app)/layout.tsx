@@ -3,9 +3,11 @@ import {
 } from 'lucide-react'
 import { AppShell, type NavItem } from '@/components/app-shell'
 import { NotificationBell } from '@/components/notification-bell'
+import { CompanySwitcher, type CompanyOption } from '@/components/company-switcher'
 import { requireSession } from '@/lib/auth'
 import { getTireAlerts } from '@/lib/notifications'
 import { hasFeature } from '@/lib/plan'
+import { createAdminClient } from '@/lib/supabase/server'
 import type { Company, UserRole } from '@/lib/database.types'
 
 const ICON = 'size-5'
@@ -53,15 +55,39 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // แจ้งเตือนยางถึงเกณฑ์ — เฉพาะแอดมินบริษัทที่ดูแลภาพรวม
   const feed = profile.role === 'admin' ? await getTireAlerts(company) : null
 
+  // ช่างส่วนกลาง: ต้องเลือกลูกค้าก่อนใช้งาน — รายชื่อบริษัทอ่านผ่าน service role (RLS เห็นแค่บริษัทที่เลือกอยู่)
+  let companyOptions: CompanyOption[] | null = null
+  if (profile.role === 'technician' && profile.all_companies) {
+    const { data } = await createAdminClient()
+      .from('companies')
+      .select('id, code, name')
+      .eq('is_active', true)
+      .order('name')
+    companyOptions = data ?? []
+  }
+  const needsCompany = companyOptions !== null && !company
+
   return (
     <AppShell
       nav={navFor(profile.role, company)}
       userName={profile.full_name}
       role={profile.role}
       companyName={company?.name}
-      topbarActions={feed ? <NotificationBell feed={feed} /> : null}
+      topbarActions={
+        companyOptions && company ? (
+          <CompanySwitcher variant="bar" companies={companyOptions} currentId={company.id} />
+        ) : feed ? (
+          <NotificationBell feed={feed} />
+        ) : null
+      }
     >
-      <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</div>
+      <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        {needsCompany && companyOptions ? (
+          <CompanySwitcher variant="picker" companies={companyOptions} currentId={null} />
+        ) : (
+          children
+        )}
+      </div>
     </AppShell>
   )
 }

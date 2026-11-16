@@ -1,4 +1,4 @@
-import { Building2, CircleDot, GitBranch, LayoutDashboard, SlidersHorizontal } from 'lucide-react'
+import { Building2, CircleDot, GitBranch, Wrench, LayoutDashboard, SlidersHorizontal } from 'lucide-react'
 import { AppShell, type NavItem } from '@/components/app-shell'
 import { requireSession } from '@/lib/auth'
 
@@ -7,6 +7,7 @@ const ICON = 'size-5'
 const SUPER_NAV: NavItem[] = [
   { href: '/superadmin',           label: 'ภาพรวมระบบ',      icon: <LayoutDashboard className={ICON} />, exact: true },
   { href: '/superadmin/companies', label: 'ข้อมูลลูกค้า',     icon: <Building2 className={ICON} /> },
+  { href: '/superadmin/technicians', label: 'ช่างส่วนกลาง',     icon: <Wrench className={ICON} /> },
   { href: '/superadmin/catalog',   label: 'ข้อมูลยาง',    icon: <CircleDot className={ICON} /> },
   { href: '/superadmin/axle-types', label: 'ประเภทเพลา',      icon: <GitBranch className={ICON} /> },
   { href: '/superadmin/reasons',   label: 'สาเหตุการถอดยาง', icon: <SlidersHorizontal className={ICON} /> },

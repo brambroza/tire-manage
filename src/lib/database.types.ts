@@ -53,6 +53,8 @@ export type Profile = {
   full_name: string
   phone: string | null
   employee_no: string | null
+  /** ช่างส่วนกลาง: เข้าได้ทุกบริษัท — company_id คือบริษัทที่เลือกอยู่ (null = ยังไม่เลือก) */
+  all_companies: boolean
   is_active: boolean
   created_at: string
   updated_at: string
@@ -303,7 +305,7 @@ export interface Database {
       }
       profiles: {
         Row: Profile
-        Insert: Insert<Profile, 'created_at' | 'updated_at' | 'phone' | 'employee_no' | 'is_active'>
+        Insert: Insert<Profile, 'created_at' | 'updated_at' | 'phone' | 'employee_no' | 'is_active' | 'all_companies'>
         Update: Partial<Profile>
         Relationships: [FK<'company_id', 'companies'>]
       }

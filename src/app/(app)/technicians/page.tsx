@@ -13,6 +13,8 @@ export default async function TechniciansPage() {
   const { data } = await supabase
     .from('profiles')
     .select('*')
+    // ช่างส่วนกลาง (Dreammaker) ไม่แสดง/ไม่ให้แอดมินบริษัทจัดการ
+    .eq('all_companies', false)
     .order('role')
     .order('full_name')
 
