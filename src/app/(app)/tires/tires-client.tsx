@@ -5,7 +5,7 @@ import * as React from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
-  AlertTriangle, CalendarDays, CircleDot, History, Package, Pencil, Plus, Trash2, Truck, Undo2, X, Lock,
+  AlertTriangle, Archive, CalendarDays, CircleDot, History, Package, Pencil, Plus, Trash2, Truck, Undo2, X, Lock,
 } from 'lucide-react'
 import {
   ALERT_ROW, Card, CardHeader, EmptyState, Field, Input, Select, Table, TableWrap, Td, Th, alertLevel,
@@ -27,7 +27,7 @@ import {
 import type { LastRemoval } from '@/lib/tire-events'
 import { TIRE_DATE_FIELDS, parseTireDateFilter, type TireDateField, type TireStats } from './tire-filters'
 import { TireFormModal, type ModelOption } from './tire-form'
-import { restoreTire, scrapTire } from './actions'
+import { deleteTire, restoreTire, scrapTire } from './actions'
 import type { Tire, TireOverview, TireStatus } from '@/lib/database.types'
 
 const FILTERS: Array<{ value: string; label: string }> = [
@@ -114,6 +114,8 @@ export function TiresClient({
   const [formOpen, setFormOpen] = React.useState(false)
   const [editing, setEditing] = React.useState<Tire | null>(null)
   const [confirm, setConfirm] = React.useState<TireOverview | null>(null)
+  /** ยางที่กำลังจะลบถาวร (เฉพาะยางที่ยังไม่เคยใช้งาน) */
+  const [deleting, setDeleting] = React.useState<TireOverview | null>(null)
   /** ยางที่กำลังเปิดดูประวัติ (null = ปิด modal) */
   const [history, setHistory] = React.useState<TireOverview | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -188,6 +190,15 @@ export function TiresClient({
     const result = t.status === 'scrapped' ? await restoreTire(t.id) : await scrapTire(t.id)
     setBusy(false)
     setConfirm(null)
+    if (!result.ok) setMessage(result.error)
+    else router.refresh()
+  }
+
+  async function confirmDelete(t: TireOverview) {
+    setBusy(true)
+    const result = await deleteTire(t.id)
+    setBusy(false)
+    setDeleting(null)
     if (!result.ok) setMessage(result.error)
     else router.refresh()
   }
@@ -576,7 +587,16 @@ export function TiresClient({
                             >
                               {t.status === 'scrapped'
                                 ? <Undo2 className="size-5" />
-                                : <Trash2 className="size-5" />}
+                                : <Archive className="size-5" />}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleting(t)}
+                              aria-label="ลบยาง"
+                              title="ลบยางถาวร"
+                              className="flex size-10 items-center justify-center rounded-lg text-ink-500 hover:bg-rose-50 hover:text-rose-600"
+                            >
+                              <Trash2 className="size-5" />
                             </button>
                           </div>
                         </Td>
@@ -608,6 +628,22 @@ export function TiresClient({
           .join(' · ') || undefined}
         axleTypes={axleTypes}
         onClose={() => setHistory(null)}
+      />
+
+      <ConfirmDialog
+        open={Boolean(deleting)}
+        onClose={() => setDeleting(null)}
+        onConfirm={() => deleting && confirmDelete(deleting)}
+        loading={busy}
+        title="ลบยางเส้นนี้ถาวร?"
+        confirmLabel="ลบถาวร"
+        message={
+          deleting?.status === 'mounted'
+            ? `ยาง ${deleting.serial_no} ติดตั้งอยู่กับรถ การลบจะถอดออกจากตำแหน่งล้อและลบประวัติการใช้งานทั้งหมดของยางเส้นนี้ กู้คืนไม่ได้`
+            : deleting?.has_been_mounted
+              ? `ยาง ${deleting.serial_no} เคยถูกใช้งาน การลบจะลบประวัติถอด-ใส่และระยะวิ่งสะสมทั้งหมดของยางเส้นนี้ กู้คืนไม่ได้`
+              : `ยาง ${deleting?.serial_no} จะถูกลบออกจากระบบและกู้คืนไม่ได้`
+        }
       />
 
       <ConfirmDialog

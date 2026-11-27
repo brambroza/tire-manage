@@ -108,6 +108,33 @@ export async function scrapTire(id: string): Promise<ActionResult> {
 }
 
 /**
+ * ลบยางถาวร — ลบได้ทุกสถานะ รวมยางที่เคยใช้งานหรือติดตั้งอยู่
+ * ประวัติถอด-ใส่ (tire_events) ของยางเส้นนั้นถูกลบตามด้วย (on delete cascade) และกู้คืนไม่ได้
+ * ยางที่ติดตั้งอยู่จะว่างตำแหน่งล้อของรถทันทีเพราะตำแหน่งเก็บอยู่ในแถวยางเอง
+ * @param id รหัสยาง
+ */
+export async function deleteTire(id: string): Promise<ActionResult> {
+  await requireSession(['admin', 'super_admin'])
+  const parsed = z.string().uuid('รหัสยางไม่ถูกต้อง').safeParse(id)
+  if (!parsed.success) return zodFail(parsed.error)
+
+  const supabase = await createClient()
+  const { data: tire, error: tireError } = await supabase
+    .from('tires')
+    .select('company_id')
+    .eq('id', parsed.data)
+    .maybeSingle()
+  if (tireError) return fail(tireError)
+  if (!tire) return { ok: false, error: 'ไม่พบยางที่ต้องการลบ หรือคุณไม่มีสิทธิ์' }
+
+  const { error } = await supabase.from('tires').delete().eq('id', parsed.data)
+  if (error) return fail(error)
+
+  revalidateTire(tire.company_id, parsed.data)
+  return { ok: true }
+}
+
+/**
  * นำยางที่ตัดจำหน่ายกลับเข้าคลัง
  * @param id รหัสยาง
  */
