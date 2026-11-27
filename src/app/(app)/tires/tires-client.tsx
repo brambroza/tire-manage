@@ -356,18 +356,18 @@ export function TiresClient({
         ) : (
           <TableWrap>
             {/* table-fixed + ความกว้างคงที่บน th: คอลัมน์ไม่ขยับตามเนื้อหา ทุกเซลล์จำกัด 2 บรรทัด แถวสูงเท่ากัน */}
-            <Table className="min-w-[900px] table-fixed">
+            <Table className="min-w-[720px] table-fixed">
               <thead>
                 <tr>
-                  <Th className={cn(TH_LG, 'w-[280px]')}>ยาง</Th>
-                  <Th className={cn(TH_LG, 'w-[150px]')}>สถานะ</Th>
-                  <Th className={cn(TH_LG, 'w-[230px]')}>ตำแหน่ง / ที่มา</Th>
-                  <Th className={cn(TH_LG, 'hidden w-[200px] xl:table-cell')}>สาเหตุที่ถอด</Th>
-                  <Th className={cn(TH_LG, 'hidden w-[110px] text-right lg:table-cell')}>ดอกยาง</Th>
-                  <Th className={cn(TH_LG, 'hidden w-[120px] text-right xl:table-cell')}>ระยะรอบนี้</Th>
-                  <Th className={cn(TH_LG, 'hidden w-[110px] text-right xl:table-cell')}>ใช้งาน</Th>
-                  <Th className={cn(TH_LG, 'w-[130px] text-right')}>ระยะสะสม</Th>
-                  {canManage && <Th className={cn(TH_LG, 'w-[120px] text-right')}>จัดการ</Th>}
+                  <Th className={cn(TH_LG, 'w-auto')}>ยาง</Th>
+                  <Th className={cn(TH_LG, 'w-[130px]')}>สถานะ</Th>
+                  <Th className={cn(TH_LG, 'w-[200px]')}>ตำแหน่ง / ที่มา</Th>
+                  <Th className={cn(TH_LG, 'hidden w-[180px] 2xl:table-cell')}>สาเหตุที่ถอด</Th>
+                  <Th className={cn(TH_LG, 'hidden w-[100px] text-right lg:table-cell')}>ดอกยาง</Th>
+                  <Th className={cn(TH_LG, 'hidden w-[120px] text-right 2xl:table-cell')}>ระยะรอบนี้</Th>
+                  <Th className={cn(TH_LG, 'hidden w-[100px] text-right 2xl:table-cell')}>ใช้งาน</Th>
+                  <Th className={cn(TH_LG, 'w-[120px] text-right')}>ระยะสะสม</Th>
+                  {canManage && <Th className={cn(TH_LG, 'w-[110px] text-right')}>จัดการ</Th>}
                 </tr>
               </thead>
               <tbody>
@@ -504,7 +504,7 @@ export function TiresClient({
                       </Td>
 
                       {/* สาเหตุที่ถอด: คอลัมน์แยก ยางบนรถแสดง — */}
-                      <Td className={cn(CELL, 'hidden xl:table-cell')}>
+                      <Td className={cn(CELL, 'hidden 2xl:table-cell')}>
                         {t.status === 'mounted' || !removal ? (
                           <span className="text-ink-400">—</span>
                         ) : removal.reason ? (
@@ -532,7 +532,7 @@ export function TiresClient({
                       </Td>
 
                       {/* ระยะรอบนี้: รอบปัจจุบัน หรือรอบที่ถอดออก */}
-                      <Td className={cn(CELL, 'hidden text-right xl:table-cell')}>
+                      <Td className={cn(CELL, 'hidden text-right 2xl:table-cell')}>
                         {t.status === 'mounted' ? (
                           <span className={cn(runAlert && 'text-[17px] font-bold text-orange-700')}>
                             {formatKm(t.current_run_km)}
@@ -544,7 +544,7 @@ export function TiresClient({
                         )}
                       </Td>
 
-                      <Td className={cn(CELL, 'hidden text-right xl:table-cell')}>{formatDuration(usageDays)}</Td>
+                      <Td className={cn(CELL, 'hidden text-right 2xl:table-cell')}>{formatDuration(usageDays)}</Td>
 
                       {/* ระยะสะสมใช้ค่าที่รวมการประมาณ เพื่อให้ตรงกับตัวเลขที่ใช้แจ้งเตือน
                           ตัวเลขที่มี ~ คือมีค่าประมาณปนอยู่ ห้ามแสดงปนกับค่าจริงโดยไม่บอก */}
